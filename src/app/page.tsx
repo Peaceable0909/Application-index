@@ -3,7 +3,7 @@ import { requireStaff } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
 import { attentionReasons, AppRow } from '@/lib/attention';
 import { missingDocs } from '@/lib/docs';
-import { STATUSES } from '@/lib/constants';
+import { REQUIRED_DOCS, STATUSES } from '@/lib/constants';
 import { bulkAddToMaster, syncNow } from './actions';
 import Btn from '@/components/Btn';
 import { statusTone } from '@/lib/ui';
@@ -19,7 +19,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const db = admin();
   const [{ data: apps }, { data: docs }] = await Promise.all([
     db.from('portal_applications')
-      .select('application_id,name,email,school,programme,country,counselor,status,submitted_at,last_activity_at,student_key,in_master,has_raw,progress,in_regent,payment,interview,opp_id')
+      .select('application_id,name,email,school,programme,country,counselor,status,submitted_at,last_activity_at,student_key,in_master,has_raw,progress,in_regent,payment,interview,opp_id,drive_folder_id,phone')
       .order('submitted_at', { ascending: false, nullsFirst: false }).limit(5000),
     db.from('portal_documents').select('application_id,doc_type,type_override').limit(50000),
   ]);
@@ -42,13 +42,20 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const base = sp.dups ? all : all.filter((a) => (seen.has(a.student_key) ? false : (seen.add(a.student_key), true)));
 
   const rows = base.map((a) => {
-    const missing = a.has_raw ? missingDocs(typesByKey.get(a.student_key) || []) : [];
+    const have = typesByKey.get(a.student_key) || new Set<string>();
+    const judged = a.has_raw || !!a.drive_folder_id;
+    const missing = judged ? missingDocs(have) : [];
     const reasons = attentionReasons(a, missing, countByKey.get(a.student_key) || 0);
-    return { a, missing, reasons };
+    return { a, missing, reasons, judged, have };
   });
 
   const q = (sp.q || '').toLowerCase();
-  const filtered = rows.filter(({ a, reasons }) =>
+  const views: Record<string, (r: (typeof rows)[number]) => boolean> = {
+    attention: (r) => r.reasons.length > 0, missing: (r) => r.judged && r.missing.length > 0,
+    nofolder: (r) => !r.a.drive_folder_id, notmaster: (r) => !r.a.in_master,
+  };
+  const viewCount = (k: string) => rows.filter(views[k]).length;
+  const filtered = rows.filter((row) => { const { a, reasons } = row; return (!sp.view || !views[sp.view] || views[sp.view](row)) &&
     (!q || [a.name, a.email, a.school, a.programme].some((v) => v?.toLowerCase().includes(q))) &&
     (!sp.counselor || a.counselor === sp.counselor) && (!sp.country || a.country?.toLowerCase() === sp.country.toLowerCase()) &&
     (!sp.school || a.school === sp.school) && (!sp.programme || a.programme === sp.programme) &&
@@ -56,7 +63,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     (!sp.source || (sp.source === 'raw_only' ? !a.in_master : sp.source === 'master_only' ? !a.has_raw : a.in_master && a.has_raw)) &&
     (!sp.regent || (sp.regent === 'in' ? a.in_regent : sp.regent === 'paid' ? /paid/i.test(a.payment || '') && !/un|not/i.test(a.payment || '')
       : sp.regent === 'unpaid' ? a.in_regent && !/^paid/i.test(a.payment || '') : /to be booked/i.test(a.interview || ''))) &&
-    (!sp.attention || reasons.length > 0));
+    (!sp.attention || reasons.length > 0); });
 
   const attentionTotal = rows.filter((r) => r.reasons.length).length;
   const options = (k: keyof AppRow) => uniq(base.map((a) => a[k] as string | null));
@@ -84,7 +91,14 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         </div>
       </div>
 
+      <div className="tabs" style={{ marginTop: 0 }}>
+        {[['', 'All', base.length], ['attention', 'Needs attention', viewCount('attention')], ['missing', 'Missing documents', viewCount('missing')], ['nofolder', 'No Drive folder', viewCount('nofolder')], ['notmaster', 'Not in Sheet1', viewCount('notmaster')]].map(([k, label, n]) => (
+          <Link key={k as string} href={k ? `/?view=${k}` : '/'} className={`tab ${(sp.view || '') === k ? 'active' : ''}`}>{label}<span className="n">{n}</span></Link>
+        ))}
+      </div>
+
       <form className="card toolbar filters" method="get">
+        {sp.view && <input type="hidden" name="view" value={sp.view} />}
         <div className="search"><input name="q" placeholder="Search students, email, school…" defaultValue={sp.q} /></div>
         <select name="counselor" defaultValue={sp.counselor || ''}><option value="">Counselor</option>{options('counselor').map((o) => <option key={o}>{o}</option>)}</select>
         <select name="school" defaultValue={sp.school || ''}><option value="">University</option>{options('school').map((o) => <option key={o}>{o}</option>)}</select>
@@ -114,10 +128,10 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
             <table>
               <thead><tr><th style={{ width: 28 }} /><th>Student</th><th>University / Programme</th><th>Counselor</th><th>Status</th><th>Regent</th><th>Documents</th><th>Attention</th><th>Submitted</th></tr></thead>
               <tbody>
-                {filtered.map(({ a, missing, reasons }, i) => (
+                {filtered.map(({ a, missing, reasons, judged, have }, i) => (
                   <tr key={a.application_id} className="row" style={{ '--i': Math.min(i, 14) } as React.CSSProperties}>
                     <td>{!a.in_master && a.has_raw && <input type="checkbox" name="ids" value={a.application_id} />}</td>
-                    <td><Link href={`/applications/${a.application_id}`}><b>{a.name}</b></Link><div className="muted">{a.email}</div>
+                    <td><Link href={`/applications/${a.application_id}`}><b>{a.name}</b></Link><div className="muted">{[a.email, a.phone].filter(Boolean).join(' · ')}</div>
                       {dupCount.get(a.student_key)! > 1 && <span className="badge plain">{dupCount.get(a.student_key)} submissions</span>}</td>
                     <td>{a.school}<div className="muted">{a.programme}</div></td>
                     <td>{a.counselor || <span className="muted">—</span>}</td>
@@ -126,7 +140,12 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
                     <td>{a.in_regent ? <div className="chips">{a.opp_id && <span className="badge plain" title="OPP ID">{a.opp_id.replace(/^OPP ID-/i, '')}</span>}
                       {a.payment ? <span className={`badge ${/^paid/i.test(a.payment) ? 'green' : 'amber'}`}>{a.payment}</span> : <span className="badge amber">Unpaid</span>}
                       {a.interview && <span className="badge plain">{a.interview}</span>}</div> : <span className="muted">—</span>}</td>
-                    <td>{!a.has_raw ? <span className="muted">Tracked in sheet</span> : missing.length === 0 ? <span className="badge green">Complete</span> : <span className="badge amber" title={missing.join(', ')}>Missing {missing.length}</span>}</td>
+                    <td>{judged ? (
+                      <Link href={`/applications/${a.application_id}?tab=documents`} style={{ textDecoration: 'none' }} title={missing.length ? `Missing: ${missing.join(', ')}` : 'All required documents present'}>
+                        <div className="dots">{REQUIRED_DOCS.map((d) => <i key={d} className={have.has(d) ? 'on' : ''} title={d} />)}</div>
+                        <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{REQUIRED_DOCS.length - missing.length}/{REQUIRED_DOCS.length} documents{missing.length ? ` · needs ${missing.slice(0, 2).join(', ')}${missing.length > 2 ? '…' : ''}` : ''}</div>
+                      </Link>
+                    ) : <Link href={`/applications/${a.application_id}?tab=documents`} className="muted" style={{ fontSize: 12.5 }}>No Drive folder · link one →</Link>}</td>
                     <td><div className="chips">{reasons.map((r) => <span key={r} className="badge red">{r}</span>)}</div></td>
                     <td className="muted">{a.submitted_at ? new Date(a.submitted_at).toLocaleDateString('en-GB') : ''}</td>
                   </tr>

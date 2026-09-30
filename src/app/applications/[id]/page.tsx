@@ -7,7 +7,7 @@ import { missingDocs, counselorKey, effType } from '@/lib/docs';
 import { ALL_DOC_TYPES, STATUSES } from '@/lib/constants';
 import { statusTone } from '@/lib/ui';
 import Btn from '@/components/Btn';
-import { addNote, addToMaster, refreshDocuments, sendCounselorEmail, updateCounselor, updateRegent, updateStatus, uploadDocument } from '../../actions';
+import { addNote, addToMaster, dismissSuggestion, linkFolder, refreshDocuments, scanStudent, unlinkFolder, sendCounselorEmail, updateCounselor, updateRegent, updateStatus, uploadDocument } from '../../actions';
 
 type SP = { msg?: string; err?: string; preview?: string; tab?: string };
 const TABS = [['overview', 'Overview'], ['documents', 'Documents'], ['regent', 'Regent'], ['sources', 'Sources'], ['notes', 'Notes & activity']] as const;
@@ -28,6 +28,8 @@ function describe(kind: string, d: Record<string, string>) {
     case 'payment_change': return `Payment: ${d.from || '—'} → ${d.to || '—'}`;
     case 'interview_change': return `Interview: ${d.from || '—'} → ${d.to || '—'}`;
     case 'regent_update': return 'Regent details updated';
+    case 'folder_linked': return `Drive folder linked (${d.files} files)`;
+    case 'folder_unlinked': return 'Drive folder unlinked';
     case 'imported_from_sheet': return 'Found in the sheets (no form submission)';
     default: return kind;
   }
@@ -42,15 +44,19 @@ export default async function ApplicationPage({ params, searchParams }: { params
   const { data: app } = await db.from('portal_applications').select('*').eq('application_id', id).maybeSingle();
   if (!app) notFound();
 
-  const [{ data: siblings }, { data: notes }, { data: activity }, { data: counselors }] = await Promise.all([
+  const [{ data: siblings }, { data: notes }, { data: activity }, { data: counselors }, { data: suggestions }] = await Promise.all([
     db.from('portal_applications').select('application_id,submitted_at').eq('student_key', app.student_key).order('submitted_at', { ascending: false }),
     db.from('portal_notes').select('*').eq('application_id', id).order('pinned', { ascending: false }).order('created_at', { ascending: false }),
     db.from('portal_activity').select('*').eq('application_id', id).order('created_at', { ascending: false }).limit(100),
     db.from('portal_counselors').select('name,email,active').order('name'),
+    db.from('portal_folder_suggestions').select('*').eq('application_id', id).eq('status', 'new').order('score', { ascending: false }),
   ]);
   const { data: docs } = await db.from('portal_documents').select('*').in('application_id', (siblings || []).map((s) => s.application_id)).order('created_at', { ascending: false });
 
-  const missing = app.has_raw ? missingDocs((docs || []).map(effType)) : [];
+  const judged = app.has_raw || !!app.drive_folder_id;
+  const missing = judged ? missingDocs((docs || []).map(effType)) : [];
+  const rawFolder = (app.raw_data as { driveFolderId?: string } | null)?.driveFolderId || null;
+  const linkedFolders = [...new Set([rawFolder, ...(app.extra_folder_ids || [])].filter(Boolean) as string[])];
   const reasons = attentionReasons(app as AppRow, missing, (docs || []).length);
   const counselor = (counselors || []).find((c) => counselorKey(c.name) === counselorKey(app.counselor));
   const previewDoc = sp.preview ? (docs || []).find((d) => d.drive_file_id === sp.preview) : null;
@@ -176,9 +182,9 @@ export default async function ApplicationPage({ params, searchParams }: { params
               </div>
             )}
             <div style={{ marginTop: 16 }} className="chips">
-              <b>Missing</b>{!app.has_raw ? <span className="muted">not checked — this student is tracked in the sheets only</span> : missing.length ? missing.map((m) => <span key={m} className="badge amber">{m}</span>) : <span className="badge green">nothing — complete</span>}
+              <b>Missing</b>{!judged ? <span className="muted">not checked — link a Drive folder to check</span> : missing.length ? missing.map((m) => <span key={m} className="badge amber">{m}</span>) : <span className="badge green">nothing — complete</span>}
             </div>
-            {app.drive_folder_id ? (
+            {app.drive_folder_id && (
               <div className="filters" style={{ marginTop: 16 }}>
                 <form action={uploadDocument} className="filters">
                   <input type="hidden" name="id" value={id} /><input type="hidden" name="returnTo" value={tabHref('documents')} />
@@ -188,7 +194,43 @@ export default async function ApplicationPage({ params, searchParams }: { params
                 </form>
                 <form action={refreshDocuments}><input type="hidden" name="id" value={id} /><input type="hidden" name="returnTo" value={tabHref('documents')} /><Btn className="ghost">Refresh from Drive</Btn></form>
               </div>
-            ) : <p className="muted">No Drive folder yet — this student hasn’t submitted through the form.</p>}
+            )}
+
+            <div style={{ borderTop: '1px solid var(--line)', marginTop: 20, paddingTop: 16 }}>
+              <h2>Google Drive folders</h2>
+              {linkedFolders.length ? linkedFolders.map((fid) => (
+                <div key={fid} className="filters" style={{ justifyContent: 'space-between', padding: '4px 0' }}>
+                  <span><a href={`https://drive.google.com/drive/folders/${fid}`} target="_blank">{fid === rawFolder ? 'Form folder' : 'Linked folder'} ↗</a> <span className="muted">{fid}</span></span>
+                  {fid !== rawFolder && <form action={unlinkFolder}><input type="hidden" name="id" value={id} /><input type="hidden" name="folderId" value={fid} /><Btn className="ghost sm">Unlink</Btn></form>}
+                </div>
+              )) : <p className="muted" style={{ marginTop: 0 }}>No Drive folder linked yet, so this student’s documents can’t be checked.</p>}
+
+              {(suggestions || []).length > 0 && (
+                <div style={{ margin: '12px 0' }}>
+                  <b>Possible matches in your Drive</b>
+                  {(suggestions || []).map((x) => (
+                    <div key={x.id} className="filters" style={{ justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid var(--line)', marginTop: 6 }}>
+                      <div><a href={x.folder_url || '#'} target="_blank">{x.folder_name}</a> {x.exact ? <span className="badge green">name matches</span> : <span className="badge amber">partial</span>}
+                        <div className="muted">{x.parent_name ? `in ${x.parent_name} · ` : ''}{x.file_count ?? 0} files</div></div>
+                      <div className="filters">
+                        <form action={linkFolder}><input type="hidden" name="id" value={id} /><input type="hidden" name="folder" value={x.folder_id} /><Btn className="sm">Link</Btn></form>
+                        <form action={dismissSuggestion}><input type="hidden" name="id" value={id} /><input type="hidden" name="sid" value={x.id} /><input type="hidden" name="returnTo" value={tabHref('documents')} /><Btn className="ghost sm">Not them</Btn></form>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="filters" style={{ marginTop: 10 }}>
+                <form action={scanStudent}><input type="hidden" name="id" value={id} /><Btn className="ghost">Find in Drive</Btn></form>
+                <form action={linkFolder} className="filters" style={{ flex: 1 }}>
+                  <input type="hidden" name="id" value={id} />
+                  <input name="folder" placeholder="…or paste a Google Drive folder link or ID" style={{ flex: 1, minWidth: 240 }} required />
+                  <Btn>Link folder</Btn>
+                </form>
+              </div>
+              <p className="muted" style={{ marginBottom: 0 }}>The folder must be reachable by the Google account that runs your Apps Script. Files inside it (and one level of subfolders) are read in.</p>
+            </div>
           </div>
         )}
 

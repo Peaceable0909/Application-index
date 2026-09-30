@@ -45,6 +45,7 @@ function portalDispatch_(e) {
       case 'updateMaster':     return portalJson_({ ok: true, data: portalUpdateMaster_(p) });
       case 'addMaster':        return portalJson_({ ok: true, data: portalAddMaster_(p) });
       case 'listRegent':       return portalJson_({ ok: true, data: portalListRegent_() });
+      case 'searchFolders':    return portalJson_({ ok: true, data: portalSearchFolders_(p.students || []) });
       case 'updateRegent':     return portalJson_({ ok: true, data: portalUpdateRegent_(p) });
       case 'listFiles':        return portalJson_({ ok: true, data: portalListFiles_(p.folderIds || []) });
       case 'getFile':          return portalJson_({ ok: true, data: portalGetFile_(p.fileId) });
@@ -352,6 +353,35 @@ function portalAddMaster_(p) {
     ]]);
     return { exists: false, row: row };
   } finally { lock.releaseLock(); }
+}
+
+// p = [{ id, name }]  ->  { id: [ { folderId, name, url, parent, score, exact, fileCount, modified } ] }
+// Looks for Drive folders whose name contains the student's first and last name.
+// Only suggestions are returned; nothing is linked until staff confirm in the portal.
+function portalSearchFolders_(students) {
+  const out = {};
+  students.forEach(function (st) {
+    const tokens = String(st.name || '').toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(function (t) { return t.length >= 3; });
+    if (!tokens.length) { out[st.id] = []; return; }
+    const keys = tokens.length > 1 ? [tokens[0], tokens[tokens.length - 1]] : [tokens[0]];
+    const q = keys.map(function (t) { return "title contains '" + t.replace(/'/g, "\\'") + "'"; }).join(' and ') + ' and trashed = false';
+    const cands = [];
+    try {
+      const it = DriveApp.searchFolders(q);
+      while (it.hasNext() && cands.length < 6) {
+        const f = it.next();
+        const nm = f.getName().toLowerCase();
+        const hit = tokens.filter(function (t) { return nm.indexOf(t) >= 0; }).length;
+        let count = 0; const fi = f.getFiles(); while (fi.hasNext() && count < 40) { fi.next(); count++; }
+        const ps = f.getParents();
+        cands.push({ folderId: f.getId(), name: f.getName(), url: f.getUrl(), parent: ps.hasNext() ? ps.next().getName() : '',
+                     score: Math.max(hit / tokens.length, 0.7), exact: hit === tokens.length, fileCount: count,
+                     modified: f.getLastUpdated().toISOString() });
+      }
+    } catch (err) { Logger.log('search failed for ' + st.name + ': ' + err); }
+    out[st.id] = cands;
+  });
+  return out;
 }
 
 // ---- Privacy ----------------------------------------------------------

@@ -19,7 +19,7 @@ export default async function Documents({ params, searchParams }: { params: Prom
     id: d.drive_file_id, name: d.name, type: effType(d), path: d.folder_path, size: Number(d.size_bytes || 0), mime: d.mime_type || '',
     driveUrl: d.drive_url, fromOther: d.application_id !== id, added: new Date(d.created_at).toLocaleDateString('en-GB'),
   }));
-  const missing = app.has_raw ? missingDocs(docs.map((d) => d.type)) : [];
+  const missing = app.has_raw || app.drive_folder_id ? missingDocs(docs.map((d) => d.type)) : [];
 
   return (
     <>

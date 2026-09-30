@@ -13,7 +13,7 @@ import { STATUSES } from '@/lib/constants';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const s = (f: FormData, k: string) => String(f.get(k) ?? '').trim();
 const back = (id: string, msg: string, err = false, returnTo?: string) => {
-  const base = returnTo && returnTo.startsWith(`/applications/${id}`) ? returnTo : `/applications/${encodeURIComponent(id)}`;
+  const base = returnTo && (returnTo.startsWith(`/applications/${id}`) || returnTo.startsWith('/drive')) ? returnTo : `/applications/${encodeURIComponent(id)}`;
   redirect(`${base}${base.includes('?') ? '&' : '?'}${err ? 'err' : 'msg'}=${encodeURIComponent(msg)}`);
 };
 
@@ -206,8 +206,9 @@ export async function uploadDocument(f: FormData) {
 export async function refreshDocuments(f: FormData) {
   await requireStaff();
   const id = s(f, 'id'), ret = s(f, 'returnTo');
-  const { data: app } = await admin().from('portal_applications').select('drive_folder_id').eq('application_id', id).single();
-  if (app?.drive_folder_id) await syncFolders([{ id, folder: app.drive_folder_id }]);
+  const { data: app } = await admin().from('portal_applications').select('drive_folder_id, extra_folder_ids').eq('application_id', id).single();
+  const folders = [...new Set([app?.drive_folder_id, ...(app?.extra_folder_ids || [])].filter(Boolean) as string[])];
+  if (folders.length) await syncFolders([{ id, folders }]);
   back(id, 'Documents refreshed from Drive', false, ret);
 }
 
@@ -219,6 +220,123 @@ export async function setDocType(f: FormData) {
   await admin().from('portal_documents').update({ type_override: type === doc?.doc_type ? null : type }).eq('drive_file_id', fileId);
   await log(id, staff.email, 'doc_retyped', { name: doc?.name, type });
   back(id, `Marked as ${type}`, false, ret);
+}
+
+// ---- Linking Google Drive folders ----
+type Candidate = { folderId: string; name: string; url: string; parent: string; score: number; exact: boolean; fileCount: number; modified: string };
+const docsTab = (id: string) => `/applications/${id}?tab=documents`;
+
+function folderIdFrom(input: string): string | null {
+  const t = input.trim();
+  const m = /folders\/([A-Za-z0-9_-]{10,})/.exec(t) || /[?&]id=([A-Za-z0-9_-]{10,})/.exec(t);
+  return m ? m[1] : /^[A-Za-z0-9_-]{10,}$/.test(t) ? t : null;
+}
+
+async function attachFolder(appId: string, folderId: string, actor: string): Promise<number> {
+  const db = admin();
+  const listed = await callScript<Record<string, DriveFile[] | { error: string }>>('listFiles', { folderIds: [folderId] });
+  const files = listed[folderId];
+  if (!Array.isArray(files)) throw new Error("Can't open that folder. Share it with the Google account that owns your Apps Script, then try again.");
+  const { data: a } = await db.from('portal_applications').select('extra_folder_ids, drive_folder_id').eq('application_id', appId).single();
+  if (!a) throw new Error('Student not found');
+  const extra = [...new Set([...(a.extra_folder_ids || []), folderId])];
+  await db.from('portal_applications').update({
+    extra_folder_ids: extra,
+    ...(a.drive_folder_id ? {} : { drive_folder_id: folderId, drive_folder_url: `https://drive.google.com/drive/folders/${folderId}` }),
+  }).eq('application_id', appId);
+  await syncFolders([{ id: appId, folders: [...new Set([a.drive_folder_id, ...extra].filter(Boolean) as string[])] }]);
+  await db.from('portal_folder_suggestions').update({ status: 'linked' }).eq('application_id', appId).eq('folder_id', folderId);
+  await log(appId, actor, 'folder_linked', { folder: folderId, files: files.length });
+  return files.length;
+}
+
+async function scanApps(apps: { application_id: string; name: string }[]): Promise<number> {
+  const db = admin();
+  if (!apps.length) return 0;
+  const found = await callScript<Record<string, Candidate[]>>('searchFolders', { students: apps.map((a) => ({ id: a.application_id, name: a.name })) });
+  const { data: used } = await db.from('portal_applications').select('drive_folder_id, extra_folder_ids');
+  const usedSet = new Set((used || []).flatMap((u) => [u.drive_folder_id, ...(u.extra_folder_ids || [])]).filter(Boolean));
+  let n = 0;
+  for (const a of apps) {
+    const rows = (found[a.application_id] || []).filter((c) => !usedSet.has(c.folderId)).map((c) => ({
+      application_id: a.application_id, folder_id: c.folderId, folder_name: c.name, folder_url: c.url, parent_name: c.parent || null,
+      score: c.score, exact: c.exact, file_count: c.fileCount, modified_at: c.modified,
+    }));
+    if (rows.length) await db.from('portal_folder_suggestions').upsert(rows, { onConflict: 'application_id,folder_id', ignoreDuplicates: true });
+    n += rows.length;
+    await db.from('portal_applications').update({ drive_scan_at: new Date().toISOString() }).eq('application_id', a.application_id);
+  }
+  return n;
+}
+
+export async function scanDrive() {
+  await requireStaff();
+  const { data: apps } = await admin().from('portal_applications').select('application_id, name')
+    .is('drive_folder_id', null).order('drive_scan_at', { ascending: true, nullsFirst: true }).limit(12);
+  let msg: string;
+  try { const n = await scanApps(apps || []); msg = `Searched Drive for ${(apps || []).length} students — ${n} possible folders found.`; }
+  catch (e) { msg = `Drive search failed: ${(e as Error).message}`; }
+  revalidatePath('/drive');
+  redirect(`/drive?msg=${encodeURIComponent(msg)}`);
+}
+
+export async function scanStudent(f: FormData) {
+  await requireStaff();
+  const id = s(f, 'id');
+  const { data: a } = await admin().from('portal_applications').select('application_id, name').eq('application_id', id).single();
+  try { const n = a ? await scanApps([a]) : 0; return back(id, n ? `Found ${n} possible folder${n > 1 ? 's' : ''} — check below and link the right one.` : 'No matching folders found. Paste the folder link instead.', false, docsTab(id)); }
+  catch (e) { return back(id, `Drive search failed: ${(e as Error).message}`, true, docsTab(id)); }
+}
+
+export async function linkFolder(f: FormData) {
+  const staff = await requireStaff();
+  const id = s(f, 'id'), ret = s(f, 'returnTo') || docsTab(id);
+  const folderId = folderIdFrom(s(f, 'folder'));
+  if (!folderId) return back(id, 'That doesn’t look like a Google Drive folder link or ID', true, ret);
+  try { const n = await attachFolder(id, folderId, staff.email); revalidatePath('/'); revalidatePath('/drive'); return back(id, `Folder linked — ${n} file${n === 1 ? '' : 's'} found`, false, ret); }
+  catch (e) { return back(id, (e as Error).message, true, ret); }
+}
+
+export async function dismissSuggestion(f: FormData) {
+  await requireStaff();
+  const id = s(f, 'id'), ret = s(f, 'returnTo') || '/drive';
+  await admin().from('portal_folder_suggestions').update({ status: 'dismissed' }).eq('id', s(f, 'sid'));
+  revalidatePath('/drive');
+  redirect(ret.startsWith('/') ? ret : `/applications/${id}`);
+}
+
+export async function unlinkFolder(f: FormData) {
+  const staff = await requireStaff();
+  const id = s(f, 'id'), folderId = s(f, 'folderId');
+  const db = admin();
+  const { data: a } = await db.from('portal_applications').select('extra_folder_ids, drive_folder_id, raw_data').eq('application_id', id).single();
+  const rawFolder = (a?.raw_data as { driveFolderId?: string } | null)?.driveFolderId || null;
+  if (!a || folderId === rawFolder) return back(id, 'The form’s own folder can’t be unlinked', true, docsTab(id));
+  const extra = (a.extra_folder_ids || []).filter((x: string) => x !== folderId);
+  const primary = rawFolder || extra[0] || null;
+  await db.from('portal_applications').update({ extra_folder_ids: extra, drive_folder_id: primary, drive_folder_url: primary ? `https://drive.google.com/drive/folders/${primary}` : null }).eq('application_id', id);
+  const folders = [...new Set([rawFolder, ...extra].filter(Boolean) as string[])];
+  if (folders.length) await syncFolders([{ id, folders }]); else await db.from('portal_documents').delete().eq('application_id', id);
+  await log(id, staff.email, 'folder_unlinked', { folder: folderId });
+  revalidatePath('/');
+  back(id, 'Folder unlinked', false, docsTab(id));
+}
+
+// Link every student whose search found exactly one folder with their full name.
+export async function linkExactMatches() {
+  const staff = await requireStaff();
+  const db = admin();
+  const { data: sugg } = await db.from('portal_folder_suggestions').select('id, application_id, folder_id, exact').eq('status', 'new');
+  const byApp = new Map<string, { folder_id: string; exact: boolean }[]>();
+  (sugg || []).forEach((x) => byApp.set(x.application_id, [...(byApp.get(x.application_id) || []), x]));
+  let linked = 0, failed = 0;
+  for (const [appId, list] of [...byApp].slice(0, 10)) {
+    const exact = list.filter((x) => x.exact);
+    if (exact.length !== 1) continue;
+    try { await attachFolder(appId, exact[0].folder_id, staff.email); linked++; } catch { failed++; }
+  }
+  revalidatePath('/'); revalidatePath('/drive');
+  redirect(`/drive?msg=${encodeURIComponent(`Linked ${linked} folders${failed ? `, ${failed} failed` : ''}. (10 at a time — run again for more.)`)}`);
 }
 
 // ---- Settings ----

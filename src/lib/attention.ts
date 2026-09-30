@@ -4,7 +4,7 @@ export type AppRow = {
   application_id: string; name: string; email: string | null; school: string | null; programme: string | null;
   country: string | null; counselor: string | null; status: string | null; submitted_at: string | null;
   last_activity_at: string; student_key: string; in_master: boolean; has_raw: boolean; progress: number | null;
-  in_regent: boolean; payment: string | null; interview: string | null; opp_id: string | null;
+  drive_folder_id: string | null; phone: string | null; in_regent: boolean; payment: string | null; interview: string | null; opp_id: string | null;
 };
 
 export function attentionReasons(a: AppRow, missing: string[], docCount: number): string[] {
@@ -12,9 +12,9 @@ export function attentionReasons(a: AppRow, missing: string[], docCount: number)
   const now = Date.now();
   if (!a.in_master) r.push('Not in master sheet');
   if (a.interview && /to be booked/i.test(a.interview)) r.push('Interview to book');
-  // Students who only exist in the sheets (no form submission) are already being handled by the team,
-  // so their documents aren't judged.
-  if (a.has_raw) {
+  // Documents are judged once a Drive folder exists (form folder or one linked by hand).
+  // Students tracked only in the sheets, with no folder, aren't judged.
+  if (a.has_raw || a.drive_folder_id) {
     if (docCount === 0) r.push('No documents');
     else if (missing.length) r.push(`Missing ${missing.length} doc${missing.length > 1 ? 's' : ''}`);
   }

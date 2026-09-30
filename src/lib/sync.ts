@@ -15,14 +15,15 @@ function parseSubmitted(s: string): string | null {
 const looksLikeDate = (s: string) => /^\d{1,4}[/-]\d{1,2}[/-]\d{1,4}/.test(s.trim()) || /^\d{4}-\d{2}-\d{2}T/.test(s.trim());
 const pick = (...v: (string | null | undefined)[]) => v.map((x) => (x || '').trim()).find((x) => x && x.toUpperCase() !== 'N/A') || null;
 
-export async function syncFolders(appIds: { id: string; folder: string }[]) {
+export async function syncFolders(apps: { id: string; folders: string[] }[]) {
   const db = admin();
-  for (let i = 0; i < appIds.length; i += 20) {
-    const chunk = appIds.slice(i, i + 20);
-    const listed = await callScript<Record<string, DriveFile[] | { error: string }>>('listFiles', { folderIds: chunk.map((c) => c.folder) });
-    for (const { id, folder } of chunk) {
-      const files = listed[folder];
-      if (!Array.isArray(files)) continue;
+  for (let i = 0; i < apps.length; i += 10) {
+    const chunk = apps.slice(i, i + 10);
+    const listed = await callScript<Record<string, DriveFile[] | { error: string }>>('listFiles', { folderIds: [...new Set(chunk.flatMap((c) => c.folders))] });
+    for (const { id, folders } of chunk) {
+      const results = folders.map((f) => listed[f]);
+      if (results.some((r) => !Array.isArray(r))) continue; // a folder failed to list: keep what we have
+      const files = (results as DriveFile[][]).flat();
       if (files.length) {
         await db.from('portal_documents').upsert(files.map((f) => ({
           drive_file_id: f.id, application_id: id, name: f.name, doc_type: docTypeFromName(f.name),
@@ -73,7 +74,7 @@ export async function syncAll(opts: { full?: boolean } = {}) {
   const M = makeFinder(master), G = makeFinder(regent);
 
   const { data: existing } = await db.from('portal_applications')
-    .select('application_id, status, counselor, docs_synced_at, student_key, payment, interview');
+    .select('application_id, status, counselor, docs_synced_at, student_key, payment, interview, extra_folder_ids');
   const known = new Map((existing || []).map((r) => [r.application_id, r]));
 
   const usedM = new Set<MasterRow>(), usedG = new Set<RegentRow>();
@@ -109,8 +110,10 @@ export async function syncAll(opts: { full?: boolean } = {}) {
       counselor: pick(m?.counselor, g?.counselor, r?.counselor, prev?.counselor),
       status, progress: progressFor(status), student_ref: ref, sheet_notes: pick(m?.notes, g?.notes, r?.notes),
       opp_id: pick(g?.oppId), payment, interview,
-      drive_folder_id: r?.driveFolderId || null,
-      drive_folder_url: r?.driveFolderId ? `https://drive.google.com/drive/folders/${r.driveFolderId}` : null,
+      // Form folder first; folders linked by hand in the portal are kept across syncs.
+      drive_folder_id: r?.driveFolderId || prev?.extra_folder_ids?.[0] || null,
+      drive_folder_url: (r?.driveFolderId || prev?.extra_folder_ids?.[0]) ? `https://drive.google.com/drive/folders/${r?.driveFolderId || prev?.extra_folder_ids?.[0]}` : null,
+      extra_folder_ids: prev?.extra_folder_ids || [],
       student_key: studentKey(pick(r?.email, m?.email, g?.email), school, name),
       in_master: !!m, in_regent: !!g, has_raw: !!r, master_data: m, regent_data: g, raw_data: r, synced_at: new Date().toISOString(),
     };
@@ -162,11 +165,12 @@ export async function syncAll(opts: { full?: boolean } = {}) {
   }
 
   const now = Date.now();
-  const needFiles = rows.filter((r) => {
-    if (!r.drive_folder_id) return false;
-    const prev = known.get(r.application_id);
-    return opts.full || !prev?.docs_synced_at || (r.submitted_at && now - new Date(r.submitted_at).getTime() < RECENT_MS);
-  }).map((r) => ({ id: r.application_id, folder: r.drive_folder_id! }));
+  const needFiles = all.map((r) => ({ r, folders: [...new Set([r.drive_folder_id, ...(r.extra_folder_ids || [])].filter(Boolean) as string[])] }))
+    .filter(({ r, folders }) => {
+      if (!folders.length) return false;
+      const prev = known.get(r.application_id);
+      return opts.full || !prev?.docs_synced_at || (r.submitted_at && now - new Date(r.submitted_at).getTime() < RECENT_MS);
+    }).map(({ r, folders }) => ({ id: r.application_id, folders }));
   await syncFolders(needFiles);
 
   return {
