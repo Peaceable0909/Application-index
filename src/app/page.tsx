@@ -53,6 +53,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const views: Record<string, (r: (typeof rows)[number]) => boolean> = {
     attention: (r) => r.reasons.length > 0, missing: (r) => r.judged && r.missing.length > 0,
     nofolder: (r) => !r.a.drive_folder_id, notmaster: (r) => !r.a.in_master,
+    sheet1: (r) => r.a.in_master, regent: (r) => r.a.in_regent,
   };
   const viewCount = (k: string) => rows.filter(views[k]).length;
   const filtered = rows.filter((row) => { const { a, reasons } = row; return (!sp.view || !views[sp.view] || views[sp.view](row)) &&
@@ -60,9 +61,10 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     (!sp.counselor || a.counselor === sp.counselor) && (!sp.country || a.country?.toLowerCase() === sp.country.toLowerCase()) &&
     (!sp.school || a.school === sp.school) && (!sp.programme || a.programme === sp.programme) &&
     (!sp.status || (sp.status === '__none' ? !a.status : a.status === sp.status)) &&
-    (!sp.source || (sp.source === 'raw_only' ? !a.in_master : sp.source === 'master_only' ? !a.has_raw : a.in_master && a.has_raw)) &&
-    (!sp.regent || (sp.regent === 'in' ? a.in_regent : sp.regent === 'paid' ? /paid/i.test(a.payment || '') && !/un|not/i.test(a.payment || '')
-      : sp.regent === 'unpaid' ? a.in_regent && !/^paid/i.test(a.payment || '') : /to be booked/i.test(a.interview || ''))) &&
+    (!sp.source || ({ sheet1: a.in_master, regent: a.in_regent, form: a.has_raw, both: a.in_master && a.has_raw, raw_only: !a.in_master, no_sheet1: !a.in_master,
+      master_only: a.in_master && !a.has_raw, sheet1_no_form: a.in_master && !a.has_raw, no_regent: !a.in_regent } as Record<string, boolean>)[sp.source]) &&
+    (!sp.payment || (sp.payment === 'paid' ? /^paid/i.test(a.payment || '') : a.in_regent && !/^paid/i.test(a.payment || ''))) &&
+    (!sp.interview || (sp.interview === '__none' ? a.in_regent && !a.interview : a.interview === sp.interview)) &&
     (!sp.attention || reasons.length > 0); });
 
   const attentionTotal = rows.filter((r) => r.reasons.length).length;
@@ -92,7 +94,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
       </div>
 
       <div className="tabs" style={{ marginTop: 0 }}>
-        {[['', 'All', base.length], ['attention', 'Needs attention', viewCount('attention')], ['missing', 'Missing documents', viewCount('missing')], ['nofolder', 'No Drive folder', viewCount('nofolder')], ['notmaster', 'Not in Sheet1', viewCount('notmaster')]].map(([k, label, n]) => (
+        {[['', 'All', base.length], ['sheet1', 'Sheet1', viewCount('sheet1')], ['regent', 'Regent Only', viewCount('regent')], ['attention', 'Needs attention', viewCount('attention')], ['missing', 'Missing documents', viewCount('missing')], ['nofolder', 'No Drive folder', viewCount('nofolder')], ['notmaster', 'Not in Sheet1', viewCount('notmaster')]].map(([k, label, n]) => (
           <Link key={k as string} href={k ? `/?view=${k}` : '/'} className={`tab ${(sp.view || '') === k ? 'active' : ''}`}>{label}<span className="n">{n}</span></Link>
         ))}
       </div>
@@ -105,8 +107,18 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         <select name="programme" defaultValue={sp.programme || ''}><option value="">Programme</option>{options('programme').map((o) => <option key={o}>{o}</option>)}</select>
         <select name="country" defaultValue={sp.country || ''}><option value="">Country</option>{countries.map((o) => <option key={o} value={o}>{o.toUpperCase()}</option>)}</select>
         <select name="status" defaultValue={sp.status || ''}><option value="">Status</option><option value="__none">(no status)</option>{STATUSES.map((o) => <option key={o}>{o}</option>)}</select>
-        <select name="regent" defaultValue={sp.regent || ''}><option value="">Regent</option><option value="in">In Regent Only</option><option value="paid">Paid</option><option value="unpaid">In Regent, not paid</option><option value="interview">Interview to book</option></select>
-        <select name="source" defaultValue={sp.source || ''}><option value="">Source</option><option value="both">In both sheets</option><option value="raw_only">Form only</option><option value="master_only">Master sheet only</option></select>
+        <select name="source" defaultValue={sp.source || ''}>
+          <option value="">All sources</option>
+          <option value="sheet1">In Sheet1 — all ({viewCount('sheet1')})</option>
+          <option value="regent">In Regent Only — all ({viewCount('regent')})</option>
+          <option value="form">Submitted via form — all ({rows.filter((r) => r.a.has_raw).length})</option>
+          <option value="both">In Sheet1 and form ({rows.filter((r) => r.a.in_master && r.a.has_raw).length})</option>
+          <option value="sheet1_no_form">In Sheet1, no form ({rows.filter((r) => r.a.in_master && !r.a.has_raw).length})</option>
+          <option value="no_sheet1">Not in Sheet1 ({viewCount('notmaster')})</option>
+          <option value="no_regent">Not in Regent Only ({rows.filter((r) => !r.a.in_regent).length})</option>
+        </select>
+        <select name="payment" defaultValue={sp.payment || ''}><option value="">Payment</option><option value="paid">Paid</option><option value="unpaid">Not paid (Regent)</option></select>
+        <select name="interview" defaultValue={sp.interview || ''}><option value="">Interview</option><option value="__none">(none set)</option>{uniq(base.map((a) => a.interview)).map((o) => <option key={o}>{o}</option>)}</select>
         <label><input type="checkbox" name="attention" value="1" defaultChecked={!!sp.attention} /> needs attention</label>
         <label><input type="checkbox" name="dups" value="1" defaultChecked={!!sp.dups} /> duplicates</label>
         <Btn>Apply</Btn>

@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { admin } from './supabase';
 import { callScript, DriveFile, MasterRow, RegentRow, SheetRow } from './appsScript';
-import { canonicalStatus, counselorKey, docTypeFromName, normEmail, normName, progressFor, schoolDisplay, studentKey } from './docs';
+import { canonicalStatus, counselorKey, docTypeFromName, normEmail, normName, progressFor, schoolDisplay, schoolKey, studentKey } from './docs';
 
 const RECENT_MS = 3 * 24 * 3600 * 1000;
 
@@ -50,10 +50,16 @@ function makeFinder<T extends { name: string; email: string; school: string }>(r
     const n = normName(m.name); if (n) byName.set(n, [...(byName.get(n) || []), m]);
   });
   const only = (xs?: T[]) => (xs && xs.length === 1 ? xs[0] : undefined);
+  // Same name at a different university is a different application, so a name-only match must agree on school.
+  const sameSchool = (a: string, b: string) => !schoolKey(a) || !schoolKey(b) || schoolKey(a) === schoolKey(b);
   return {
     dupes, unique: [...byKey.values()],
-    find: (x: { name: string; email: string; school: string }) =>
-      byKey.get(studentKey(x.email, x.school, x.name)) || only(byEmail.get(normEmail(x.email))) || only(byName.get(normName(x.name))),
+    find: (x: { name: string; email: string; school: string }) => {
+      const hit = byKey.get(studentKey(x.email, x.school, x.name)) || only(byEmail.get(normEmail(x.email)));
+      if (hit) return hit;
+      const byN = only(byName.get(normName(x.name)));
+      return byN && sameSchool(x.school, byN.school) ? byN : undefined;
+    },
   };
 }
 
@@ -90,7 +96,9 @@ export async function syncAll(opts: { full?: boolean } = {}) {
       : g ? parseSubmitted(g.date) : null;
     const school = schoolDisplay(pick(r?.school, m?.school, g?.school));
     const name = pick(m?.name, g?.name, r?.name) || 'Unknown';
-    const payment = pick(g?.payment), interview = pick(g?.interview);
+    const payment = pick(g?.payment);
+    const rawInterview = pick(g?.interview); // "To Be Booked for interview" / "...Interview" are the same thing
+    const interview = rawInterview && /to be booked/i.test(rawInterview) ? 'To be booked for interview' : rawInterview;
     if (!prev) {
       created++;
       activity.push({ application_id: id, actor: 'system', kind: r ? 'new_application' : 'imported_from_sheet', detail: { school, programme: pick(m?.programme, g?.programme, r?.programme) } });
