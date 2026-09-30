@@ -19,7 +19,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const db = admin();
   const [{ data: apps }, { data: docs }] = await Promise.all([
     db.from('portal_applications')
-      .select('application_id,name,email,school,programme,country,counselor,status,submitted_at,last_activity_at,student_key,in_master,has_raw,progress')
+      .select('application_id,name,email,school,programme,country,counselor,status,submitted_at,last_activity_at,student_key,in_master,has_raw,progress,in_regent,payment,interview,opp_id')
       .order('submitted_at', { ascending: false, nullsFirst: false }).limit(5000),
     db.from('portal_documents').select('application_id,doc_type,type_override').limit(50000),
   ]);
@@ -54,6 +54,8 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     (!sp.school || a.school === sp.school) && (!sp.programme || a.programme === sp.programme) &&
     (!sp.status || (sp.status === '__none' ? !a.status : a.status === sp.status)) &&
     (!sp.source || (sp.source === 'raw_only' ? !a.in_master : sp.source === 'master_only' ? !a.has_raw : a.in_master && a.has_raw)) &&
+    (!sp.regent || (sp.regent === 'in' ? a.in_regent : sp.regent === 'paid' ? /paid/i.test(a.payment || '') && !/un|not/i.test(a.payment || '')
+      : sp.regent === 'unpaid' ? a.in_regent && !/^paid/i.test(a.payment || '') : /to be booked/i.test(a.interview || ''))) &&
     (!sp.attention || reasons.length > 0));
 
   const attentionTotal = rows.filter((r) => r.reasons.length).length;
@@ -89,6 +91,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         <select name="programme" defaultValue={sp.programme || ''}><option value="">Programme</option>{options('programme').map((o) => <option key={o}>{o}</option>)}</select>
         <select name="country" defaultValue={sp.country || ''}><option value="">Country</option>{countries.map((o) => <option key={o} value={o}>{o.toUpperCase()}</option>)}</select>
         <select name="status" defaultValue={sp.status || ''}><option value="">Status</option><option value="__none">(no status)</option>{STATUSES.map((o) => <option key={o}>{o}</option>)}</select>
+        <select name="regent" defaultValue={sp.regent || ''}><option value="">Regent</option><option value="in">In Regent Only</option><option value="paid">Paid</option><option value="unpaid">In Regent, not paid</option><option value="interview">Interview to book</option></select>
         <select name="source" defaultValue={sp.source || ''}><option value="">Source</option><option value="both">In both sheets</option><option value="raw_only">Form only</option><option value="master_only">Master sheet only</option></select>
         <label><input type="checkbox" name="attention" value="1" defaultChecked={!!sp.attention} /> needs attention</label>
         <label><input type="checkbox" name="dups" value="1" defaultChecked={!!sp.dups} /> duplicates</label>
@@ -109,7 +112,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         <div className="card tablecard">
           <div className="scroll">
             <table>
-              <thead><tr><th style={{ width: 28 }} /><th>Student</th><th>University / Programme</th><th>Counselor</th><th>Status</th><th>Documents</th><th>Attention</th><th>Submitted</th></tr></thead>
+              <thead><tr><th style={{ width: 28 }} /><th>Student</th><th>University / Programme</th><th>Counselor</th><th>Status</th><th>Regent</th><th>Documents</th><th>Attention</th><th>Submitted</th></tr></thead>
               <tbody>
                 {filtered.map(({ a, missing, reasons }, i) => (
                   <tr key={a.application_id} className="row" style={{ '--i': Math.min(i, 14) } as React.CSSProperties}>
@@ -120,12 +123,15 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
                     <td>{a.counselor || <span className="muted">—</span>}</td>
                     <td>{a.status ? <span className={`badge ${`tone-${statusTone(a.status)}`}`}>{a.status}</span> : <span className="muted">—</span>}
                       {a.progress != null && <div className="bar" title={`${a.progress}%`}><i style={{ width: `${a.progress}%` }} /></div>}</td>
+                    <td>{a.in_regent ? <div className="chips">{a.opp_id && <span className="badge plain" title="OPP ID">{a.opp_id.replace(/^OPP ID-/i, '')}</span>}
+                      {a.payment ? <span className={`badge ${/^paid/i.test(a.payment) ? 'green' : 'amber'}`}>{a.payment}</span> : <span className="badge amber">Unpaid</span>}
+                      {a.interview && <span className="badge plain">{a.interview}</span>}</div> : <span className="muted">—</span>}</td>
                     <td>{missing.length === 0 ? <span className="badge green">Complete</span> : <span className="badge amber" title={missing.join(', ')}>Missing {missing.length}</span>}</td>
                     <td><div className="chips">{reasons.map((r) => <span key={r} className="badge red">{r}</span>)}</div></td>
                     <td className="muted">{a.submitted_at ? new Date(a.submitted_at).toLocaleDateString('en-GB') : ''}</td>
                   </tr>
                 ))}
-                {!filtered.length && <tr><td colSpan={8} className="muted" style={{ padding: 40, textAlign: 'center' }}>No applications match. If this is a new install, press “Sync now”.</td></tr>}
+                {!filtered.length && <tr><td colSpan={9} className="muted" style={{ padding: 40, textAlign: 'center' }}>No applications match. If this is a new install, press “Sync now”.</td></tr>}
               </tbody>
             </table>
           </div>

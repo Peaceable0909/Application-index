@@ -66,7 +66,7 @@ export async function syncNow(f: FormData) {
   let msg: string;
   try {
     const r = await syncAll({ full: f.get('full') === '1' });
-    msg = `Synced ${r.total} students: ${r.inBoth} in both sheets, ${r.rawOnly} form-only (not in master sheet), ${r.masterOnly} master-only. ${r.created} new.`;
+    msg = `Synced ${r.total} students · ${r.formSubmissions} with a form submission · ${r.inMaster} in Sheet1 · ${r.inRegent} in Regent Only · ${r.formOnly} not yet in Sheet1 · ${r.created} new.`;
   } catch (e) { msg = `Sync failed: ${(e as Error).message}`; }
   revalidatePath('/');
   redirect(`/?msg=${encodeURIComponent(msg)}`);
@@ -113,6 +113,22 @@ export async function bulkAddToMaster(f: FormData) {
   try { await syncAll(); } catch { /* next sync will catch up */ }
   revalidatePath('/');
   redirect(`/?source=raw_only&msg=${encodeURIComponent(`Added ${added} to the master sheet${existed ? `, ${existed} already there` : ''}${failed ? `, ${failed} failed` : ''}.${all.length > ids.length ? ` ${all.length - ids.length} left — run it again.` : ''}`)}`);
+}
+
+export async function updateRegent(f: FormData) {
+  const staff = await requireStaff();
+  const id = s(f, 'id');
+  const db = admin();
+  const { data: a } = await db.from('portal_applications').select('in_regent, regent_data, opp_id, payment, interview').eq('application_id', id).single();
+  if (!a?.in_regent || !a.regent_data) return back(id, 'This student is not in the Regent Only tab', true, `/applications/${id}?tab=regent`);
+  const g = a.regent_data as { email: string; name: string; school: string };
+  const fields = { oppId: s(f, 'oppId'), payment: s(f, 'payment'), interview: s(f, 'interview') };
+  try { await callScript('updateRegent', { email: g.email, name: g.name, school: g.school, fields }); }
+  catch (e) { return back(id, `Could not update the sheet: ${(e as Error).message}`, true, `/applications/${id}?tab=regent`); }
+  await db.from('portal_applications').update({ opp_id: fields.oppId || null, payment: fields.payment || null, interview: fields.interview || null }).eq('application_id', id);
+  await log(id, staff.email, 'regent_update', fields);
+  revalidatePath('/');
+  back(id, 'Regent details saved', false, `/applications/${id}?tab=regent`);
 }
 
 export async function updateStatus(f: FormData) {

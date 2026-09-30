@@ -7,11 +7,11 @@ import { missingDocs, counselorKey, effType } from '@/lib/docs';
 import { ALL_DOC_TYPES, STATUSES } from '@/lib/constants';
 import { statusTone } from '@/lib/ui';
 import Btn from '@/components/Btn';
-import { addNote, addToMaster, refreshDocuments, sendCounselorEmail, updateCounselor, updateStatus, uploadDocument } from '../../actions';
+import { addNote, addToMaster, refreshDocuments, sendCounselorEmail, updateCounselor, updateRegent, updateStatus, uploadDocument } from '../../actions';
 
 type SP = { msg?: string; err?: string; preview?: string; tab?: string };
-const TABS = [['overview', 'Overview'], ['documents', 'Documents'], ['sources', 'Sources'], ['notes', 'Notes & activity']] as const;
-const FIELDS: [string, string][] = [['name', 'Name'], ['email', 'Email'], ['phone', 'Phone'], ['school', 'University'], ['programme', 'Programme'], ['country', 'Country'], ['city', 'City'], ['gender', 'Gender'], ['dob', 'Date of birth'], ['age', 'Age'], ['counselor', 'Counselor'], ['status', 'Status'], ['notes', 'Notes']];
+const TABS = [['overview', 'Overview'], ['documents', 'Documents'], ['regent', 'Regent'], ['sources', 'Sources'], ['notes', 'Notes & activity']] as const;
+const FIELDS: [string, string][] = [['oppId', 'OPP ID'], ['payment', 'Payment'], ['interview', 'Interview booking'], ['name', 'Name'], ['email', 'Email'], ['phone', 'Phone'], ['school', 'University'], ['programme', 'Programme'], ['country', 'Country'], ['city', 'City'], ['gender', 'Gender'], ['dob', 'Date of birth'], ['age', 'Age'], ['counselor', 'Counselor'], ['status', 'Status'], ['notes', 'Notes']];
 const fmt = (d: string) => new Date(d).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
 const kb = (n: number | null) => (n ? `${Math.max(1, Math.round(n / 1024))} KB` : '');
 
@@ -25,6 +25,10 @@ function describe(kind: string, d: Record<string, string>) {
     case 'doc_uploaded': return `Uploaded ${d.name}`;
     case 'moved_to_master': return `Added to master sheet as ${d.status}`;
     case 'doc_retyped': return `Marked ${d.name} as ${d.type}`;
+    case 'payment_change': return `Payment: ${d.from || '—'} → ${d.to || '—'}`;
+    case 'interview_change': return `Interview: ${d.from || '—'} → ${d.to || '—'}`;
+    case 'regent_update': return 'Regent details updated';
+    case 'imported_from_sheet': return 'Found in the sheets (no form submission)';
     default: return kind;
   }
 }
@@ -66,6 +70,8 @@ export default async function ApplicationPage({ params, searchParams }: { params
         <h1>{app.name}</h1>
         {app.status && <span className={`badge tone-${statusTone(app.status)}`}>{app.status}</span>}
         {app.progress != null && <span className="muted">{app.progress}% through pipeline</span>}
+        {app.in_regent && app.payment && <span className={`badge ${/^paid/i.test(app.payment) ? 'green' : 'amber'}`}>{app.payment}</span>}
+        {app.opp_id && <span className="badge plain">{app.opp_id}</span>}
       </div>
       <p className="sub">{[app.school, app.programme].filter(Boolean).join(' · ')}</p>
 
@@ -88,7 +94,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
       )}
 
       <div className="tabs" role="tablist">
-        {TABS.map(([k, label]) => (
+        {TABS.filter(([k]) => k !== 'regent' || app.in_regent).map(([k, label]) => (
           <Link key={k} href={tabHref(k)} scroll={false} role="tab" aria-selected={tab === k} className={`tab ${tab === k ? 'active' : ''}`}>
             {label}{counts[k] ? <span className="n">{counts[k]}</span> : null}
           </Link>
@@ -186,22 +192,53 @@ export default async function ApplicationPage({ params, searchParams }: { params
           </div>
         )}
 
+        {tab === 'regent' && app.in_regent && (
+          <div className="grid g2">
+            <div className="card">
+              <h2>Regent tracking</h2>
+              <form action={updateRegent} className="grid" style={{ gap: 12 }}>
+                <input type="hidden" name="id" value={id} />
+                <label className="grid" style={{ gap: 6 }}><span className="muted">OPP ID</span><input name="oppId" defaultValue={app.opp_id || ''} placeholder="OPP ID-60000-00000" /></label>
+                <label className="grid" style={{ gap: 6 }}><span className="muted">Payment</span>
+                  <input name="payment" list="pay" defaultValue={app.payment || ''} placeholder="e.g. Paid" /><datalist id="pay"><option value="Paid" /><option value="Pending" /></datalist></label>
+                <label className="grid" style={{ gap: 6 }}><span className="muted">Book for interview</span>
+                  <input name="interview" list="intv" defaultValue={app.interview || ''} placeholder="e.g. To Be Booked for interview" />
+                  <datalist id="intv"><option value="To Be Booked for interview" /><option value="Booked" /><option value="Interview taken" /></datalist></label>
+                <div><Btn>Save to Regent Only</Btn></div>
+              </form>
+              <p className="muted" style={{ marginBottom: 0 }}>Saved straight into the Regent Only tab of your sheet.</p>
+            </div>
+            <div className="card">
+              <h2>From the Regent Only tab</h2>
+              <dl className="kv">
+                <dt>Status</dt><dd>{(app.regent_data as Record<string, string>)?.status || '—'}</dd>
+                <dt>Counselor</dt><dd>{(app.regent_data as Record<string, string>)?.counselor || '—'}</dd>
+                <dt>Notes</dt><dd style={{ whiteSpace: 'pre-wrap' }}>{(app.regent_data as Record<string, string>)?.notes || '—'}</dd>
+              </dl>
+              {app.status && (app.regent_data as Record<string, string>)?.status && app.status.toLowerCase() !== (app.regent_data as Record<string, string>).status.trim().toLowerCase() &&
+                <p className="muted" style={{ marginBottom: 0 }}>Sheet1 says <b>{app.status}</b>; Regent Only says <b>{(app.regent_data as Record<string, string>).status}</b>. The portal shows Sheet1’s.</p>}
+            </div>
+          </div>
+        )}
+
         {tab === 'sources' && (
           <div className="card">
-            <h2>Master sheet vs form log</h2>
+            <h2>Where the data comes from</h2>
             <p className="muted" style={{ marginTop: -6 }}>
-              {app.in_master ? 'Sheet1 is the curated record for status, counselor, notes and programme.' : <b>Not in the master sheet yet — only the raw form data exists.</b>}{' '}
+              {app.in_master ? 'Sheet1 is the curated record for status, counselor, notes and programme.' : <b>Not in Sheet1 yet.</b>}{' '}{app.in_regent ? 'Regent Only adds OPP ID, payment and interview booking.' : 'Not in the Regent Only tab.'}{' '}
               {app.has_raw ? 'The Applications log supplies documents and submission details.' : <b>No form submission found for this student.</b>} Highlighted rows disagree.
             </p>
             <table className="cmp">
-              <thead><tr><th>Field</th><th>Master sheet (curated)</th><th>Form log (raw)</th></tr></thead>
+              <thead><tr><th>Field</th><th>Sheet1 (curated)</th><th>Regent Only</th><th>Form log (raw)</th></tr></thead>
               <tbody>
                 {FIELDS.map(([k, label]) => {
-                  const m = String((app.master_data as Record<string, string> | null)?.[k] ?? ''), r = String((app.raw_data as Record<string, string> | null)?.[k] ?? '');
-                  const differs = app.in_master && app.has_raw && m.trim().toLowerCase() !== r.trim().toLowerCase() && m && r;
-                  return <tr key={k} className={differs ? 'diff' : ''}><td className="muted">{label}</td><td>{m || '—'}</td><td>{r || '—'}</td></tr>;
+                  const get = (o: unknown) => String((o as Record<string, string> | null)?.[k] ?? '').trim();
+                  const m = get(app.master_data), g = get(app.regent_data), r = get(app.raw_data);
+                  const vals = [m, g, r].filter(Boolean).map((v) => v.toLowerCase());
+                  const differs = new Set(vals).size > 1;
+                  return <tr key={k} className={differs ? 'diff' : ''}><td className="muted">{label}</td><td>{m || '—'}</td><td>{g || '—'}</td><td>{r || '—'}</td></tr>;
                 })}
-                {app.student_ref && <tr><td className="muted">Student ID</td><td>{app.student_ref}</td><td>—</td></tr>}
+                {app.student_ref && <tr><td className="muted">Student ID</td><td>{app.student_ref}</td><td>—</td><td>—</td></tr>}
               </tbody>
             </table>
           </div>

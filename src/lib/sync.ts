@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import { admin } from './supabase';
-import { callScript, DriveFile, MasterRow, SheetRow } from './appsScript';
+import { callScript, DriveFile, MasterRow, RegentRow, SheetRow } from './appsScript';
 import { canonicalStatus, counselorKey, docTypeFromName, normEmail, normName, progressFor, schoolDisplay, studentKey } from './docs';
 
 const RECENT_MS = 3 * 24 * 3600 * 1000;
@@ -37,73 +37,102 @@ export async function syncFolders(appIds: { id: string; folder: string }[]) {
   }
 }
 
-/**
- * Merge rule:
- *  - Sheet1 (hand-maintained) is authoritative for status, counselor, notes, programme and student ID.
- *  - Applications (raw form log) is authoritative for submission time, contact details and Drive documents.
- *  - A student in only one sheet still appears (flagged), so nothing is hidden.
- */
-export async function syncAll(opts: { full?: boolean } = {}) {
-  const db = admin();
-  const [raw, master] = await Promise.all([callScript<SheetRow[]>('listApplications'), callScript<MasterRow[]>('listMaster')]);
-
-  // Index master rows: exact (email+school), then email only, then name only.
-  const byKey = new Map<string, MasterRow>(), byEmail = new Map<string, MasterRow[]>(), byName = new Map<string, MasterRow[]>();
-  let masterDupes = 0;
-  master.forEach((m) => {
+/** Finds a student's row in a sheet: exact (email+school), then a unique email, then a unique name. */
+function makeFinder<T extends { name: string; email: string; school: string }>(rows: T[]) {
+  const byKey = new Map<string, T>(), byEmail = new Map<string, T[]>(), byName = new Map<string, T[]>();
+  let dupes = 0;
+  rows.forEach((m) => {
     const k = studentKey(m.email, m.school, m.name);
-    if (byKey.has(k)) { masterDupes++; return; }
+    if (byKey.has(k)) { dupes++; return; }
     byKey.set(k, m);
     const e = normEmail(m.email); if (e) byEmail.set(e, [...(byEmail.get(e) || []), m]);
     const n = normName(m.name); if (n) byName.set(n, [...(byName.get(n) || []), m]);
   });
-  const only = <T,>(xs?: T[]) => (xs && xs.length === 1 ? xs[0] : undefined);
-  const findMaster = (r: SheetRow) =>
-    byKey.get(studentKey(r.email, r.school, r.name)) || only(byEmail.get(normEmail(r.email))) || only(byName.get(normName(r.name)));
+  const only = (xs?: T[]) => (xs && xs.length === 1 ? xs[0] : undefined);
+  return {
+    dupes, unique: [...byKey.values()],
+    find: (x: { name: string; email: string; school: string }) =>
+      byKey.get(studentKey(x.email, x.school, x.name)) || only(byEmail.get(normEmail(x.email))) || only(byName.get(normName(x.name))),
+  };
+}
+
+const isStub = (id: string) => /^(stub|master|regent):/.test(id);
+
+/**
+ * Three sources, one student record:
+ *  - Sheet1 (hand-maintained): status, counselor, notes, programme.
+ *  - Regent Only: OPP ID, payment, interview booking (and its own status/notes, shown for comparison).
+ *  - Applications (raw form log): submission time, contact details, Drive documents.
+ * A student found in only some of them still appears, flagged, so nothing is hidden.
+ */
+export async function syncAll(opts: { full?: boolean } = {}) {
+  const db = admin();
+  const [raw, master, regent] = await Promise.all([
+    callScript<SheetRow[]>('listApplications'), callScript<MasterRow[]>('listMaster'), callScript<RegentRow[]>('listRegent'),
+  ]);
+  const M = makeFinder(master), G = makeFinder(regent);
 
   const { data: existing } = await db.from('portal_applications')
-    .select('application_id, status, counselor, docs_synced_at, has_raw, in_master, student_key');
+    .select('application_id, status, counselor, docs_synced_at, student_key, payment, interview');
   const known = new Map((existing || []).map((r) => [r.application_id, r]));
 
-  const usedMaster = new Set<MasterRow>();
+  const usedM = new Set<MasterRow>(), usedG = new Set<RegentRow>();
   const activity: object[] = [];
   let created = 0, changedBySheet = 0;
 
-  const build = (id: string, r: SheetRow | null, m: MasterRow | null) => {
+  const build = (id: string, r: SheetRow | null, m: MasterRow | null, g: RegentRow | null) => {
     const prev = known.get(id);
-    const status = canonicalStatus(m?.status || '') || canonicalStatus(r?.status || '') || prev?.status || null;
+    const status = canonicalStatus(m?.status || '') || canonicalStatus(g?.status || '') || canonicalStatus(r?.status || '') || prev?.status || null;
     const ref = m && m.studentIdOrDate && !looksLikeDate(m.studentIdOrDate) ? m.studentIdOrDate.trim() : null;
-    const submitted = r ? parseSubmitted(r.submittedAt) : m && looksLikeDate(m.studentIdOrDate) ? parseSubmitted(m.studentIdOrDate) : null;
-    const school = schoolDisplay(pick(r?.school, m?.school));
-    const name = pick(m?.name, r?.name) || 'Unknown';
+    const submitted = r ? parseSubmitted(r.submittedAt)
+      : m && looksLikeDate(m.studentIdOrDate) ? parseSubmitted(m.studentIdOrDate)
+      : g ? parseSubmitted(g.date) : null;
+    const school = schoolDisplay(pick(r?.school, m?.school, g?.school));
+    const name = pick(m?.name, g?.name, r?.name) || 'Unknown';
+    const payment = pick(g?.payment), interview = pick(g?.interview);
     if (!prev) {
       created++;
-      activity.push({ application_id: id, actor: 'system', kind: r ? 'new_application' : 'imported_from_master', detail: { school, programme: pick(m?.programme, r?.programme) } });
-    } else if (prev.status && status && prev.status !== status) {
-      changedBySheet++;
-      activity.push({ application_id: id, actor: 'sheet', kind: 'status_change', detail: { from: prev.status, to: status } });
+      activity.push({ application_id: id, actor: 'system', kind: r ? 'new_application' : 'imported_from_sheet', detail: { school, programme: pick(m?.programme, g?.programme, r?.programme) } });
+    } else {
+      if (prev.status && status && prev.status !== status) {
+        changedBySheet++;
+        activity.push({ application_id: id, actor: 'sheet', kind: 'status_change', detail: { from: prev.status, to: status } });
+      }
+      if (g && prev.payment !== payment && (prev.payment || payment)) activity.push({ application_id: id, actor: 'sheet', kind: 'payment_change', detail: { from: prev.payment, to: payment } });
+      if (g && prev.interview !== interview && (prev.interview || interview)) activity.push({ application_id: id, actor: 'sheet', kind: 'interview_change', detail: { from: prev.interview, to: interview } });
     }
     return {
-      application_id: id, sheet_row: r?.row ?? null, master_row: m?.row ?? null,
-      submitted_at: submitted, name, email: pick(r?.email, m?.email), phone: pick(r?.phone, m?.phone),
-      school, programme: pick(m?.programme, r?.programme), country: pick(m?.country, r?.country),
-      city: pick(r?.city, m?.city), gender: pick(r?.gender, m?.gender), dob: pick(r?.dob, m?.dob), age: pick(r?.age, m?.age),
-      counselor: pick(m?.counselor, r?.counselor, prev?.counselor),
-      status, progress: progressFor(status), student_ref: ref, sheet_notes: pick(m?.notes, r?.notes),
+      application_id: id, sheet_row: r?.row ?? null, master_row: m?.row ?? null, regent_row: g?.row ?? null,
+      submitted_at: submitted, name, email: pick(r?.email, m?.email, g?.email), phone: pick(r?.phone, m?.phone, g?.phone),
+      school, programme: pick(m?.programme, g?.programme, r?.programme), country: pick(m?.country, g?.country, r?.country),
+      city: pick(r?.city, m?.city, g?.city), gender: pick(r?.gender, m?.gender, g?.gender), dob: pick(r?.dob, m?.dob), age: pick(r?.age, m?.age),
+      counselor: pick(m?.counselor, g?.counselor, r?.counselor, prev?.counselor),
+      status, progress: progressFor(status), student_ref: ref, sheet_notes: pick(m?.notes, g?.notes, r?.notes),
+      opp_id: pick(g?.oppId), payment, interview,
       drive_folder_id: r?.driveFolderId || null,
       drive_folder_url: r?.driveFolderId ? `https://drive.google.com/drive/folders/${r.driveFolderId}` : null,
-      student_key: studentKey(pick(r?.email, m?.email), school, name),
-      in_master: !!m, has_raw: !!r, master_data: m, raw_data: r, synced_at: new Date().toISOString(),
+      student_key: studentKey(pick(r?.email, m?.email, g?.email), school, name),
+      in_master: !!m, in_regent: !!g, has_raw: !!r, master_data: m, regent_data: g, raw_data: r, synced_at: new Date().toISOString(),
     };
   };
 
-  const rows = raw.map((r) => { const m = findMaster(r) || null; if (m) usedMaster.add(m); return build(r.applicationId, r, m); });
-  const rawKeys = new Set(rows.map((r) => r.student_key));
-  const masterOnly = master.filter((m) => !usedMaster.has(m) && byKey.get(studentKey(m.email, m.school, m.name)) === m).map((m) => {
-    const key = studentKey(m.email, m.school, m.name);
-    return build('master:' + createHash('sha1').update(key).digest('hex').slice(0, 16), null, m);
+  const rows = raw.map((r) => {
+    const m = M.find(r) || null, g = G.find(r) || null;
+    if (m) usedM.add(m); if (g) usedG.add(g);
+    return build(r.applicationId, r, m, g);
   });
-  const all = [...rows, ...masterOnly];
+  const rawKeys = new Set(rows.map((r) => r.student_key));
+
+  // Students with no form submission: one stub per student, gathering Sheet1 + Regent Only together.
+  const stubs = new Map<string, ReturnType<typeof build>>();
+  const stubFor = (m: MasterRow | null, g: RegentRow | null) => {
+    const key = studentKey(pick(m?.email, g?.email), schoolDisplay(pick(m?.school, g?.school)), pick(m?.name, g?.name) || '');
+    const id = 'stub:' + createHash('sha1').update(key).digest('hex').slice(0, 16);
+    if (!stubs.has(id)) stubs.set(id, build(id, null, m, g));
+  };
+  M.unique.filter((m) => !usedM.has(m)).forEach((m) => { const g = G.find(m) || null; if (g) usedG.add(g); stubFor(m, g); });
+  G.unique.filter((g) => !usedG.has(g)).forEach((g) => stubFor(null, g));
+  const all = [...rows, ...stubs.values()];
 
   for (let i = 0; i < all.length; i += 100) {
     const { error } = await db.from('portal_applications').upsert(all.slice(i, i + 100), { onConflict: 'application_id' });
@@ -111,12 +140,14 @@ export async function syncAll(opts: { full?: boolean } = {}) {
   }
   if (activity.length) await db.from('portal_activity').insert(activity);
 
-  // A master-only student who later submits the form: move their notes/history onto the real application, then drop the stub.
+  // Keep notes/history when a stub becomes a real application (form submitted) or its id scheme changes.
   const latestByKey = new Map<string, string>();
   rows.forEach((r) => { if (!latestByKey.has(r.student_key)) latestByKey.set(r.student_key, r.application_id); });
+  const stubByKey = new Map([...stubs.values()].map((s) => [s.student_key, s.application_id]));
   for (const [id, prev] of known) {
-    if (!id.startsWith('master:') || !prev.student_key || !rawKeys.has(prev.student_key)) continue;
-    const target = latestByKey.get(prev.student_key)!;
+    if (!isStub(id) || !prev.student_key) continue;
+    const target = latestByKey.get(prev.student_key) || stubByKey.get(prev.student_key);
+    if (!target || target === id) continue;
     await db.from('portal_notes').update({ application_id: target }).eq('application_id', id);
     await db.from('portal_activity').update({ application_id: target }).eq('application_id', id);
     await db.from('portal_applications').delete().eq('application_id', id);
@@ -139,8 +170,9 @@ export async function syncAll(opts: { full?: boolean } = {}) {
   await syncFolders(needFiles);
 
   return {
-    total: all.length, created, inBoth: rows.filter((r) => r.in_master).length,
-    rawOnly: rows.filter((r) => !r.in_master).length, masterOnly: masterOnly.length,
-    statusChangedInSheet: changedBySheet, masterDuplicateRows: masterDupes, foldersRefreshed: needFiles.length,
+    total: all.length, created, formSubmissions: rows.length,
+    inMaster: all.filter((r) => r.in_master).length, inRegent: all.filter((r) => r.in_regent).length,
+    formOnly: rows.filter((r) => !r.in_master).length, noForm: stubs.size,
+    statusChangedInSheet: changedBySheet, foldersRefreshed: needFiles.length,
   };
 }

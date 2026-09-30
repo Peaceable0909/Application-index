@@ -24,6 +24,15 @@ const PORTAL_MAX_FILE_BYTES = 25 * 1024 * 1024;
 // The hand-maintained sheet (tab name). Only columns A..N are read; the
 // pipeline legend in columns O..Q is ignored.
 const MASTER_SHEET_NAME = 'Sheet1';
+// Regent / CCCU tracking tab (name is matched ignoring case and stray spaces).
+const REGENT_SHEET_NAME = 'Regent Only';
+
+function portalTab_(name) {
+  const want = String(name).trim().toLowerCase();
+  const tabs = SpreadsheetApp.openById(SPREADSHEET_ID).getSheets();
+  for (let i = 0; i < tabs.length; i++) if (tabs[i].getName().trim().toLowerCase() === want) return tabs[i];
+  throw new Error('Tab "' + name + '" not found');
+}
 
 function portalDispatch_(e) {
   try {
@@ -35,6 +44,8 @@ function portalDispatch_(e) {
       case 'listMaster':       return portalJson_({ ok: true, data: portalListMaster_() });
       case 'updateMaster':     return portalJson_({ ok: true, data: portalUpdateMaster_(p) });
       case 'addMaster':        return portalJson_({ ok: true, data: portalAddMaster_(p) });
+      case 'listRegent':       return portalJson_({ ok: true, data: portalListRegent_() });
+      case 'updateRegent':     return portalJson_({ ok: true, data: portalUpdateRegent_(p) });
       case 'listFiles':        return portalJson_({ ok: true, data: portalListFiles_(p.folderIds || []) });
       case 'getFile':          return portalJson_({ ok: true, data: portalGetFile_(p.fileId) });
       case 'uploadFile':       return portalJson_({ ok: true, data: portalUploadFile_(p) });
@@ -207,8 +218,7 @@ function portalCell_(v) { return v instanceof Date ? v.toISOString() : String(v 
 
 // Rows of the hand-maintained master sheet (A..N).
 function portalListMaster_() {
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(MASTER_SHEET_NAME);
-  if (!sheet) throw new Error('Master tab "' + MASTER_SHEET_NAME + '" not found');
+  const sheet = portalTab_(MASTER_SHEET_NAME);
   const last = sheet.getLastRow();
   if (last < 2) return [];
   const vals = sheet.getRange(2, 1, last - 1, 14).getValues();
@@ -225,6 +235,60 @@ function portalListMaster_() {
   return out;
 }
 
+// Rows of the Regent Only tab (A..O). The legend in P..R is ignored.
+function portalListRegent_() {
+  const sheet = portalTab_(REGENT_SHEET_NAME);
+  const last = sheet.getLastRow();
+  if (last < 2) return [];
+  const vals = sheet.getRange(2, 1, last - 1, 15).getValues();
+  const out = [];
+  vals.forEach(function (r, i) {
+    if (!String(r[1]).trim() && !String(r[2]).trim()) return;
+    out.push({
+      row: i + 2, date: portalCell_(r[0]), name: portalCell_(r[1]), email: portalCell_(r[2]), phone: portalCell_(r[3]),
+      school: portalCell_(r[4]), programme: portalCell_(r[5]), country: portalCell_(r[6]), city: portalCell_(r[7]),
+      gender: portalCell_(r[8]), oppId: portalCell_(r[9]).trim(), payment: portalCell_(r[10]).trim(), counselor: portalCell_(r[11]),
+      status: portalCell_(r[12]).trim(), notes: portalCell_(r[13]), interview: portalCell_(r[14]).trim()
+    });
+  });
+  return out;
+}
+
+// Find a student's row by email (+school); name if there is no email.
+function portalFindStudentRow_(sheet, p) {
+  const last = sheet.getLastRow();
+  if (last < 2) return 0;
+  const vals = sheet.getRange(2, 1, last - 1, 5).getValues();
+  const email = String(p.email || '').trim().toLowerCase();
+  const name = String(p.name || '').toLowerCase().replace(/[^a-z]+/g, ' ').trim();
+  const school = portalSchoolKey_(p.school);
+  for (let i = 0; i < vals.length; i++) {
+    const rEmail = String(vals[i][2]).trim().toLowerCase();
+    const rName = String(vals[i][1]).toLowerCase().replace(/[^a-z]+/g, ' ').trim();
+    const same = email ? rEmail === email : rName === name;
+    const rs = portalSchoolKey_(vals[i][4]);
+    if (same && (!school || !rs || rs === school)) return i + 2;
+  }
+  return 0;
+}
+
+// p = { email, name, school, fields: { oppId?, payment?, interview? }, notesAppend?, by? }
+function portalUpdateRegent_(p) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const sheet = portalTab_(REGENT_SHEET_NAME);
+    const row = portalFindStudentRow_(sheet, p);
+    if (!row) throw new Error('Student not found in ' + REGENT_SHEET_NAME);
+    const f = p.fields || {};
+    if (f.oppId !== undefined) sheet.getRange(row, 10).setValue(f.oppId);
+    if (f.payment !== undefined) sheet.getRange(row, 11).setValue(f.payment);
+    if (f.interview !== undefined) sheet.getRange(row, 15).setValue(f.interview);
+    if (p.notesAppend) portalAppendNote_(sheet.getRange(row, 14), p.notesAppend, p.by);
+    return { row: row };
+  } finally { lock.releaseLock(); }
+}
+
 // p = { email, name, school, fields: { status?, counselor? }, notesAppend?, by? }
 // The row is found by email (+school) each time, because rows move when
 // someone sorts the sheet.
@@ -232,7 +296,7 @@ function portalUpdateMaster_(p) {
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(MASTER_SHEET_NAME);
+    const sheet = portalTab_(MASTER_SHEET_NAME);
     const last = sheet.getLastRow();
     const vals = sheet.getRange(2, 1, Math.max(last - 1, 1), 14).getValues();
     const email = String(p.email || '').trim().toLowerCase();
@@ -263,7 +327,7 @@ function portalAddMaster_(p) {
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(MASTER_SHEET_NAME);
+    const sheet = portalTab_(MASTER_SHEET_NAME);
     const maxRows = sheet.getMaxRows();
     const names = sheet.getRange(1, 2, maxRows, 1).getValues();
     let last = 1;
