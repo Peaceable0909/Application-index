@@ -23,9 +23,9 @@ export default async function Documents({ params, searchParams }: { params: Prom
 
   return (
     <>
-      <p><Link href={`/applications/${id}`}>← {app.name}</Link> {app.drive_folder_url && <> · <a href={app.drive_folder_url} target="_blank">Drive folder ↗</a></>}</p>
-      <h1>Documents — {app.name}</h1>
-      <p className="muted">{app.school} · {app.programme}</p>
+      <Link href={`/applications/${id}?tab=documents`} className="crumb">← {app.name}</Link>
+      <div className="head"><h1>Documents</h1>{app.drive_folder_url && <a href={app.drive_folder_url} target="_blank">Drive folder ↗</a>}</div>
+      <p className="sub">{app.name} · {[app.school, app.programme].filter(Boolean).join(' · ')}</p>
       {sp.msg && <div className="card ok">{sp.msg}</div>}
       {sp.err && <div className="card err">{sp.err}</div>}
       <DocViewer appId={id} docs={docs} missing={missing} initial={sp.file || null} canUpload={!!app.drive_folder_id} />

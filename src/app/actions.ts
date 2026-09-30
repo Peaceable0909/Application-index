@@ -12,8 +12,10 @@ import { STATUSES } from '@/lib/constants';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const s = (f: FormData, k: string) => String(f.get(k) ?? '').trim();
-const back = (id: string, msg: string, err = false, returnTo?: string) =>
-  redirect(`${returnTo && returnTo.startsWith(`/applications/${id}`) ? returnTo.split('?')[0] : `/applications/${encodeURIComponent(id)}`}?${err ? 'err' : 'msg'}=${encodeURIComponent(msg)}`);
+const back = (id: string, msg: string, err = false, returnTo?: string) => {
+  const base = returnTo && returnTo.startsWith(`/applications/${id}`) ? returnTo : `/applications/${encodeURIComponent(id)}`;
+  redirect(`${base}${base.includes('?') ? '&' : '?'}${err ? 'err' : 'msg'}=${encodeURIComponent(msg)}`);
+};
 
 async function log(applicationId: string, actor: string, kind: string, detail: object = {}) {
   const db = admin();
@@ -142,12 +144,12 @@ export async function updateCounselor(f: FormData) {
 
 export async function addNote(f: FormData) {
   const staff = await requireStaff();
-  const id = s(f, 'id'), body = s(f, 'body');
-  if (!body) return back(id, 'Note is empty', true);
+  const id = s(f, 'id'), body = s(f, 'body'), ret = s(f, 'returnTo');
+  if (!body) return back(id, 'Note is empty', true, ret);
   await admin().from('portal_notes').insert({ application_id: id, author: staff.email, body, pinned: f.get('pinned') === 'on' });
   await log(id, staff.email, 'note', { preview: body.slice(0, 120) });
   try { await writeBack(id, {}, body, staff.email); } catch { /* portal is the record; sheet mirror is best-effort */ }
-  back(id, 'Note added');
+  back(id, 'Note added', false, ret);
 }
 
 export async function sendCounselorEmail(f: FormData) {
@@ -187,10 +189,10 @@ export async function uploadDocument(f: FormData) {
 
 export async function refreshDocuments(f: FormData) {
   await requireStaff();
-  const id = s(f, 'id');
+  const id = s(f, 'id'), ret = s(f, 'returnTo');
   const { data: app } = await admin().from('portal_applications').select('drive_folder_id').eq('application_id', id).single();
   if (app?.drive_folder_id) await syncFolders([{ id, folder: app.drive_folder_id }]);
-  back(id, 'Documents refreshed from Drive');
+  back(id, 'Documents refreshed from Drive', false, ret);
 }
 
 export async function setDocType(f: FormData) {

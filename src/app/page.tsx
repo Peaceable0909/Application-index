@@ -5,6 +5,8 @@ import { attentionReasons, AppRow } from '@/lib/attention';
 import { missingDocs } from '@/lib/docs';
 import { STATUSES } from '@/lib/constants';
 import { bulkAddToMaster, syncNow } from './actions';
+import Btn from '@/components/Btn';
+import { statusTone } from '@/lib/ui';
 
 export const maxDuration = 60;
 
@@ -58,67 +60,76 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const options = (k: keyof AppRow) => uniq(base.map((a) => a[k] as string | null));
   const countries = [...new Set(base.map((a) => (a.country || '').toLowerCase()).filter(Boolean))].sort();
 
+  const hasFilters = Object.keys(sp).some((k) => !['msg', 'err'].includes(k) && sp[k]);
+
   return (
     <>
-      <h1>Applications</h1>
+      <div className="head"><h1>Applications</h1></div>
+      <p className="sub">{filtered.length === base.length ? `${base.length} students` : `${filtered.length} of ${base.length} students`} across both sheets.</p>
       {sp.msg && <div className="card ok">{sp.msg}</div>}
       {sp.err && <div className="card err">{sp.err}</div>}
-      <div className="grid g4">
-        <div className="card"><div className="muted">Students</div><div className="stat">{base.length}</div></div>
-        <div className="card"><div className="muted">Need attention</div><div className="stat" style={{ color: 'var(--red)' }}>{attentionTotal}</div></div>
-        <div className="card"><div className="muted">No status yet</div><div className="stat">{base.filter((a) => !a.status).length}</div></div>
-        <div className="card">
-          <form action={syncNow} className="filters">
-            <button>Sync now</button>
-            <label><input type="checkbox" name="full" value="1" /> full (all docs)</label>
+
+      <div className="grid g4" style={{ marginBottom: 16 }}>
+        <div className="card rise" style={{ '--i': 0 } as React.CSSProperties}><div className="stat-l">Students</div><div className="stat">{base.length}</div></div>
+        <Link href="/?attention=1" className="card rise" style={{ '--i': 1, textDecoration: 'none' } as React.CSSProperties}><div className="stat-l">Need attention</div><div className="stat warn">{attentionTotal}</div></Link>
+        <Link href="/?status=__none" className="card rise" style={{ '--i': 2, textDecoration: 'none' } as React.CSSProperties}><div className="stat-l">No status yet</div><div className="stat">{base.filter((a) => !a.status).length}</div></Link>
+        <div className="card rise" style={{ '--i': 3 } as React.CSSProperties}>
+          <div className="stat-l">Data</div>
+          <form action={syncNow} className="filters" style={{ marginTop: 12 }}>
+            <Btn>Sync now</Btn>
+            <label className="muted"><input type="checkbox" name="full" value="1" /> full</label>
           </form>
         </div>
       </div>
 
-      <form className="card filters" method="get">
-        <input name="q" placeholder="Search name, email, school, programme" defaultValue={sp.q} style={{ minWidth: 260 }} />
-        <select name="counselor" defaultValue={sp.counselor || ''}><option value="">All counselors</option>{options('counselor').map((o) => <option key={o}>{o}</option>)}</select>
-        <select name="school" defaultValue={sp.school || ''}><option value="">All universities</option>{options('school').map((o) => <option key={o}>{o}</option>)}</select>
-        <select name="programme" defaultValue={sp.programme || ''}><option value="">All programmes</option>{options('programme').map((o) => <option key={o}>{o}</option>)}</select>
-        <select name="country" defaultValue={sp.country || ''}><option value="">All countries</option>{countries.map((o) => <option key={o} value={o}>{o.toUpperCase()}</option>)}</select>
-        <select name="status" defaultValue={sp.status || ''}><option value="">All statuses</option><option value="__none">(no status)</option>{STATUSES.map((o) => <option key={o}>{o}</option>)}</select>
-        <select name="source" defaultValue={sp.source || ''}><option value="">All sources</option><option value="both">In both sheets</option><option value="raw_only">Form only (not in master sheet)</option><option value="master_only">Master sheet only (no form)</option></select>
+      <form className="card toolbar filters" method="get">
+        <div className="search"><input name="q" placeholder="Search students, email, school…" defaultValue={sp.q} /></div>
+        <select name="counselor" defaultValue={sp.counselor || ''}><option value="">Counselor</option>{options('counselor').map((o) => <option key={o}>{o}</option>)}</select>
+        <select name="school" defaultValue={sp.school || ''}><option value="">University</option>{options('school').map((o) => <option key={o}>{o}</option>)}</select>
+        <select name="programme" defaultValue={sp.programme || ''}><option value="">Programme</option>{options('programme').map((o) => <option key={o}>{o}</option>)}</select>
+        <select name="country" defaultValue={sp.country || ''}><option value="">Country</option>{countries.map((o) => <option key={o} value={o}>{o.toUpperCase()}</option>)}</select>
+        <select name="status" defaultValue={sp.status || ''}><option value="">Status</option><option value="__none">(no status)</option>{STATUSES.map((o) => <option key={o}>{o}</option>)}</select>
+        <select name="source" defaultValue={sp.source || ''}><option value="">Source</option><option value="both">In both sheets</option><option value="raw_only">Form only</option><option value="master_only">Master sheet only</option></select>
         <label><input type="checkbox" name="attention" value="1" defaultChecked={!!sp.attention} /> needs attention</label>
-        <label><input type="checkbox" name="dups" value="1" defaultChecked={!!sp.dups} /> show duplicate submissions</label>
-        <button>Filter</button> <Link href="/">Reset</Link>
+        <label><input type="checkbox" name="dups" value="1" defaultChecked={!!sp.dups} /> duplicates</label>
+        <Btn>Apply</Btn>
+        {hasFilters && <Link href="/" className="muted">Clear</Link>}
       </form>
 
       <form action={bulkAddToMaster}>
-      {filtered.some(({ a }) => !a.in_master && a.has_raw) && (
-        <div className="card filters">
-          <b>Tick form-only students to move them into the master sheet:</b>
-          <select name="status" defaultValue="New Lead">{STATUSES.map((o) => <option key={o}>{o}</option>)}</select>
-          <button>Add selected to master sheet</button>
-          <span className="muted">Up to 15 at a time. Counselor comes from the form.</span>
+        {filtered.some(({ a }) => !a.in_master && a.has_raw) && (
+          <div className="card gold filters" style={{ padding: '14px 16px' }}>
+            <b>Move form-only students into the master sheet</b>
+            <span className="muted">tick rows, then</span>
+            <select name="status" defaultValue="New Lead">{STATUSES.map((o) => <option key={o}>{o}</option>)}</select>
+            <Btn className="gold">Add selected</Btn>
+            <span className="muted">Up to 15 at a time · counselor comes from the form</span>
+          </div>
+        )}
+        <div className="card tablecard">
+          <div className="scroll">
+            <table>
+              <thead><tr><th style={{ width: 28 }} /><th>Student</th><th>University / Programme</th><th>Counselor</th><th>Status</th><th>Documents</th><th>Attention</th><th>Submitted</th></tr></thead>
+              <tbody>
+                {filtered.map(({ a, missing, reasons }, i) => (
+                  <tr key={a.application_id} className="row" style={{ '--i': Math.min(i, 14) } as React.CSSProperties}>
+                    <td>{!a.in_master && a.has_raw && <input type="checkbox" name="ids" value={a.application_id} />}</td>
+                    <td><Link href={`/applications/${a.application_id}`}><b>{a.name}</b></Link><div className="muted">{a.email}</div>
+                      {dupCount.get(a.student_key)! > 1 && <span className="badge plain">{dupCount.get(a.student_key)} submissions</span>}</td>
+                    <td>{a.school}<div className="muted">{a.programme}</div></td>
+                    <td>{a.counselor || <span className="muted">—</span>}</td>
+                    <td>{a.status ? <span className={`badge ${`tone-${statusTone(a.status)}`}`}>{a.status}</span> : <span className="muted">—</span>}
+                      {a.progress != null && <div className="bar" title={`${a.progress}%`}><i style={{ width: `${a.progress}%` }} /></div>}</td>
+                    <td>{missing.length === 0 ? <span className="badge green">Complete</span> : <span className="badge amber" title={missing.join(', ')}>Missing {missing.length}</span>}</td>
+                    <td><div className="chips">{reasons.map((r) => <span key={r} className="badge red">{r}</span>)}</div></td>
+                    <td className="muted">{a.submitted_at ? new Date(a.submitted_at).toLocaleDateString('en-GB') : ''}</td>
+                  </tr>
+                ))}
+                {!filtered.length && <tr><td colSpan={8} className="muted" style={{ padding: 40, textAlign: 'center' }}>No applications match. If this is a new install, press “Sync now”.</td></tr>}
+              </tbody>
+            </table>
+          </div>
         </div>
-      )}
-      <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
-        <table>
-          <thead><tr><th style={{ width: 28 }} /><th>Student</th><th>University / Programme</th><th>Counselor</th><th>Status</th><th>Documents</th><th>Attention</th><th>Submitted</th></tr></thead>
-          <tbody>
-            {filtered.map(({ a, missing, reasons }) => (
-              <tr key={a.application_id} className="row">
-                <td>{!a.in_master && a.has_raw && <input type="checkbox" name="ids" value={a.application_id} />}</td>
-                <td><Link href={`/applications/${a.application_id}`}><b>{a.name}</b></Link><div className="muted">{a.email}</div>
-                  {dupCount.get(a.student_key)! > 1 && <span className="badge">{dupCount.get(a.student_key)} submissions</span>}</td>
-                <td>{a.school}<div className="muted">{a.programme}</div></td>
-                <td>{a.counselor || <span className="muted">—</span>}</td>
-                <td>{a.status ? <span className="badge">{a.status}</span> : <span className="muted">—</span>}
-                  {a.progress != null && <div className="bar" title={`${a.progress}%`}><i style={{ width: `${a.progress}%` }} /></div>}</td>
-                <td>{missing.length === 0 ? <span className="badge green">Complete</span> : <span className="badge amber" title={missing.join(', ')}>Missing {missing.length}</span>}</td>
-                <td>{reasons.map((r) => <span key={r} className="badge red" style={{ marginRight: 4 }}>{r}</span>)}</td>
-                <td className="muted">{a.submitted_at ? new Date(a.submitted_at).toLocaleDateString('en-GB') : ''}</td>
-              </tr>
-            ))}
-            {!filtered.length && <tr><td colSpan={8} className="muted">No applications match. If this is a new install, press “Sync now”.</td></tr>}
-          </tbody>
-        </table>
-      </div>
       </form>
     </>
   );

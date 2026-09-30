@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { ALL_DOC_TYPES } from '@/lib/constants';
 import { setDocType, uploadDocument } from '@/app/actions';
+import Btn from '@/components/Btn';
 
 export type ViewerDoc = {
   id: string; name: string; type: string; path: string | null; size: number; mime: string; driveUrl: string; fromOther: boolean; added: string;
@@ -60,7 +61,7 @@ export default function DocViewer({ appId, docs, missing, initial, canUpload }: 
             <input type="hidden" name="id" value={appId} /><input type="hidden" name="returnTo" value={returnTo} />
             <select name="docType" defaultValue={missing[0] || 'Other'}>{ALL_DOC_TYPES.map((t) => <option key={t}>{t}</option>)}</select>
             <input type="file" name="file" required />
-            <button>Upload to Drive</button>
+            <Btn>Upload to Drive</Btn>
           </form>
         )}
       </div>
@@ -69,10 +70,10 @@ export default function DocViewer({ appId, docs, missing, initial, canUpload }: 
         {!doc ? <p className="muted">Select a document.</p> : (
           <>
             <div className="filters" style={{ marginBottom: 10 }}>
-              <button className="ghost" onClick={() => go(idx - 1)}>← Prev</button>
-              <button className="ghost" onClick={() => go(idx + 1)}>Next →</button>
+              <button className="ghost sm" onClick={() => go(idx - 1)}>← Prev</button>
+              <button className="ghost sm" onClick={() => go(idx + 1)}>Next →</button>
               <b style={{ flex: 1 }}>{doc.name} <span className="muted">({idx + 1}/{docs.length})</span></b>
-              {isImage && <button className="ghost" onClick={() => setZoom(!zoom)}>{zoom ? 'Fit' : 'Zoom'}</button>}
+              {isImage && <button className="ghost sm" onClick={() => setZoom(!zoom)}>{zoom ? 'Fit' : 'Zoom'}</button>}
               <a href={doc.driveUrl} target="_blank" rel="noreferrer">Open in Drive ↗</a>
               {viaPortal && <a href={`/api/files/${doc.id}?download=1`}>Download</a>}
             </div>
@@ -93,7 +94,7 @@ export default function DocViewer({ appId, docs, missing, initial, canUpload }: 
               <input type="hidden" name="id" value={appId} /><input type="hidden" name="fileId" value={doc.id} /><input type="hidden" name="returnTo" value={returnTo} />
               <span className="muted">Document type:</span>
               <select name="docType" defaultValue={doc.type}>{ALL_DOC_TYPES.map((t) => <option key={t}>{t}</option>)}</select>
-              <button className="ghost">Change</button>
+              <Btn className="ghost sm">Change</Btn>
               <span className="muted">Use ← → keys to move between documents.</span>
             </form>
           </>
