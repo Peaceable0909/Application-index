@@ -20,6 +20,20 @@ async function log(applicationId: string, actor: string, kind: string, detail: o
   await db.from('portal_applications').update({ last_activity_at: new Date().toISOString() }).eq('application_id', applicationId);
 }
 
+// Status/counselor/notes live in the hand-maintained master sheet when the student is in it;
+// otherwise they go to the raw Applications sheet. Notes are appended, never overwritten.
+async function writeBack(id: string, fields: Record<string, string>, notesAppend?: string, by?: string) {
+  const { data: app } = await admin().from('portal_applications')
+    .select('in_master, has_raw, master_data').eq('application_id', id).single();
+  if (!app) throw new Error('Application not found');
+  if (app.in_master && app.master_data) {
+    const m = app.master_data as { email: string; name: string; school: string };
+    await callScript('updateMaster', { email: m.email, name: m.name, school: m.school, fields, notesAppend, by });
+  } else if (app.has_raw) {
+    await callScript('updateRow', { applicationId: id, fields, notesAppend, by });
+  }
+}
+
 export async function signIn(f: FormData) {
   const sb = await sessionClient();
   const { error } = await sb.auth.signInWithPassword({ email: s(f, 'email'), password: s(f, 'password') });
@@ -49,7 +63,7 @@ export async function syncNow(f: FormData) {
   let msg: string;
   try {
     const r = await syncAll({ full: f.get('full') === '1' });
-    msg = `Synced ${r.total} applications (${r.created} new).`;
+    msg = `Synced ${r.total} students: ${r.inBoth} in both sheets, ${r.rawOnly} form-only (not in master sheet), ${r.masterOnly} master-only. ${r.created} new.`;
   } catch (e) { msg = `Sync failed: ${(e as Error).message}`; }
   revalidatePath('/');
   redirect(`/?msg=${encodeURIComponent(msg)}`);
@@ -63,7 +77,7 @@ export async function updateStatus(f: FormData) {
   const { data: cur } = await db.from('portal_applications').select('status').eq('application_id', id).single();
   await db.from('portal_applications').update({ status }).eq('application_id', id);
   await log(id, staff.email, 'status_change', { from: cur?.status ?? null, to: status });
-  try { await callScript('updateRow', { applicationId: id, fields: { status } }); }
+  try { await writeBack(id, { status }); }
   catch (e) { return back(id, `Saved in portal but sheet write-back failed: ${(e as Error).message}`, true); }
   revalidatePath('/');
   back(id, 'Status updated');
@@ -76,7 +90,7 @@ export async function updateCounselor(f: FormData) {
   const { data: cur } = await db.from('portal_applications').select('counselor').eq('application_id', id).single();
   await db.from('portal_applications').update({ counselor: counselor || null }).eq('application_id', id);
   await log(id, staff.email, 'counselor_change', { from: cur?.counselor ?? null, to: counselor });
-  try { await callScript('updateRow', { applicationId: id, fields: { counselor } }); }
+  try { await writeBack(id, { counselor }); }
   catch (e) { return back(id, `Saved in portal but sheet write-back failed: ${(e as Error).message}`, true); }
   revalidatePath('/');
   back(id, 'Counselor updated');
@@ -88,7 +102,7 @@ export async function addNote(f: FormData) {
   if (!body) return back(id, 'Note is empty', true);
   await admin().from('portal_notes').insert({ application_id: id, author: staff.email, body, pinned: f.get('pinned') === 'on' });
   await log(id, staff.email, 'note', { preview: body.slice(0, 120) });
-  try { await callScript('updateRow', { applicationId: id, fields: { notes: body } }); } catch { /* portal is the record; sheet mirror is best-effort */ }
+  try { await writeBack(id, {}, body, staff.email); } catch { /* portal is the record; sheet mirror is best-effort */ }
   back(id, 'Note added');
 }
 

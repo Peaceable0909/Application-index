@@ -21,6 +21,9 @@
 // ============================================================
 
 const PORTAL_MAX_FILE_BYTES = 25 * 1024 * 1024;
+// The hand-maintained sheet (tab name). Only columns A..N are read; the
+// pipeline legend in columns O..Q is ignored.
+const MASTER_SHEET_NAME = 'Sheet1';
 
 function portalDispatch_(e) {
   try {
@@ -29,6 +32,8 @@ function portalDispatch_(e) {
     const p = e.parameter.payload ? JSON.parse(e.parameter.payload) : {};
     switch (e.parameter.action) {
       case 'listApplications': return portalJson_({ ok: true, data: portalListApplications_() });
+      case 'listMaster':       return portalJson_({ ok: true, data: portalListMaster_() });
+      case 'updateMaster':     return portalJson_({ ok: true, data: portalUpdateMaster_(p) });
       case 'listFiles':        return portalJson_({ ok: true, data: portalListFiles_(p.folderIds || []) });
       case 'getFile':          return portalJson_({ ok: true, data: portalGetFile_(p.fileId) });
       case 'uploadFile':       return portalJson_({ ok: true, data: portalUploadFile_(p) });
@@ -161,8 +166,105 @@ function portalUpdateRow_(p) {
     Object.keys(p.fields || {}).forEach(function (k) {
       if (map[k] && H[map[k]]) sheet.getRange(row, H[map[k]]).setValue(p.fields[k]);
     });
+    if (p.notesAppend && H['Notes']) portalAppendNote_(sheet.getRange(row, H['Notes']), p.notesAppend, p.by);
     return { row: row };
   } finally { lock.releaseLock(); }
+}
+
+// Never overwrite hand-written notes: add a dated line underneath.
+function portalAppendNote_(cell, text, by) {
+  const stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd MMM');
+  const line = '[' + stamp + (by ? ' ' + String(by).split('@')[0] : '') + '] ' + text;
+  const cur = String(cell.getValue() || '');
+  cell.setValue(cur ? cur + '\n' + line : line);
+}
+
+function portalSchoolKey_(school) {
+  const s = String(school || '').toLowerCase();
+  if (!s) return '';
+  if (/regent|\brcl\b/.test(s)) return 'rcl';
+  if (/canterbury|\bcccu\b/.test(s)) return 'cccu';
+  if (/\bbpp\b/.test(s)) return 'bpp';
+  if (/york st/.test(s)) return 'ysj';
+  return s.replace(/[^a-z0-9]+/g, '');
+}
+
+function portalCell_(v) { return v instanceof Date ? v.toISOString() : String(v == null ? '' : v); }
+
+// Rows of the hand-maintained master sheet (A..N).
+function portalListMaster_() {
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(MASTER_SHEET_NAME);
+  if (!sheet) throw new Error('Master tab "' + MASTER_SHEET_NAME + '" not found');
+  const last = sheet.getLastRow();
+  if (last < 2) return [];
+  const vals = sheet.getRange(2, 1, last - 1, 14).getValues();
+  const out = [];
+  vals.forEach(function (r, i) {
+    if (!String(r[1]).trim() && !String(r[2]).trim()) return;
+    out.push({
+      row: i + 2, studentIdOrDate: portalCell_(r[0]), name: portalCell_(r[1]), email: portalCell_(r[2]),
+      phone: portalCell_(r[3]), school: portalCell_(r[4]), programme: portalCell_(r[5]), country: portalCell_(r[6]),
+      city: portalCell_(r[7]), gender: portalCell_(r[8]), dob: portalCell_(r[9]), age: portalCell_(r[10]),
+      counselor: portalCell_(r[11]), status: portalCell_(r[12]).trim(), notes: portalCell_(r[13])
+    });
+  });
+  return out;
+}
+
+// p = { email, name, school, fields: { status?, counselor? }, notesAppend?, by? }
+// The row is found by email (+school) each time, because rows move when
+// someone sorts the sheet.
+function portalUpdateMaster_(p) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(MASTER_SHEET_NAME);
+    const last = sheet.getLastRow();
+    const vals = sheet.getRange(2, 1, Math.max(last - 1, 1), 14).getValues();
+    const email = String(p.email || '').trim().toLowerCase();
+    const name = String(p.name || '').toLowerCase().replace(/[^a-z]+/g, ' ').trim();
+    const school = portalSchoolKey_(p.school);
+    let row = 0;
+    vals.forEach(function (r, i) {
+      if (row) return;
+      const rEmail = String(r[2]).trim().toLowerCase();
+      const rName = String(r[1]).toLowerCase().replace(/[^a-z]+/g, ' ').trim();
+      const same = email ? rEmail === email : rName === name;
+      const rs = portalSchoolKey_(r[4]);
+      if (same && (!school || !rs || rs === school)) row = i + 2;
+    });
+    if (!row) throw new Error('Student not found in ' + MASTER_SHEET_NAME);
+    const f = p.fields || {};
+    if (f.status !== undefined) sheet.getRange(row, 13).setValue(f.status);
+    if (f.counselor !== undefined) sheet.getRange(row, 12).setValue(f.counselor);
+    if (p.notesAppend) portalAppendNote_(sheet.getRange(row, 14), p.notesAppend, p.by);
+    return { row: row };
+  } finally { lock.releaseLock(); }
+}
+
+// ---- Privacy ----------------------------------------------------------
+// Give the team (not the world) access to a student's folder. Call this in
+// doPost instead of setSharing(ANYONE_WITH_LINK ...). Files inherit it.
+function portalShareFolderPrivately_(folder) {
+  const people = SHEET_EDITORS.concat([RECIPIENT_EMAIL]);
+  try { folder.addViewers(people); } catch (err) { Logger.log('addViewers failed: ' + err); }
+}
+
+// RUN ONCE BY HAND (Run menu) to make every existing submission private.
+// Links that were shared earlier with people outside your team stop working.
+function lockDownExistingFolders() {
+  const main = getOrCreateFolder_(DRIVE_FOLDER_NAME);
+  const subs = main.getFolders();
+  let n = 0;
+  while (subs.hasNext()) {
+    const f = subs.next();
+    f.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE);
+    portalShareFolderPrivately_(f);
+    const files = f.getFiles();
+    while (files.hasNext()) files.next().setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE);
+    n++;
+  }
+  Logger.log('Locked down ' + n + ' folders');
 }
 
 // p = { to, cc?, subject, body, replyTo? }

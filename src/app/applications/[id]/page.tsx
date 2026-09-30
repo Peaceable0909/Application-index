@@ -8,6 +8,7 @@ import { ALL_DOC_TYPES, STATUSES } from '@/lib/constants';
 import { addNote, refreshDocuments, sendCounselorEmail, updateCounselor, updateStatus, uploadDocument } from '../../actions';
 
 type SP = { msg?: string; err?: string; preview?: string };
+const FIELDS: [string, string][] = [['name', 'Name'], ['email', 'Email'], ['phone', 'Phone'], ['school', 'University'], ['programme', 'Programme'], ['country', 'Country'], ['city', 'City'], ['gender', 'Gender'], ['dob', 'Date of birth'], ['age', 'Age'], ['counselor', 'Counselor'], ['status', 'Status'], ['notes', 'Notes']];
 const fmt = (d: string) => new Date(d).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
 const kb = (n: number | null) => (n ? `${Math.max(1, Math.round(n / 1024))} KB` : '');
 
@@ -75,14 +76,34 @@ export default async function ApplicationPage({ params, searchParams }: { params
         <div className="card">
           <h2>Manage</h2>
           <form action={updateStatus} className="filters"><input type="hidden" name="id" value={id} />
-            <select name="status" defaultValue={app.status || ''}><option value="" disabled>Set status…</option>{STATUSES.map((s) => <option key={s}>{s}</option>)}</select>
+            <select name="status" defaultValue={app.status || ''}><option value="" disabled>Set status…</option>
+              {app.status && !(STATUSES as readonly string[]).includes(app.status) && <option disabled>{app.status}</option>}{STATUSES.map((s) => <option key={s}>{s}</option>)}</select>
             <button>Update status</button></form>
           <form action={updateCounselor} className="filters" style={{ marginTop: 10 }}><input type="hidden" name="id" value={id} />
             <select name="counselor" defaultValue={app.counselor || ''}><option value="">Unassigned</option>
               {(counselors || []).filter((c) => c.active || c.name === app.counselor).map((c) => <option key={c.name}>{c.name}</option>)}</select>
             <button>Assign counselor</button></form>
-          <p className="muted">Changes are written back to your Google Sheet.</p>
+          <p className="muted">Changes are written to {app.in_master ? 'your master sheet (Sheet1)' : 'the Applications sheet'}. Notes are added underneath, never overwriting yours.</p>
         </div>
+      </div>
+
+      <div className="card">
+        <h2>Sources</h2>
+        <p className="muted">
+          {app.in_master ? 'Master sheet (Sheet1) is the curated record for status, counselor, notes and programme.' : <b>Not in the master sheet yet — only the raw form data exists.</b>}{' '}
+          {app.has_raw ? 'The form log (Applications) supplies documents and submission details.' : <b>No form submission found for this student.</b>}
+        </p>
+        <table className="cmp">
+          <thead><tr><th>Field</th><th>Master sheet (curated)</th><th>Form log (raw)</th></tr></thead>
+          <tbody>
+            {FIELDS.map(([k, label]) => {
+              const m = String((app.master_data as Record<string, string> | null)?.[k] ?? ''), r = String((app.raw_data as Record<string, string> | null)?.[k] ?? '');
+              const differs = app.in_master && app.has_raw && m.trim().toLowerCase() !== r.trim().toLowerCase() && m && r;
+              return <tr key={k} className={differs ? 'diff' : ''}><td className="muted">{label}</td><td>{m || '—'}</td><td>{r || '—'}</td></tr>;
+            })}
+            {app.student_ref && <tr><td className="muted">Student ID</td><td>{app.student_ref}</td><td>—</td></tr>}
+          </tbody>
+        </table>
       </div>
 
       <div className="card">
@@ -113,13 +134,13 @@ export default async function ApplicationPage({ params, searchParams }: { params
         <div style={{ marginTop: 14 }}>
           <b>Missing: </b>{missing.length ? missing.map((m) => <span key={m} className="badge amber" style={{ marginRight: 4 }}>{m}</span>) : <span className="badge green">nothing — complete</span>}
         </div>
-        <form action={uploadDocument} className="filters" style={{ marginTop: 12 }}>
+        {app.drive_folder_id ? <form action={uploadDocument} className="filters" style={{ marginTop: 12 }}>
           <input type="hidden" name="id" value={id} />
           <select name="docType" defaultValue={missing[0] || 'Other'}>{ALL_DOC_TYPES.map((t) => <option key={t}>{t}</option>)}</select>
           <input type="file" name="file" required />
           <button>Upload to Drive</button>
-        </form>
-        <form action={refreshDocuments} style={{ marginTop: 8 }}><input type="hidden" name="id" value={id} /><button className="ghost">Refresh from Drive</button></form>
+        </form> : <p className="muted">No Drive folder yet — this student hasn't submitted through the form.</p>}
+        {app.drive_folder_id && <form action={refreshDocuments} style={{ marginTop: 8 }}><input type="hidden" name="id" value={id} /><button className="ghost">Refresh from Drive</button></form>}
       </div>
 
       <div className="grid g2">

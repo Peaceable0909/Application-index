@@ -1,4 +1,4 @@
-import { REQUIRED_DOCS } from './constants';
+import { PROGRESS, REQUIRED_DOCS, STATUSES } from './constants';
 
 // Files saved by the app are named "<Student> - <Type>.pdf".
 export function docTypeFromName(fileName: string): string {
@@ -20,8 +20,38 @@ export function missingDocs(presentTypes: Iterable<string>): string[] {
   return REQUIRED_DOCS.filter((d) => !have.has(d));
 }
 
+// "RCL" (master sheet) and "Regent College London (RCL)" (form) are the same school.
+export function schoolKey(school: string | null): string {
+  const s = (school || '').toLowerCase().trim();
+  if (!s) return '';
+  if (/regent|\brcl\b/.test(s)) return 'rcl';
+  if (/canterbury|\bcccu\b/.test(s)) return 'cccu';
+  if (/\bbpp\b/.test(s)) return 'bpp';
+  if (/york st/.test(s)) return 'ysj';
+  return s.replace(/[^a-z0-9]+/g, '');
+}
+export function schoolDisplay(school: string | null): string | null {
+  const k = schoolKey(school);
+  if (k === 'rcl') return 'Regent College London (RCL)';
+  if (k === 'cccu') return 'Canterbury Christ Church University (CCCU)';
+  return school?.trim() || null;
+}
+export const normEmail = (e: string | null) => (e || '').trim().toLowerCase();
+export const normName = (n: string | null) => (n || '').toLowerCase().replace(/[^a-z]+/g, ' ').trim();
+
 export function studentKey(email: string | null, school: string | null, name: string): string {
-  return `${(email || name).trim().toLowerCase()}|${(school || '').trim().toLowerCase()}`;
+  return `${normEmail(email) || normName(name)}|${schoolKey(school)}`;
+}
+
+// "interview taken" / "AWAITING CAS" -> canonical label from our list.
+export function canonicalStatus(s: string | null): string | null {
+  const t = (s || '').trim();
+  if (!t) return null;
+  if (/^application rejected$/i.test(t)) return 'Rejected';
+  return STATUSES.find((x) => x.toLowerCase() === t.toLowerCase()) || t;
+}
+export function progressFor(status: string | null): number | null {
+  return status && PROGRESS[status] != null ? PROGRESS[status] : null;
 }
 
 export function counselorKey(name: string | null): string {

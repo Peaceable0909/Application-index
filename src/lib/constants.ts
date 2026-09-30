@@ -1,9 +1,11 @@
 // Pipeline taken from the stage column of your master sheet.
-export const STATUSES = [
-  'New Lead', 'Documents Requested', 'Submitted', 'CF Gotten', 'Offer Received',
-  'Interview Taken', 'Interview Passed', 'Unconditional Offer', 'CAS Applied',
-  'CAS Received', 'Visa Applied', 'Enrolled', 'Rejected', 'Withdrawn',
-] as const;
+// Pipeline legend from the master sheet (status -> progress %), plus statuses seen in the data.
+export const PROGRESS: Record<string, number> = {
+  'New Lead': 8, 'Documents Requested': 17, 'Submitted': 25, 'CF Gotten': 33, 'Offer Received': 42,
+  'Interview Taken': 50, 'Interview Passed': 58, 'Unconditional Offer': 67, 'CAS Applied': 75,
+  'CAS Received': 83, 'Visa Applied': 92, 'Enrolled': 100,
+};
+export const STATUSES = [...Object.keys(PROGRESS), 'Awaiting CAS', 'CAS Request', 'Rejected', 'Withdrawn'] as const;
 
 export const FINAL_STATUSES = ['Enrolled', 'Rejected', 'Withdrawn'];
 

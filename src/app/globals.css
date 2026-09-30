@@ -25,3 +25,5 @@ button { background:var(--navy); color:#fff; border-color:var(--navy); cursor:po
 .tl { list-style:none; padding:0; margin:0; } .tl li { padding:8px 0; border-bottom:1px solid var(--line); }
 iframe.preview { width:100%; height:70vh; border:1px solid var(--line); border-radius:8px; }
 .err { color:var(--red); } .ok { color:var(--green); }
+.bar{height:5px;width:90px;background:#eceae1;border-radius:3px;margin-top:5px;overflow:hidden}.bar i{display:block;height:100%;background:var(--gold)}
+table.cmp td:nth-child(n+2){word-break:break-word}.diff{background:#fef0c7}

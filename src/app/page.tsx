@@ -15,7 +15,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const db = admin();
   const [{ data: apps }, { data: docs }] = await Promise.all([
     db.from('portal_applications')
-      .select('application_id,name,email,school,programme,country,counselor,status,submitted_at,last_activity_at,student_key')
+      .select('application_id,name,email,school,programme,country,counselor,status,submitted_at,last_activity_at,student_key,in_master,has_raw,progress')
       .order('submitted_at', { ascending: false, nullsFirst: false }).limit(5000),
     db.from('portal_documents').select('application_id,doc_type').limit(50000),
   ]);
@@ -49,6 +49,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     (!sp.counselor || a.counselor === sp.counselor) && (!sp.country || a.country?.toLowerCase() === sp.country.toLowerCase()) &&
     (!sp.school || a.school === sp.school) && (!sp.programme || a.programme === sp.programme) &&
     (!sp.status || (sp.status === '__none' ? !a.status : a.status === sp.status)) &&
+    (!sp.source || (sp.source === 'raw_only' ? !a.in_master : sp.source === 'master_only' ? !a.has_raw : a.in_master && a.has_raw)) &&
     (!sp.attention || reasons.length > 0));
 
   const attentionTotal = rows.filter((r) => r.reasons.length).length;
@@ -78,6 +79,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         <select name="programme" defaultValue={sp.programme || ''}><option value="">All programmes</option>{options('programme').map((o) => <option key={o}>{o}</option>)}</select>
         <select name="country" defaultValue={sp.country || ''}><option value="">All countries</option>{countries.map((o) => <option key={o} value={o}>{o.toUpperCase()}</option>)}</select>
         <select name="status" defaultValue={sp.status || ''}><option value="">All statuses</option><option value="__none">(no status)</option>{STATUSES.map((o) => <option key={o}>{o}</option>)}</select>
+        <select name="source" defaultValue={sp.source || ''}><option value="">All sources</option><option value="both">In both sheets</option><option value="raw_only">Form only (not in master sheet)</option><option value="master_only">Master sheet only (no form)</option></select>
         <label><input type="checkbox" name="attention" value="1" defaultChecked={!!sp.attention} /> needs attention</label>
         <label><input type="checkbox" name="dups" value="1" defaultChecked={!!sp.dups} /> show duplicate submissions</label>
         <button>Filter</button> <Link href="/">Reset</Link>
@@ -93,7 +95,8 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
                   {dupCount.get(a.student_key)! > 1 && <span className="badge">{dupCount.get(a.student_key)} submissions</span>}</td>
                 <td>{a.school}<div className="muted">{a.programme}</div></td>
                 <td>{a.counselor || <span className="muted">—</span>}</td>
-                <td>{a.status ? <span className="badge">{a.status}</span> : <span className="muted">—</span>}</td>
+                <td>{a.status ? <span className="badge">{a.status}</span> : <span className="muted">—</span>}
+                  {a.progress != null && <div className="bar" title={`${a.progress}%`}><i style={{ width: `${a.progress}%` }} /></div>}</td>
                 <td>{missing.length === 0 ? <span className="badge green">Complete</span> : <span className="badge amber" title={missing.join(', ')}>Missing {missing.length}</span>}</td>
                 <td>{reasons.map((r) => <span key={r} className="badge red" style={{ marginRight: 4 }}>{r}</span>)}</td>
                 <td className="muted">{a.submitted_at ? new Date(a.submitted_at).toLocaleDateString('en-GB') : ''}</td>
