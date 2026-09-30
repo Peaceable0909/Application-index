@@ -12,9 +12,12 @@ export function attentionReasons(a: AppRow, missing: string[], docCount: number)
   const now = Date.now();
   if (!a.in_master) r.push('Not in master sheet');
   if (a.interview && /to be booked/i.test(a.interview)) r.push('Interview to book');
-  if (!a.has_raw) r.push('No form submission');
-  else if (docCount === 0) r.push('No documents');
-  if (a.has_raw && docCount > 0 && missing.length) r.push(`Missing ${missing.length} doc${missing.length > 1 ? 's' : ''}`);
+  // Students who only exist in the sheets (no form submission) are already being handled by the team,
+  // so their documents aren't judged.
+  if (a.has_raw) {
+    if (docCount === 0) r.push('No documents');
+    else if (missing.length) r.push(`Missing ${missing.length} doc${missing.length > 1 ? 's' : ''}`);
+  }
   if (!a.counselor) r.push('No counselor');
   const final = a.status && FINAL_STATUSES.includes(a.status);
   if (!final) {

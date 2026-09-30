@@ -42,7 +42,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const base = sp.dups ? all : all.filter((a) => (seen.has(a.student_key) ? false : (seen.add(a.student_key), true)));
 
   const rows = base.map((a) => {
-    const missing = missingDocs(typesByKey.get(a.student_key) || []);
+    const missing = a.has_raw ? missingDocs(typesByKey.get(a.student_key) || []) : [];
     const reasons = attentionReasons(a, missing, countByKey.get(a.student_key) || 0);
     return { a, missing, reasons };
   });
@@ -126,7 +126,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
                     <td>{a.in_regent ? <div className="chips">{a.opp_id && <span className="badge plain" title="OPP ID">{a.opp_id.replace(/^OPP ID-/i, '')}</span>}
                       {a.payment ? <span className={`badge ${/^paid/i.test(a.payment) ? 'green' : 'amber'}`}>{a.payment}</span> : <span className="badge amber">Unpaid</span>}
                       {a.interview && <span className="badge plain">{a.interview}</span>}</div> : <span className="muted">—</span>}</td>
-                    <td>{missing.length === 0 ? <span className="badge green">Complete</span> : <span className="badge amber" title={missing.join(', ')}>Missing {missing.length}</span>}</td>
+                    <td>{!a.has_raw ? <span className="muted">Tracked in sheet</span> : missing.length === 0 ? <span className="badge green">Complete</span> : <span className="badge amber" title={missing.join(', ')}>Missing {missing.length}</span>}</td>
                     <td><div className="chips">{reasons.map((r) => <span key={r} className="badge red">{r}</span>)}</div></td>
                     <td className="muted">{a.submitted_at ? new Date(a.submitted_at).toLocaleDateString('en-GB') : ''}</td>
                   </tr>

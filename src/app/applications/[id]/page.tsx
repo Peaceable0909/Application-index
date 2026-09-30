@@ -50,7 +50,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
   ]);
   const { data: docs } = await db.from('portal_documents').select('*').in('application_id', (siblings || []).map((s) => s.application_id)).order('created_at', { ascending: false });
 
-  const missing = missingDocs((docs || []).map(effType));
+  const missing = app.has_raw ? missingDocs((docs || []).map(effType)) : [];
   const reasons = attentionReasons(app as AppRow, missing, (docs || []).length);
   const counselor = (counselors || []).find((c) => counselorKey(c.name) === counselorKey(app.counselor));
   const previewDoc = sp.preview ? (docs || []).find((d) => d.drive_file_id === sp.preview) : null;
@@ -176,7 +176,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
               </div>
             )}
             <div style={{ marginTop: 16 }} className="chips">
-              <b>Missing</b>{missing.length ? missing.map((m) => <span key={m} className="badge amber">{m}</span>) : <span className="badge green">nothing — complete</span>}
+              <b>Missing</b>{!app.has_raw ? <span className="muted">not checked — this student is tracked in the sheets only</span> : missing.length ? missing.map((m) => <span key={m} className="badge amber">{m}</span>) : <span className="badge green">nothing — complete</span>}
             </div>
             {app.drive_folder_id ? (
               <div className="filters" style={{ marginTop: 16 }}>
