@@ -24,7 +24,7 @@ export type SheetRow = {
   school: string; programme: string; country: string; city: string; gender: string; dob: string; age: string;
   counselor: string; status: string; notes: string; driveFolderId: string;
 };
-export type DriveFile = { id: string; name: string; mimeType: string; size: number; url: string; createdAt: string };
+export type DriveFile = { id: string; name: string; mimeType: string; size: number; url: string; createdAt: string; path?: string };
 export type MasterRow = {
   row: number; studentIdOrDate: string; name: string; email: string; phone: string; school: string; programme: string;
   country: string; city: string; gender: string; dob: string; age: string; counselor: string; status: string; notes: string;

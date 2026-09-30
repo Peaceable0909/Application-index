@@ -17,7 +17,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     db.from('portal_applications')
       .select('application_id,name,email,school,programme,country,counselor,status,submitted_at,last_activity_at,student_key,in_master,has_raw,progress')
       .order('submitted_at', { ascending: false, nullsFirst: false }).limit(5000),
-    db.from('portal_documents').select('application_id,doc_type').limit(50000),
+    db.from('portal_documents').select('application_id,doc_type,type_override').limit(50000),
   ]);
   const all = (apps || []) as AppRow[];
 
@@ -27,7 +27,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const countByKey = new Map<string, number>();
   (docs || []).forEach((d) => {
     const k = appToKey.get(d.application_id); if (!k) return;
-    (typesByKey.get(k) || typesByKey.set(k, new Set()).get(k)!).add(d.doc_type);
+    (typesByKey.get(k) || typesByKey.set(k, new Set()).get(k)!).add(d.type_override || d.doc_type);
     countByKey.set(k, (countByKey.get(k) || 0) + 1);
   });
   const dupCount = new Map<string, number>();

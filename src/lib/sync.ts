@@ -26,7 +26,7 @@ export async function syncFolders(appIds: { id: string; folder: string }[]) {
       if (files.length) {
         await db.from('portal_documents').upsert(files.map((f) => ({
           drive_file_id: f.id, application_id: id, name: f.name, doc_type: docTypeFromName(f.name),
-          mime_type: f.mimeType, size_bytes: f.size, drive_url: f.url, created_at: f.createdAt,
+          mime_type: f.mimeType, size_bytes: f.size, drive_url: f.url, created_at: f.createdAt, folder_path: f.path || null,
         })), { onConflict: 'drive_file_id', ignoreDuplicates: false });
       }
       const keep = files.map((f) => f.id);

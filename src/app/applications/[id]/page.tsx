@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import { requireStaff } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
 import { attentionReasons, AppRow } from '@/lib/attention';
-import { missingDocs, counselorKey } from '@/lib/docs';
+import { missingDocs, counselorKey, effType } from '@/lib/docs';
 import { ALL_DOC_TYPES, STATUSES } from '@/lib/constants';
 import { addNote, refreshDocuments, sendCounselorEmail, updateCounselor, updateStatus, uploadDocument } from '../../actions';
 
@@ -20,6 +20,7 @@ function describe(kind: string, d: Record<string, string>) {
     case 'note': return `Note: ${d.preview}`;
     case 'email_sent': return `Emailed ${d.to}: ${d.subject}`;
     case 'doc_uploaded': return `Uploaded ${d.name}`;
+    case 'doc_retyped': return `Marked ${d.name} as ${d.type}`;
     default: return kind;
   }
 }
@@ -41,7 +42,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
   const sibIds = (siblings || []).map((s) => s.application_id);
   const { data: docs } = await db.from('portal_documents').select('*').in('application_id', sibIds).order('created_at', { ascending: false });
 
-  const missing = missingDocs((docs || []).map((d) => d.doc_type));
+  const missing = missingDocs((docs || []).map(effType));
   const reasons = attentionReasons(app as AppRow, missing, (docs || []).length);
   const counselor = (counselors || []).find((c) => counselorKey(c.name) === counselorKey(app.counselor));
   const previewDoc = sp.preview ? (docs || []).find((d) => d.drive_file_id === sp.preview) : null;
@@ -107,17 +108,17 @@ export default async function ApplicationPage({ params, searchParams }: { params
       </div>
 
       <div className="card">
-        <h2>Documents</h2>
+        <h2>Documents <Link href={`/applications/${id}/documents`} style={{ fontSize: 13, marginLeft: 8 }}>Open document viewer →</Link></h2>
         <table>
           <thead><tr><th>Type</th><th>File</th><th>Added</th><th>Location</th><th /></tr></thead>
           <tbody>
             {(docs || []).map((d) => (
               <tr key={d.drive_file_id}>
-                <td><span className="badge">{d.doc_type}</span></td>
+                <td><span className="badge">{effType(d)}</span></td>
                 <td>{d.name} <span className="muted">{kb(d.size_bytes)}</span>{d.application_id !== id && <span className="badge"> other submission</span>}{d.source === 'portal' && <span className="badge"> uploaded in portal</span>}</td>
                 <td className="muted">{fmt(d.created_at)}</td>
                 <td><a href={d.drive_url} target="_blank">Drive ↗</a> <span className="muted">· Whiterock Admissions / {app.name} …</span></td>
-                <td><Link href={`?preview=${d.drive_file_id}`}>Preview</Link> · <a href={`/api/files/${d.drive_file_id}?download=1`}>Download</a></td>
+                <td><Link href={`/applications/${id}/documents?file=${d.drive_file_id}`}>View</Link> · <a href={`/api/files/${d.drive_file_id}?download=1`}>Download</a></td>
               </tr>
             ))}
             {!(docs || []).length && <tr><td colSpan={5} className="muted">No documents found.</td></tr>}

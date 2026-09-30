@@ -98,9 +98,19 @@ function portalListApplications_() {
   } finally { lock.releaseLock(); }
 }
 
-function portalFileInfo_(f) {
+function portalFileInfo_(f, path) {
   return { id: f.getId(), name: f.getName(), mimeType: f.getMimeType(), size: f.getSize(),
-           url: f.getUrl(), createdAt: f.getDateCreated().toISOString() };
+           url: f.getUrl(), createdAt: f.getDateCreated().toISOString(), path: path || '' };
+}
+
+// Files in the student's folder plus one level of subfolders.
+function portalCollect_(folder, path, depth, out) {
+  const it = folder.getFiles();
+  while (it.hasNext()) out.push(portalFileInfo_(it.next(), path));
+  if (depth > 0) {
+    const subs = folder.getFolders();
+    while (subs.hasNext()) { const sf = subs.next(); portalCollect_(sf, (path ? path + '/' : '') + sf.getName(), depth - 1, out); }
+  }
 }
 
 function portalListFiles_(folderIds) {
@@ -108,8 +118,7 @@ function portalListFiles_(folderIds) {
   folderIds.forEach(function (id) {
     try {
       const files = [];
-      const it = DriveApp.getFolderById(id).getFiles();
-      while (it.hasNext()) files.push(portalFileInfo_(it.next()));
+      portalCollect_(DriveApp.getFolderById(id), '', 1, files);
       result[id] = files;
     } catch (err) { result[id] = { error: String(err) }; }
   });
@@ -118,9 +127,13 @@ function portalListFiles_(folderIds) {
 
 function portalGetFile_(fileId) {
   const f = DriveApp.getFileById(fileId);
-  if (f.getSize() > PORTAL_MAX_FILE_BYTES) throw new Error('File too large to preview; open in Drive');
-  const blob = f.getBlob();
-  return { name: f.getName(), mimeType: blob.getContentType(), base64: Utilities.base64Encode(blob.getBytes()) };
+  const mime = f.getMimeType();
+  // Google Docs / Sheets / Slides can't be downloaded as-is: export to PDF.
+  const native = mime.indexOf('application/vnd.google-apps') === 0;
+  const blob = native ? f.getAs('application/pdf') : f.getBlob();
+  const bytes = blob.getBytes();
+  if (bytes.length > PORTAL_MAX_FILE_BYTES) throw new Error('File too large to preview; open in Drive');
+  return { name: native ? f.getName() + '.pdf' : f.getName(), mimeType: blob.getContentType(), base64: Utilities.base64Encode(bytes) };
 }
 
 function portalUploadFile_(p) {

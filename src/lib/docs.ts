@@ -57,3 +57,5 @@ export function progressFor(status: string | null): number | null {
 export function counselorKey(name: string | null): string {
   return (name || '').toLowerCase().replace(/\b(mr|mrs|ms|miss|dr)\b\.?/g, '').replace(/\s+/g, ' ').trim();
 }
+
+export const effType = (d: { doc_type: string; type_override?: string | null }) => d.type_override || d.doc_type;

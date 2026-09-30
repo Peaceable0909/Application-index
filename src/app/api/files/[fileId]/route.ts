@@ -9,8 +9,9 @@ import { callScript } from '@/lib/appsScript';
 export async function GET(req: Request, { params }: { params: Promise<{ fileId: string }> }) {
   if (!(await currentStaff())) return new NextResponse('Unauthorized', { status: 401 });
   const { fileId } = await params;
-  const { data: doc } = await admin().from('portal_documents').select('drive_file_id').eq('drive_file_id', fileId).maybeSingle();
+  const { data: doc } = await admin().from('portal_documents').select('drive_file_id, size_bytes').eq('drive_file_id', fileId).maybeSingle();
   if (!doc) return new NextResponse('Not found', { status: 404 });
+  if ((doc.size_bytes || 0) > 4 * 1024 * 1024) return new NextResponse('Too large to stream here; open it in Drive', { status: 413 });
   try {
     const f = await callScript<{ name: string; mimeType: string; base64: string }>('getFile', { fileId });
     const download = new URL(req.url).searchParams.get('download') === '1';

@@ -6,13 +6,14 @@ import { admin, sessionClient } from '@/lib/supabase';
 import { requireStaff } from '@/lib/auth';
 import { callScript, DriveFile } from '@/lib/appsScript';
 import { counselorKey, docTypeFromName } from '@/lib/docs';
+import { ALL_DOC_TYPES } from '@/lib/constants';
 import { syncAll, syncFolders } from '@/lib/sync';
 import { STATUSES } from '@/lib/constants';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const s = (f: FormData, k: string) => String(f.get(k) ?? '').trim();
-const back = (id: string, msg: string, err = false) =>
-  redirect(`/applications/${encodeURIComponent(id)}?${err ? 'err' : 'msg'}=${encodeURIComponent(msg)}`);
+const back = (id: string, msg: string, err = false, returnTo?: string) =>
+  redirect(`${returnTo && returnTo.startsWith(`/applications/${id}`) ? returnTo.split('?')[0] : `/applications/${encodeURIComponent(id)}`}?${err ? 'err' : 'msg'}=${encodeURIComponent(msg)}`);
 
 async function log(applicationId: string, actor: string, kind: string, detail: object = {}) {
   const db = admin();
@@ -119,12 +120,12 @@ export async function sendCounselorEmail(f: FormData) {
 
 export async function uploadDocument(f: FormData) {
   const staff = await requireStaff();
-  const id = s(f, 'id'), docType = s(f, 'docType');
+  const id = s(f, 'id'), docType = s(f, 'docType'), ret = s(f, 'returnTo');
   const file = f.get('file') as File | null;
-  if (!file || !file.size) return back(id, 'Choose a file', true);
+  if (!file || !file.size) return back(id, 'Choose a file', true, ret);
   const db = admin();
   const { data: app } = await db.from('portal_applications').select('name, drive_folder_id').eq('application_id', id).single();
-  if (!app?.drive_folder_id) return back(id, 'This application has no Drive folder', true);
+  if (!app?.drive_folder_id) return back(id, 'This application has no Drive folder', true, ret);
   const ext = (file.name.match(/\.[^.]+$/) || ['.pdf'])[0];
   const name = docType && docType !== 'Other' ? `${app.name} - ${docType}${ext}` : file.name;
   try {
@@ -137,8 +138,8 @@ export async function uploadDocument(f: FormData) {
       size_bytes: up.size, drive_url: up.url, source: 'portal', uploaded_by: staff.email,
     });
     await log(id, staff.email, 'doc_uploaded', { name: up.name });
-  } catch (e) { return back(id, `Upload failed: ${(e as Error).message}`, true); }
-  back(id, 'Document uploaded to Drive and linked');
+  } catch (e) { return back(id, `Upload failed: ${(e as Error).message}`, true, ret); }
+  back(id, 'Document uploaded to Drive and linked', false, ret);
 }
 
 export async function refreshDocuments(f: FormData) {
@@ -147,6 +148,16 @@ export async function refreshDocuments(f: FormData) {
   const { data: app } = await admin().from('portal_applications').select('drive_folder_id').eq('application_id', id).single();
   if (app?.drive_folder_id) await syncFolders([{ id, folder: app.drive_folder_id }]);
   back(id, 'Documents refreshed from Drive');
+}
+
+export async function setDocType(f: FormData) {
+  const staff = await requireStaff();
+  const id = s(f, 'id'), fileId = s(f, 'fileId'), type = s(f, 'docType'), ret = s(f, 'returnTo');
+  if (!(ALL_DOC_TYPES as readonly string[]).includes(type)) return back(id, 'Invalid document type', true, ret);
+  const { data: doc } = await admin().from('portal_documents').select('name, doc_type').eq('drive_file_id', fileId).single();
+  await admin().from('portal_documents').update({ type_override: type === doc?.doc_type ? null : type }).eq('drive_file_id', fileId);
+  await log(id, staff.email, 'doc_retyped', { name: doc?.name, type });
+  back(id, `Marked as ${type}`, false, ret);
 }
 
 // ---- Settings ----
