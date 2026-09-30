@@ -34,6 +34,7 @@ function portalDispatch_(e) {
       case 'listApplications': return portalJson_({ ok: true, data: portalListApplications_() });
       case 'listMaster':       return portalJson_({ ok: true, data: portalListMaster_() });
       case 'updateMaster':     return portalJson_({ ok: true, data: portalUpdateMaster_(p) });
+      case 'addMaster':        return portalJson_({ ok: true, data: portalAddMaster_(p) });
       case 'listFiles':        return portalJson_({ ok: true, data: portalListFiles_(p.folderIds || []) });
       case 'getFile':          return portalJson_({ ok: true, data: portalGetFile_(p.fileId) });
       case 'uploadFile':       return portalJson_({ ok: true, data: portalUploadFile_(p) });
@@ -252,6 +253,40 @@ function portalUpdateMaster_(p) {
     if (f.counselor !== undefined) sheet.getRange(row, 12).setValue(f.counselor);
     if (p.notesAppend) portalAppendNote_(sheet.getRange(row, 14), p.notesAppend, p.by);
     return { row: row };
+  } finally { lock.releaseLock(); }
+}
+
+// p = { date(ISO), name, email, phone, school, programme, country, city, gender, dob, age, counselor, status, notes }
+// Appends a student to the bottom of the master sheet (A..N), copying the
+// formatting of the row above. Skips students who are already there.
+function portalAddMaster_(p) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(MASTER_SHEET_NAME);
+    const maxRows = sheet.getMaxRows();
+    const names = sheet.getRange(1, 2, maxRows, 1).getValues();
+    let last = 1;
+    for (let i = names.length - 1; i >= 1; i--) { if (String(names[i][0]).trim()) { last = i + 1; break; } }
+    const email = String(p.email || '').trim().toLowerCase();
+    const school = portalSchoolKey_(p.school);
+    if (last >= 2) {
+      const ex = sheet.getRange(2, 1, last - 1, 14).getValues();
+      for (let i = 0; i < ex.length; i++) {
+        const rs = portalSchoolKey_(ex[i][4]);
+        if (email && String(ex[i][2]).trim().toLowerCase() === email && (!school || !rs || rs === school)) return { exists: true, row: i + 2 };
+      }
+    }
+    const row = last + 1;
+    if (row > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), 1);
+    try { sheet.getRange(last, 1, 1, 14).copyTo(sheet.getRange(row, 1, 1, 14), SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false); } catch (e) {}
+    sheet.getRange(row, 4).setNumberFormat('@');   // phone stays text (+234...)
+    sheet.getRange(row, 10).setNumberFormat('@');  // date of birth stays dd/mm/yyyy text
+    sheet.getRange(row, 1, 1, 14).setValues([[
+      p.date ? new Date(p.date) : new Date(), p.name || '', p.email || '', p.phone || '', p.school || '', p.programme || '',
+      p.country || '', p.city || '', p.gender || '', p.dob || '', p.age || '', p.counselor || '', p.status || '', p.notes || ''
+    ]]);
+    return { exists: false, row: row };
   } finally { lock.releaseLock(); }
 }
 

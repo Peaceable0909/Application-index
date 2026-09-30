@@ -5,7 +5,7 @@ import { admin } from '@/lib/supabase';
 import { attentionReasons, AppRow } from '@/lib/attention';
 import { missingDocs, counselorKey, effType } from '@/lib/docs';
 import { ALL_DOC_TYPES, STATUSES } from '@/lib/constants';
-import { addNote, refreshDocuments, sendCounselorEmail, updateCounselor, updateStatus, uploadDocument } from '../../actions';
+import { addNote, addToMaster, refreshDocuments, sendCounselorEmail, updateCounselor, updateStatus, uploadDocument } from '../../actions';
 
 type SP = { msg?: string; err?: string; preview?: string };
 const FIELDS: [string, string][] = [['name', 'Name'], ['email', 'Email'], ['phone', 'Phone'], ['school', 'University'], ['programme', 'Programme'], ['country', 'Country'], ['city', 'City'], ['gender', 'Gender'], ['dob', 'Date of birth'], ['age', 'Age'], ['counselor', 'Counselor'], ['status', 'Status'], ['notes', 'Notes']];
@@ -20,6 +20,7 @@ function describe(kind: string, d: Record<string, string>) {
     case 'note': return `Note: ${d.preview}`;
     case 'email_sent': return `Emailed ${d.to}: ${d.subject}`;
     case 'doc_uploaded': return `Uploaded ${d.name}`;
+    case 'moved_to_master': return `Added to master sheet as ${d.status}`;
     case 'doc_retyped': return `Marked ${d.name} as ${d.type}`;
     default: return kind;
   }
@@ -60,6 +61,20 @@ export default async function ApplicationPage({ params, searchParams }: { params
       {sp.msg && <div className="card ok">{sp.msg}</div>}
       {sp.err && <div className="card err">{sp.err}</div>}
       {reasons.length > 0 && <div className="card">{reasons.map((r) => <span key={r} className="badge red" style={{ marginRight: 6 }}>{r}</span>)}</div>}
+
+      {!app.in_master && app.has_raw && (
+        <div className="card" style={{ borderColor: 'var(--gold)' }}>
+          <h2>Not in the master sheet yet</h2>
+          <form action={addToMaster} className="filters">
+            <input type="hidden" name="id" value={id} />
+            <select name="status" defaultValue="New Lead">{STATUSES.map((s) => <option key={s}>{s}</option>)}</select>
+            <select name="counselor" defaultValue={app.counselor || ''}><option value="">Counselor…</option>
+              {(counselors || []).filter((c) => c.active).map((c) => <option key={c.name}>{c.name}</option>)}</select>
+            <button>Move to master sheet</button>
+            <span className="muted">Adds a row at the bottom of Sheet1 with these details.</span>
+          </form>
+        </div>
+      )}
 
       <div className="grid g2">
         <div className="card">

@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { admin, sessionClient } from '@/lib/supabase';
 import { requireStaff } from '@/lib/auth';
 import { callScript, DriveFile } from '@/lib/appsScript';
-import { counselorKey, docTypeFromName } from '@/lib/docs';
+import { counselorKey, docTypeFromName, dobForMaster, schoolShort } from '@/lib/docs';
 import { ALL_DOC_TYPES } from '@/lib/constants';
 import { syncAll, syncFolders } from '@/lib/sync';
 import { STATUSES } from '@/lib/constants';
@@ -68,6 +68,49 @@ export async function syncNow(f: FormData) {
   } catch (e) { msg = `Sync failed: ${(e as Error).message}`; }
   revalidatePath('/');
   redirect(`/?msg=${encodeURIComponent(msg)}`);
+}
+
+// Appends a form-only student to the master sheet. Returns 'added' | 'exists' | error text.
+async function pushToMaster(id: string, actor: string, status: string, counselor?: string): Promise<string> {
+  const db = admin();
+  const { data: a } = await db.from('portal_applications').select('*').eq('application_id', id).single();
+  if (!a) return 'Application not found';
+  if (a.in_master) return 'exists';
+  const r = await callScript<{ exists: boolean; row: number }>('addMaster', {
+    date: a.submitted_at, name: a.name, email: a.email || '', phone: a.phone || '', school: schoolShort(a.school),
+    programme: a.programme && a.programme.toUpperCase() !== 'N/A' ? a.programme : '', country: a.country || '',
+    city: a.city || '', gender: a.gender || '', dob: dobForMaster(a.dob), age: a.age || '',
+    counselor: counselor ?? a.counselor ?? '', status,
+  });
+  await log(id, actor, 'moved_to_master', { row: r.row, status, exists: r.exists });
+  return r.exists ? 'exists' : 'added';
+}
+
+export async function addToMaster(f: FormData) {
+  const staff = await requireStaff();
+  const id = s(f, 'id');
+  if (!(STATUSES as readonly string[]).includes(s(f, 'status'))) return back(id, 'Choose a status', true);
+  try {
+    const res = await pushToMaster(id, staff.email, s(f, 'status'), s(f, 'counselor') || undefined);
+    await syncAll();
+    revalidatePath('/');
+    return back(id, res === 'exists' ? 'Already in the master sheet' : 'Added to the master sheet (Sheet1)');
+  } catch (e) { return back(id, `Could not add: ${(e as Error).message}`, true); }
+}
+
+export async function bulkAddToMaster(f: FormData) {
+  const staff = await requireStaff();
+  const all = f.getAll('ids').map(String).filter(Boolean);
+  const ids = all.slice(0, 15); // keep within the server time limit; do the rest in another batch
+  const status = s(f, 'status') || 'New Lead';
+  if (!ids.length) redirect(`/?source=raw_only&err=${encodeURIComponent('Tick at least one student')}`);
+  let added = 0, existed = 0, failed = 0;
+  for (const id of ids) {
+    try { (await pushToMaster(id, staff.email, status)) === 'added' ? added++ : existed++; } catch { failed++; }
+  }
+  try { await syncAll(); } catch { /* next sync will catch up */ }
+  revalidatePath('/');
+  redirect(`/?source=raw_only&msg=${encodeURIComponent(`Added ${added} to the master sheet${existed ? `, ${existed} already there` : ''}${failed ? `, ${failed} failed` : ''}.${all.length > ids.length ? ` ${all.length - ids.length} left — run it again.` : ''}`)}`);
 }
 
 export async function updateStatus(f: FormData) {

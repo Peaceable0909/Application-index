@@ -59,3 +59,13 @@ export function counselorKey(name: string | null): string {
 }
 
 export const effType = (d: { doc_type: string; type_override?: string | null }) => d.type_override || d.doc_type;
+
+// Master-sheet conventions: short school codes and dd/mm/yyyy dates.
+export function schoolShort(school: string | null): string {
+  const k = schoolKey(school);
+  return k === 'rcl' ? 'RCL' : k === 'cccu' ? 'CCCU' : (school || '').trim();
+}
+export function dobForMaster(dob: string | null): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec((dob || '').trim());
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : (dob || '').trim();
+}

@@ -4,7 +4,9 @@ import { admin } from '@/lib/supabase';
 import { attentionReasons, AppRow } from '@/lib/attention';
 import { missingDocs } from '@/lib/docs';
 import { STATUSES } from '@/lib/constants';
-import { syncNow } from './actions';
+import { bulkAddToMaster, syncNow } from './actions';
+
+export const maxDuration = 60;
 
 type SP = Record<string, string | undefined>;
 const uniq = (xs: (string | null)[]) => [...new Set(xs.filter(Boolean) as string[])].sort();
@@ -60,6 +62,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     <>
       <h1>Applications</h1>
       {sp.msg && <div className="card ok">{sp.msg}</div>}
+      {sp.err && <div className="card err">{sp.err}</div>}
       <div className="grid g4">
         <div className="card"><div className="muted">Students</div><div className="stat">{base.length}</div></div>
         <div className="card"><div className="muted">Need attention</div><div className="stat" style={{ color: 'var(--red)' }}>{attentionTotal}</div></div>
@@ -85,12 +88,22 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         <button>Filter</button> <Link href="/">Reset</Link>
       </form>
 
+      <form action={bulkAddToMaster}>
+      {filtered.some(({ a }) => !a.in_master && a.has_raw) && (
+        <div className="card filters">
+          <b>Tick form-only students to move them into the master sheet:</b>
+          <select name="status" defaultValue="New Lead">{STATUSES.map((o) => <option key={o}>{o}</option>)}</select>
+          <button>Add selected to master sheet</button>
+          <span className="muted">Up to 15 at a time. Counselor comes from the form.</span>
+        </div>
+      )}
       <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
         <table>
-          <thead><tr><th>Student</th><th>University / Programme</th><th>Counselor</th><th>Status</th><th>Documents</th><th>Attention</th><th>Submitted</th></tr></thead>
+          <thead><tr><th style={{ width: 28 }} /><th>Student</th><th>University / Programme</th><th>Counselor</th><th>Status</th><th>Documents</th><th>Attention</th><th>Submitted</th></tr></thead>
           <tbody>
             {filtered.map(({ a, missing, reasons }) => (
               <tr key={a.application_id} className="row">
+                <td>{!a.in_master && a.has_raw && <input type="checkbox" name="ids" value={a.application_id} />}</td>
                 <td><Link href={`/applications/${a.application_id}`}><b>{a.name}</b></Link><div className="muted">{a.email}</div>
                   {dupCount.get(a.student_key)! > 1 && <span className="badge">{dupCount.get(a.student_key)} submissions</span>}</td>
                 <td>{a.school}<div className="muted">{a.programme}</div></td>
@@ -102,10 +115,11 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
                 <td className="muted">{a.submitted_at ? new Date(a.submitted_at).toLocaleDateString('en-GB') : ''}</td>
               </tr>
             ))}
-            {!filtered.length && <tr><td colSpan={7} className="muted">No applications match. If this is a new install, press “Sync now”.</td></tr>}
+            {!filtered.length && <tr><td colSpan={8} className="muted">No applications match. If this is a new install, press “Sync now”.</td></tr>}
           </tbody>
         </table>
       </div>
+      </form>
     </>
   );
 }
