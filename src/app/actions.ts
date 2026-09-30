@@ -1,5 +1,6 @@
 'use server';
 import { redirect } from 'next/navigation';
+import { headers } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 import { admin, sessionClient } from '@/lib/supabase';
 import { requireStaff } from '@/lib/auth';
@@ -24,6 +25,18 @@ export async function signIn(f: FormData) {
   const { error } = await sb.auth.signInWithPassword({ email: s(f, 'email'), password: s(f, 'password') });
   if (error) redirect(`/login?error=${encodeURIComponent(error.message)}`);
   redirect('/');
+}
+export async function signInWithGoogle() {
+  const h = await headers();
+  const host = h.get('x-forwarded-host') || h.get('host');
+  const proto = h.get('x-forwarded-proto') || 'https';
+  const sb = await sessionClient();
+  const { data, error } = await sb.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: `${proto}://${host}/auth/callback`, queryParams: { prompt: 'select_account' } },
+  });
+  if (error || !data.url) redirect(`/login?error=${encodeURIComponent(error?.message || 'Google sign-in failed')}`);
+  redirect(data.url);
 }
 export async function signOut() {
   const sb = await sessionClient();
