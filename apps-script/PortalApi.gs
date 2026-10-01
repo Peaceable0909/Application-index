@@ -45,6 +45,7 @@ function portalDispatch_(e) {
       case 'updateMaster':     return portalJson_({ ok: true, data: portalUpdateMaster_(p) });
       case 'addMaster':        return portalJson_({ ok: true, data: portalAddMaster_(p) });
       case 'listRegent':       return portalJson_({ ok: true, data: portalListRegent_() });
+      case 'aiChat':           return portalJson_({ ok: true, data: portalAiChat_(p) });
       case 'searchFolders':    return portalJson_({ ok: true, data: portalSearchFolders_(p.students || []) });
       case 'updateRegent':     return portalJson_({ ok: true, data: portalUpdateRegent_(p) });
       case 'listFiles':        return portalJson_({ ok: true, data: portalListFiles_(p.folderIds || []) });
@@ -382,6 +383,37 @@ function portalSearchFolders_(students) {
     out[st.id] = cands;
   });
   return out;
+}
+
+// ---- AI (Qwen) ----------------------------------------------------------
+// Script properties used (reuse the ones you already have):
+//   QWEN_API_KEY   (or DASHSCOPE_API_KEY)  required
+//   QWEN_BASE_URL  default https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+//   QWEN_MODEL     default qwen-plus
+// p = { system, user, maxTokens?, json? }  ->  { text, model, tokens }
+function portalAiChat_(p) {
+  const props = PropertiesService.getScriptProperties();
+  const key = props.getProperty('QWEN_API_KEY') || props.getProperty('DASHSCOPE_API_KEY');
+  if (!key) throw new Error('Qwen API key not found: add QWEN_API_KEY to Script properties');
+  const base = (props.getProperty('QWEN_BASE_URL') || 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1').replace(/\/$/, '');
+  const model = props.getProperty('QWEN_MODEL') || 'qwen-plus';
+  const body = {
+    model: model,
+    messages: [{ role: 'system', content: String(p.system || '') }, { role: 'user', content: String(p.user || '') }],
+    temperature: 0.2,
+    max_tokens: Math.min(Number(p.maxTokens) || 700, 1200)
+  };
+  if (p.json) body.response_format = { type: 'json_object' };
+  const res = UrlFetchApp.fetch(base + '/chat/completions', {
+    method: 'post', contentType: 'application/json', headers: { Authorization: 'Bearer ' + key },
+    payload: JSON.stringify(body), muteHttpExceptions: true
+  });
+  const code = res.getResponseCode();
+  const txt = res.getContentText();
+  if (code !== 200) throw new Error('Qwen error ' + code + ': ' + txt.slice(0, 200));
+  const j = JSON.parse(txt);
+  return { text: (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '',
+           model: j.model || model, tokens: (j.usage && j.usage.total_tokens) || 0 };
 }
 
 // ---- Privacy ----------------------------------------------------------

@@ -1,5 +1,6 @@
 import { createHash } from 'crypto';
 import { admin } from './supabase';
+import { refreshTasks } from './overview';
 import { callScript, DriveFile, MasterRow, RegentRow, SheetRow } from './appsScript';
 import { canonicalStatus, counselorKey, docTypeFromName, normEmail, normName, progressFor, schoolDisplay, schoolKey, studentKey } from './docs';
 
@@ -86,6 +87,7 @@ export async function syncAll(opts: { full?: boolean } = {}) {
   const usedM = new Set<MasterRow>(), usedG = new Set<RegentRow>();
   const activity: object[] = [];
   let created = 0, changedBySheet = 0;
+  const touched: string[] = [];
 
   const build = (id: string, r: SheetRow | null, m: MasterRow | null, g: RegentRow | null) => {
     const prev = known.get(id);
@@ -104,7 +106,7 @@ export async function syncAll(opts: { full?: boolean } = {}) {
       activity.push({ application_id: id, actor: 'system', kind: r ? 'new_application' : 'imported_from_sheet', detail: { school, programme: pick(m?.programme, g?.programme, r?.programme) } });
     } else {
       if (prev.status && status && prev.status !== status) {
-        changedBySheet++;
+        changedBySheet++; touched.push(id);
         activity.push({ application_id: id, actor: 'sheet', kind: 'status_change', detail: { from: prev.status, to: status } });
       }
       if (g && prev.payment !== payment && (prev.payment || payment)) activity.push({ application_id: id, actor: 'sheet', kind: 'payment_change', detail: { from: prev.payment, to: payment } });
@@ -150,6 +152,7 @@ export async function syncAll(opts: { full?: boolean } = {}) {
     if (error) throw new Error(error.message);
   }
   if (activity.length) await db.from('portal_activity').insert(activity);
+  if (touched.length) await db.from('portal_applications').update({ last_activity_at: new Date().toISOString() }).in('application_id', touched);
 
   // Keep notes/history when a stub becomes a real application (form submitted) or its id scheme changes.
   const latestByKey = new Map<string, string>();
@@ -180,6 +183,8 @@ export async function syncAll(opts: { full?: boolean } = {}) {
       return opts.full || !prev?.docs_synced_at || (r.submitted_at && now - new Date(r.submitted_at).getTime() < RECENT_MS);
     }).map(({ r, folders }) => ({ id: r.application_id, folders }));
   await syncFolders(needFiles);
+
+  try { await refreshTasks(); } catch { /* tasks refresh again when the overview is opened */ }
 
   return {
     total: all.length, created, formSubmissions: rows.length,

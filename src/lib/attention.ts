@@ -4,7 +4,7 @@ export type AppRow = {
   application_id: string; name: string; email: string | null; school: string | null; programme: string | null;
   country: string | null; counselor: string | null; status: string | null; submitted_at: string | null;
   last_activity_at: string; student_key: string; in_master: boolean; has_raw: boolean; progress: number | null;
-  drive_folder_id: string | null; phone: string | null; in_regent: boolean; payment: string | null; interview: string | null; opp_id: string | null;
+  created_at?: string; drive_folder_id: string | null; phone: string | null; in_regent: boolean; payment: string | null; interview: string | null; opp_id: string | null;
 };
 
 export function attentionReasons(a: AppRow, missing: string[], docCount: number): string[] {

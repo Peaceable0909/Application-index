@@ -4,10 +4,12 @@ import { requireStaff } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
 import { attentionReasons, AppRow } from '@/lib/attention';
 import { missingDocs, counselorKey, effType } from '@/lib/docs';
-import { ALL_DOC_TYPES, STATUSES } from '@/lib/constants';
+import { ALL_DOC_TYPES, REQUIRED_DOCS, STATUSES } from '@/lib/constants';
 import { statusTone } from '@/lib/ui';
 import Btn from '@/components/Btn';
-import { addNote, addToMaster, dismissSuggestion, linkFolder, refreshDocuments, scanStudent, unlinkFolder, sendCounselorEmail, updateCounselor, updateRegent, updateStatus, uploadDocument } from '../../actions';
+import { hashOf } from '@/lib/ai';
+import { studentFacts, AppFull, StudentSummary } from '@/lib/overview';
+import { addNote, addToMaster, dismissSuggestion, generateSummary, linkFolder, refreshDocuments, scanStudent, unlinkFolder, sendCounselorEmail, updateCounselor, updateRegent, updateStatus, uploadDocument } from '../../actions';
 
 type SP = { msg?: string; err?: string; preview?: string; tab?: string };
 const TABS = [['overview', 'Overview'], ['documents', 'Documents'], ['regent', 'Regent'], ['sources', 'Sources'], ['notes', 'Notes & activity']] as const;
@@ -63,6 +65,11 @@ export default async function ApplicationPage({ params, searchParams }: { params
   const tabHref = (k: string) => `/applications/${id}${k === 'overview' ? '' : `?tab=${k}`}`;
   const counts: Record<string, number> = { documents: (docs || []).length, notes: (notes || []).length };
 
+  const facts = studentFacts(app as AppFull, { have: new Set((docs || []).map(effType)), docCount: (docs || []).length, missing, judged, submissions: (siblings || []).length });
+  const { data: cached } = await db.from('portal_ai_cache').select('output,input_hash,created_at,model').eq('cache_key', `student:${id}`).maybeSingle();
+  const summary = cached?.output as StudentSummary | undefined;
+  const summaryStale = !!cached && cached.input_hash !== hashOf(facts);
+
   const defaultBody =
     `Hi ${app.counselor || ''},\n\nUpdate on your student ${app.name} (${app.school} – ${app.programme}).\n` +
     `Status: ${app.status || 'not set'}\n` +
@@ -109,7 +116,41 @@ export default async function ApplicationPage({ params, searchParams }: { params
 
       <div className="panel" key={tab}>
         {tab === 'overview' && (
-          <div className="grid g2">
+          <div className="card">
+            <div className="filters" style={{ justifyContent: 'space-between', marginBottom: 12 }}>
+              <h2 style={{ margin: 0 }}>Application summary</h2>
+              <form action={generateSummary}><input type="hidden" name="id" value={id} /><Btn className="ghost sm">{summary ? 'Refresh AI notes' : 'Generate AI notes'}</Btn></form>
+            </div>
+            <div className="grid g2">
+              <div>
+                <div className="stat-l" style={{ marginBottom: 8 }}>Confirmed from the portal</div>
+                <ul className="tl">
+                  <li>Programme: <b>{app.programme || 'not set'}</b> · {app.school || 'no university'}</li>
+                  <li>Status: <b>{app.status || 'not set'}</b>{app.counselor ? ` · counselor ${app.counselor}` : ' · no counselor'}</li>
+                  {judged
+                    ? <li>Documents: {REQUIRED_DOCS.map((d) => <span key={d} className={`badge ${missing.includes(d) ? 'amber' : 'green'}`} style={{ marginRight: 4 }}>{d}: {missing.includes(d) ? 'missing' : 'present'}</span>)}</li>
+                    : <li>Documents: not checked — no Drive folder linked</li>}
+                  <li>{app.in_master ? 'In Sheet1' : 'Not in Sheet1'} · {app.has_raw ? `${(siblings || []).length} form submission${(siblings || []).length > 1 ? 's' : ''}` : 'no form submission'}{(siblings || []).length > 1 ? ' (possible duplicate)' : ''}</li>
+                </ul>
+              </div>
+              <div>
+                <div className="stat-l" style={{ marginBottom: 8 }}>AI observations <span className="badge amber plain">needs human review</span></div>
+                {summary ? (
+                  <>
+                    <ul className="tl">{summary.observations.map((o) => <li key={o}>{o}</li>)}</ul>
+                    {summary.recommendedActions.length > 0 && <><b>Suggested admin actions</b><ol style={{ margin: '6px 0 8px', paddingLeft: 18 }}>{summary.recommendedActions.map((o) => <li key={o}>{o}</li>)}</ol></>}
+                    {summary.uncertainty && <p className="muted" style={{ margin: 0 }}>Can’t tell from the data: {summary.uncertainty}</p>}
+                    {summaryStale && <p className="err" style={{ margin: '8px 0 0', fontSize: 12.5 }}>This student’s data has changed since these notes were written — refresh them.</p>}
+                  </>
+                ) : <p className="muted" style={{ margin: 0 }}>No AI notes yet. They’re only generated when you ask.</p>}
+              </div>
+            </div>
+            <p className="muted" style={{ fontSize: 12, margin: '12px 0 0' }}>The AI never changes a status or decides anything. It only sees these facts (no name, email, phone or document contents).</p>
+          </div>
+        )}
+
+        {tab === 'overview' && (
+          <div className="grid g2" style={{ marginTop: 16 }}>
             <div className="card">
               <h2>Details</h2>
               <dl className="kv">

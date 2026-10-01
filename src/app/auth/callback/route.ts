@@ -9,7 +9,7 @@ export async function GET(req: Request) {
   if (code) {
     const sb = await sessionClient();
     const { error } = await sb.auth.exchangeCodeForSession(code);
-    if (!error) return NextResponse.redirect(`${origin}/`);
+    if (!error) return NextResponse.redirect(`${origin}/overview`);
   }
   return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent('Google sign-in failed')}`);
 }

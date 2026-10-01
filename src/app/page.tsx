@@ -14,12 +14,12 @@ type SP = Record<string, string | undefined>;
 const uniq = (xs: (string | null)[]) => [...new Set(xs.filter(Boolean) as string[])].sort();
 
 export default async function Dashboard({ searchParams }: { searchParams: Promise<SP> }) {
-  await requireStaff();
+  const staff = await requireStaff();
   const sp = await searchParams;
   const db = admin();
   const [{ data: apps }, { data: docs }] = await Promise.all([
     db.from('portal_applications')
-      .select('application_id,name,email,school,programme,country,counselor,status,submitted_at,last_activity_at,student_key,in_master,has_raw,progress,in_regent,payment,interview,opp_id,drive_folder_id,phone')
+      .select('application_id,name,email,school,programme,country,counselor,status,submitted_at,last_activity_at,student_key,in_master,has_raw,progress,in_regent,payment,interview,opp_id,drive_folder_id,phone,created_at')
       .order('submitted_at', { ascending: false, nullsFirst: false }).limit(5000),
     db.from('portal_documents').select('application_id,doc_type,type_override').limit(50000),
   ]);
@@ -54,6 +54,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     attention: (r) => r.reasons.length > 0, missing: (r) => r.judged && r.missing.length > 0,
     nofolder: (r) => !r.a.drive_folder_id, notmaster: (r) => !r.a.in_master,
     sheet1: (r) => r.a.in_master, regent: (r) => r.a.in_regent,
+    new: (r) => !!staff.last_seen_at && r.a.has_raw && !!r.a.created_at && new Date(r.a.created_at) > new Date(staff.last_seen_at),
   };
   const viewCount = (k: string) => rows.filter(views[k]).length;
   const filtered = rows.filter((row) => { const { a, reasons } = row; return (!sp.view || !views[sp.view] || views[sp.view](row)) &&
@@ -94,7 +95,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
       </div>
 
       <div className="tabs" style={{ marginTop: 0 }}>
-        {[['', 'All', base.length], ['sheet1', 'Sheet1', viewCount('sheet1')], ['regent', 'Regent Only', viewCount('regent')], ['attention', 'Needs attention', viewCount('attention')], ['missing', 'Missing documents', viewCount('missing')], ['nofolder', 'No Drive folder', viewCount('nofolder')], ['notmaster', 'Not in Sheet1', viewCount('notmaster')]].map(([k, label, n]) => (
+        {[['', 'All', base.length], ['new', 'New since last visit', viewCount('new')], ['sheet1', 'Sheet1', viewCount('sheet1')], ['regent', 'Regent Only', viewCount('regent')], ['attention', 'Needs attention', viewCount('attention')], ['missing', 'Missing documents', viewCount('missing')], ['nofolder', 'No Drive folder', viewCount('nofolder')], ['notmaster', 'Not in Sheet1', viewCount('notmaster')]].map(([k, label, n]) => (
           <Link key={k as string} href={k ? `/?view=${k}` : '/'} className={`tab ${(sp.view || '') === k ? 'active' : ''}`}>{label}<span className="n">{n}</span></Link>
         ))}
       </div>

@@ -9,6 +9,7 @@ import { counselorKey, docTypeFromName, dobForMaster, schoolShort } from '@/lib/
 import { ALL_DOC_TYPES } from '@/lib/constants';
 import { syncAll, syncFolders } from '@/lib/sync';
 import { STATUSES } from '@/lib/constants';
+import { aiOverview, aiStudentSummary, computeFacts, loadStudents, refreshTasks, studentFacts } from '@/lib/overview';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const s = (f: FormData, k: string) => String(f.get(k) ?? '').trim();
@@ -41,7 +42,7 @@ export async function signIn(f: FormData) {
   const sb = await sessionClient();
   const { error } = await sb.auth.signInWithPassword({ email: s(f, 'email'), password: s(f, 'password') });
   if (error) redirect(`/login?error=${encodeURIComponent(error.message)}`);
-  redirect('/');
+  redirect('/overview');
 }
 export async function signInWithGoogle() {
   const h = await headers();
@@ -220,6 +221,52 @@ export async function setDocType(f: FormData) {
   await admin().from('portal_documents').update({ type_override: type === doc?.doc_type ? null : type }).eq('drive_file_id', fileId);
   await log(id, staff.email, 'doc_retyped', { name: doc?.name, type });
   back(id, `Marked as ${type}`, false, ret);
+}
+
+// ---- Overview, tasks, AI ----
+const DAY_MS = 864e5;
+export async function markSeen() {
+  const staff = await requireStaff();
+  await admin().from('portal_staff').update({ last_seen_at: new Date().toISOString() }).eq('email', staff.email);
+  revalidatePath('/overview');
+  redirect('/overview');
+}
+
+async function closeTask(f: FormData, status: 'done' | 'dismissed' | 'snoozed', days: number) {
+  const staff = await requireStaff();
+  const db = admin();
+  const id = s(f, 'taskId');
+  const now = new Date();
+  const { data: t } = await db.from('portal_tasks').select('application_id, title').eq('id', id).single();
+  await db.from('portal_tasks').update({ status, suppress_until: new Date(now.getTime() + days * DAY_MS).toISOString(), resolved_at: now.toISOString(), resolved_by: staff.email, updated_at: now.toISOString() }).eq('id', id);
+  if (t?.application_id) await log(t.application_id, staff.email, `task_${status}`, { title: t.title });
+  revalidatePath('/overview');
+  redirect(s(f, 'returnTo').startsWith('/overview') ? s(f, 'returnTo') : '/overview');
+}
+export async function completeTask(f: FormData) { return closeTask(f, 'done', 3); }
+export async function dismissTask(f: FormData) { return closeTask(f, 'dismissed', 14); }
+export async function snoozeTask(f: FormData) { return closeTask(f, 'snoozed', Math.max(1, Math.min(14, Number(s(f, 'days')) || 1))); }
+
+export async function refreshOverview() {
+  await requireStaff();
+  const { rows, all } = await loadStudents();
+  await refreshTasks(rows);
+  const staff = await requireStaff();
+  const facts = await computeFacts(rows, all, staff.last_seen_at);
+  const r = await aiOverview(facts, true);
+  revalidatePath('/overview');
+  redirect(`/overview${r.error ? `?err=${encodeURIComponent(r.error)}` : '?msg=Overview+refreshed'}`);
+}
+
+export async function generateSummary(f: FormData) {
+  await requireStaff();
+  const id = s(f, 'id');
+  const { rows, all } = await loadStudents();
+  const row = rows.find((r) => r.a.application_id === id) || rows.find((r) => all.some((x) => x.application_id === id && x.student_key === r.a.student_key));
+  if (!row) return back(id, 'Student not found', true);
+  const submissions = all.filter((x) => x.student_key === row.a.student_key).length;
+  const r = await aiStudentSummary(id, studentFacts(row.a, { have: row.have, docCount: row.docCount, missing: row.missing, judged: row.judged, submissions }), true);
+  back(id, r.error ? `AI summary: ${r.error}` : 'AI summary generated', !!r.error);
 }
 
 // ---- Linking Google Drive folders ----

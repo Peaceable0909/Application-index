@@ -7,7 +7,7 @@ import Btn from '@/components/Btn';
 
 export default async function Login({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const { error } = await searchParams;
-  if (await currentStaff()) redirect('/');
+  if (await currentStaff()) redirect('/overview');
   const { data } = await (await sessionClient()).auth.getUser();
   const blocked = data.user?.email;
   return (

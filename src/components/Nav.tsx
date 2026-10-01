@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 export default function Nav() {
   const p = usePathname();
   const items = [
+    { href: '/overview', label: 'Overview', on: p.startsWith('/overview') },
     { href: '/', label: 'Applications', on: p === '/' || p.startsWith('/applications') },
     { href: '/drive', label: 'Drive matches', on: p.startsWith('/drive') },
     { href: '/settings', label: 'Settings', on: p.startsWith('/settings') },
