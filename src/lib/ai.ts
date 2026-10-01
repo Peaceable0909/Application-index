@@ -59,3 +59,19 @@ export async function askAi<T>(o: {
     return { data: cachedOut, cached: !!c, stale: !!c, at: c?.created_at, error: (e as Error).message };
   }
 }
+
+/** One-off generation (no caching) with the same daily budget and usage logging. Throws a readable error on failure. */
+export async function generateOnce<T>(o: { kind: string; system: string; user: string; maxTokens?: number; validate: (raw: unknown) => T | null }): Promise<T> {
+  const db = admin();
+  const since = new Date(); since.setUTCHours(0, 0, 0, 0);
+  const { count } = await db.from('portal_ai_usage').select('id', { count: 'exact', head: true }).gte('created_at', since.toISOString());
+  if ((count || 0) >= DAILY_LIMIT) throw new Error(`Daily AI limit reached (${DAILY_LIMIT} calls). It resets at midnight UTC.`);
+  let r: { text: string; model: string; tokens: number };
+  try { r = await callScript<{ text: string; model: string; tokens: number }>('aiChat', { system: o.system, user: o.user, maxTokens: o.maxTokens ?? 700, json: true }); }
+  catch (e) { await db.from('portal_ai_usage').insert({ kind: o.kind, ok: false }); throw e; }
+  let parsed: T | null = null;
+  try { parsed = o.validate(parseJson(r.text)); } catch { parsed = null; }
+  await db.from('portal_ai_usage').insert({ kind: o.kind, tokens: r.tokens, ok: !!parsed });
+  if (!parsed) throw new Error('The AI draft failed the safety checks and was discarded — try again or adjust your instruction.');
+  return parsed;
+}

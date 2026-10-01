@@ -8,13 +8,14 @@ import { ALL_DOC_TYPES, REQUIRED_DOCS, STATUSES } from '@/lib/constants';
 import { statusTone } from '@/lib/ui';
 import { ago, dateTime, describeActivity, initials, shortDate, STEPS, stepIndex } from '@/lib/format';
 import { hashOf } from '@/lib/ai';
+import { PURPOSES, TONES, Draft } from '@/lib/draft';
 import { studentFacts, AppFull, StudentSummary } from '@/lib/overview';
 import Btn from '@/components/Btn';
 import Icon from '@/components/Icon';
 import { niceName } from '@/components/UserMenu';
-import { addNote, addToMaster, dismissSuggestion, generateSummary, linkFolder, refreshDocuments, scanStudent, sendCounselorEmail, unlinkFolder, updateCounselor, updateRegent, updateStatus, uploadDocument } from '../../actions';
+import { addNote, addToMaster, createDraft, dismissSuggestion, generateSummary, linkFolder, refreshDocuments, scanStudent, sendCounselorEmail, unlinkFolder, updateCounselor, updateRegent, updateStatus, uploadDocument } from '../../actions';
 
-type SP = { msg?: string; err?: string; preview?: string; tab?: string; compose?: string };
+type SP = { msg?: string; err?: string; preview?: string; tab?: string; compose?: string; draft?: string };
 const TABS = ['overview', 'documents', 'notes', 'activity', 'messages', 'regent', 'sources'] as const;
 const FIELDS: [string, string][] = [['oppId', 'OPP ID'], ['payment', 'Payment'], ['interview', 'Interview booking'], ['name', 'Name'], ['email', 'Email'], ['phone', 'Phone'], ['school', 'University'], ['programme', 'Programme'], ['country', 'Country'], ['city', 'City'], ['gender', 'Gender'], ['dob', 'Date of birth'], ['age', 'Age'], ['counselor', 'Counselor'], ['status', 'Status'], ['notes', 'Notes']];
 const kb = (n: number | null) => (n ? `${Math.max(1, Math.round(n / 1024))} KB` : '');
@@ -77,11 +78,14 @@ export default async function ApplicationPage({ params, searchParams }: { params
   const lastStatusChange = (activity || []).find((a) => a.kind === 'status_change');
   const step = stepIndex(app.status);
 
+  const { data: draftRow } = sp.draft ? await db.from('portal_ai_cache').select('output').eq('cache_key', `draft:${id}:${staff.email}`).maybeSingle() : { data: null };
+  const draft = (draftRow?.output as Draft | undefined) || null;
+
   const first = niceName(app.name);
   const fillTo = (kind: 'student' | 'counselor') => kind === 'student' ? (app.email || '') : (counselor?.email || '');
   const composeMissing = sp.compose === 'missing';
-  const defaultSubject = composeMissing ? 'Documents needed for your application' : `Update: ${app.name} – ${app.school || ''}`;
-  const defaultBody = composeMissing
+  const defaultSubject = draft ? draft.subject : composeMissing ? 'Documents needed for your application' : `Update: ${app.name} – ${app.school || ''}`;
+  const defaultBody = draft ? draft.body : composeMissing
     ? `Dear ${first},\n\nThank you for applying${app.programme && app.programme !== 'N/A' ? ` for ${app.programme}` : ''}${app.school ? ` at ${app.school}` : ''}. To continue processing your application we still need:\n\n${(missing.length ? missing : ['—']).map((m) => `  • ${m}`).join('\n')}\n\nPlease reply to this email with clear scans or photos of each document.\n\nKind regards,\n${niceName(staff.email)}\nAdmissions Team`
     : `Hi ${app.counselor || ''},\n\nUpdate on your student ${app.name} (${app.school || ''} – ${app.programme || ''}).\nStatus: ${app.status || 'not set'}\n${missing.length ? `Missing documents: ${missing.join(', ')}\n` : 'All required documents received.\n'}\nThanks,\n${niceName(staff.email)}`;
   const ret = (k: string) => tabHref(k);
@@ -269,6 +273,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
               <div className="card">
                 <h2><Icon n="bolt" size={17} /> Quick Actions</h2>
                 <Link href={tabHref('messages')} className="qa"><span className="ico"><Icon n="mail" size={19} /></span><span><b>Send Email</b><small>Contact the student or counselor</small></span><Icon n="right" size={16} /></Link>
+                <Link href={tabHref('messages')} className="qa"><span className="ico purple"><Icon n="spark" size={19} /></span><span><b>Draft Email with AI</b><small>Qwen writes it, you review</small></span><Icon n="right" size={16} /></Link>
                 {missing.length > 0
                   ? <Link href={`${tabHref('messages')}${tabHref('messages').includes('?') ? '&' : '?'}compose=missing`} className="qa"><span className="ico amber"><Icon n="file" size={19} /></span><span><b>Request Missing Documents</b><small>Send a friendly reminder</small></span><Icon n="right" size={16} /></Link>
                   : <div className="qa" style={{ opacity: .6, cursor: 'default' }}><span className="ico green"><Icon n="check-circle" size={19} /></span><span><b>Documents complete</b><small>Nothing to request</small></span></div>}
@@ -373,11 +378,25 @@ export default async function ApplicationPage({ params, searchParams }: { params
 
         {tab === 'messages' && (
           <div className="grid g2" style={{ alignItems: 'start' }}>
-            <div className="card">
-              <h2>{composeMissing ? 'Request missing documents' : 'Send an email'}</h2>
+            <div>
+            <div className="card ai">
+              <h2><span className="spark">✦</span> Draft with AI <span className="badge blue plain" style={{ marginLeft: 6 }}>beta</span></h2>
+              <form action={createDraft} className="grid" style={{ gap: 10 }}>
+                <input type="hidden" name="id" value={id} />
+                <div className="filters" style={{ flexWrap: 'nowrap' }}>
+                  <select name="purpose" defaultValue={draft?.purpose || (missing.length ? 'missing_docs' : 'status_update')} style={{ flex: 1 }}>{Object.entries(PURPOSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
+                  <select name="tone" defaultValue={draft?.tone || 'friendly'}>{Object.entries(TONES).map(([k]) => <option key={k} value={k}>{k[0].toUpperCase() + k.slice(1)}</option>)}</select>
+                </div>
+                <input name="instruction" placeholder="Optional: anything specific to include (don’t paste personal details)" className="wide" maxLength={400} />
+                <div className="filters"><Btn className="primary">{draft ? 'Redraft' : 'Draft email'}</Btn><span className="muted" style={{ fontSize: 12.5 }}>Drafts only — you review and send. The AI never sees the student’s name, email or phone.</span></div>
+              </form>
+            </div>
+            <div className="card" style={{ marginTop: 16 }}>
+              {draft && <div className="callout good" style={{ marginBottom: 14, background: 'var(--blue-soft)', borderColor: '#cfdcfa' }}><Icon n="spark" className="ci" /><div><b style={{ color: 'var(--blue)' }}>AI draft — review before sending</b><p style={{ color: 'var(--text)' }}>Check the wording and details, edit anything, then press Send. Written by AI from the facts in the portal.</p></div></div>}
+              <h2>{draft ? PURPOSES[draft.purpose].label : composeMissing ? 'Request missing documents' : 'Send an email'}</h2>
               <form action={sendCounselorEmail} className="grid" style={{ gap: 10 }}>
                 <input type="hidden" name="id" value={id} /><input type="hidden" name="returnTo" value={ret('messages')} />
-                <select name="to" defaultValue={composeMissing ? fillTo('student') : fillTo('counselor') || fillTo('student')}>
+                <select name="to" defaultValue={draft ? (draft.recipient === 'counselor' ? fillTo('counselor') : fillTo('student')) : composeMissing ? fillTo('student') : fillTo('counselor') || fillTo('student')}>
                   {app.email && <option value={app.email}>Student — {app.email}</option>}
                   {counselor?.email && <option value={counselor.email}>Counselor — {app.counselor} ({counselor.email})</option>}
                   <option value="">Other (type below)…</option>
@@ -388,6 +407,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
                 <textarea name="body" defaultValue={defaultBody} style={{ minHeight: 200 }} required />
                 <div className="filters"><Btn>Send email</Btn><span className="muted">Sent from your admissions Gmail; replies go to {staff.email}.</span></div>
               </form>
+            </div>
             </div>
             <div className="card">
               <h2>Sent messages</h2>

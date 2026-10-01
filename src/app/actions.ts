@@ -9,6 +9,7 @@ import { counselorKey, docTypeFromName, dobForMaster, schoolShort } from '@/lib/
 import { ALL_DOC_TYPES } from '@/lib/constants';
 import { syncAll, syncFolders } from '@/lib/sync';
 import { STATUSES } from '@/lib/constants';
+import { draftEmail, PURPOSES, PurposeKey, TONES, ToneKey } from '@/lib/draft';
 import { aiOverview, aiStudentSummary, computeFacts, loadStudents, refreshTasks, studentFacts } from '@/lib/overview';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -172,6 +173,31 @@ export async function addNote(f: FormData) {
   back(id, 'Note added', false, ret);
 }
 
+// Writes an email draft with Qwen and stores it for the composer to pre-fill. Nothing is sent.
+export async function createDraft(f: FormData) {
+  const staff = await requireStaff();
+  const id = s(f, 'id');
+  const purpose = (s(f, 'purpose') in PURPOSES ? s(f, 'purpose') : 'custom') as PurposeKey;
+  const tone = (s(f, 'tone') in TONES ? s(f, 'tone') : 'friendly') as ToneKey;
+  const tab = `/applications/${id}?tab=messages`;
+  const db = admin();
+  const { data: a } = await db.from('portal_applications').select('name, counselor, programme, school, status, interview, payment').eq('application_id', id).single();
+  if (!a) return back(id, 'Student not found', true);
+  const { rows, all } = await loadStudents();
+  const row = rows.find((r) => r.a.application_id === id) || rows.find((r) => all.some((x) => x.application_id === id && x.student_key === r.a.student_key));
+  const first = a.name.trim().split(/\s+/)[0] || 'there';
+  try {
+    const draft = await draftEmail({
+      purpose, tone, instruction: s(f, 'instruction').slice(0, 400),
+      facts: { programme: a.programme && a.programme.toUpperCase() !== 'N/A' ? a.programme : null, university: a.school || null, status: a.status || null,
+        documentsMissing: row?.missing || [], documentsChecked: !!row?.judged, interviewStatus: a.interview || null, paymentRecorded: !!a.payment },
+      names: { first: first[0].toUpperCase() + first.slice(1).toLowerCase(), counselor: a.counselor || 'there', sender: staff.email.split('@')[0].replace(/[^a-zA-Z]+/g, ' ').trim().split(' ')[0].replace(/^./, (c) => c.toUpperCase()) || 'The team' },
+    });
+    await db.from('portal_ai_cache').upsert({ cache_key: `draft:${id}:${staff.email}`, kind: 'draft', input_hash: draft.at, output: draft, created_at: draft.at });
+    return back(id, 'AI draft ready — review and edit it before sending.', false, `${tab}&draft=1`);
+  } catch (e) { return back(id, (e as Error).message, true, tab); }
+}
+
 export async function sendCounselorEmail(f: FormData) {
   const staff = await requireStaff();
   const id = s(f, 'id'), ret = s(f, 'returnTo');
@@ -185,6 +211,7 @@ export async function sendCounselorEmail(f: FormData) {
   const kind = a?.email && a.email.toLowerCase() === to.toLowerCase() ? 'student' : 'counselor';
   await db.from('portal_messages').insert({ application_id: id, counselor_name: a?.counselor || null, to_email: to, to_kind: kind, subject, body, sent_by: staff.email });
   await log(id, staff.email, 'email_sent', { to, subject });
+  await db.from('portal_ai_cache').delete().eq('cache_key', `draft:${id}:${staff.email}`);
   revalidatePath('/messages');
   back(id, `Email sent to ${to}`, false, ret);
 }

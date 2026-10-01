@@ -8,6 +8,9 @@ export default async function Settings({ searchParams }: { searchParams: Promise
   const me = await requireStaff();
   const sp = await searchParams;
   const db = admin();
+  const day = new Date(); day.setUTCHours(0, 0, 0, 0);
+  const { data: usage } = await db.from('portal_ai_usage').select('kind,tokens,ok').gte('created_at', day.toISOString());
+  const calls = (usage || []).length, tokens = (usage || []).reduce((n, u) => n + (u.tokens || 0), 0), failed = (usage || []).filter((u) => !u.ok).length;
   const [{ data: staff }] = await Promise.all([
     
     db.from('portal_staff').select('*').order('email'),
@@ -17,6 +20,16 @@ export default async function Settings({ searchParams }: { searchParams: Promise
       <h1>Settings</h1>
       {sp.msg && <div className="card ok">{sp.msg}</div>}
       {sp.err && <div className="card err">{sp.err}</div>}
+
+      <div className="card">
+        <h2>AI usage today</h2>
+        <dl className="kv" style={{ gridTemplateColumns: '180px 1fr' }}>
+          <dt>Qwen calls</dt><dd><b>{calls}</b> of {process.env.AI_DAILY_LIMIT || 60} allowed</dd>
+          <dt>Tokens used</dt><dd>{tokens.toLocaleString()}</dd>
+          <dt>Rejected / failed</dt><dd>{failed} <span className="muted">(replies that failed the safety checks or errored)</span></dd>
+        </dl>
+        <p className="muted" style={{ marginBottom: 0 }}>The limit and key live in your settings: <code>AI_DAILY_LIMIT</code> (Vercel) and <code>QWEN_API_KEY</code> (Apps Script).</p>
+      </div>
 
       <div className="card">
         <h2>Counselors</h2>
