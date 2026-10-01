@@ -1,0 +1,91 @@
+import Link from 'next/link';
+import { admin } from '@/lib/supabase';
+import { Staff } from '@/lib/auth';
+import { aiOverview, computeFacts, loadStudents, refreshTasks } from '@/lib/overview';
+import { completeTask, markSeen, refreshOverview, snoozeTask } from '@/app/actions';
+import Btn from './Btn';
+
+const ago = (t: string) => { const m = Math.max(1, Math.round((Date.now() - new Date(t).getTime()) / 60000)); return m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; };
+
+/** The AI overview, key numbers and top tasks shown at the top of the main dashboard. */
+export default async function CommandCentre({ staff }: { staff: Staff }) {
+  const db = admin();
+  let lastSeen = staff.last_seen_at;
+  if (!lastSeen) { lastSeen = new Date().toISOString(); await db.from('portal_staff').update({ last_seen_at: lastSeen }).eq('email', staff.email); }
+
+  const { rows, all } = await loadStudents();
+  await refreshTasks(rows);
+  const facts = await computeFacts(rows, all, lastSeen);
+  const ai = await aiOverview(facts);
+  const { data: tasks } = await db.from('portal_tasks').select('*').eq('status', 'open').order('priority').order('created_at', { ascending: false }).limit(6);
+
+  const stat = (label: string, n: number, href: string, tone = '') => (
+    <Link href={href} className="card rise" style={{ textDecoration: 'none' }}><div className="stat-l">{label}</div><div className={`stat ${tone}`}>{n}</div></Link>
+  );
+
+  return (
+    <>
+      <div className="grid g5" style={{ marginBottom: 16 }}>
+        {stat('New since last visit', facts.newApplicationsSinceLastVisit, '/?view=new')}
+        {stat('Need attention', facts.needAttention, '/?view=attention', 'warn')}
+        {stat('Missing documents', facts.missingDocuments, '/?view=missing')}
+        {stat('Interviews to book', facts.interviewsToBook, '/?interview=To%20be%20booked%20for%20interview')}
+        {stat('Open tasks', facts.openTasks, '/overview')}
+      </div>
+
+      <div className="grid g2" style={{ marginBottom: 16, alignItems: 'start' }}>
+        <div className="card ai">
+          <div className="filters" style={{ justifyContent: 'space-between', marginBottom: 10 }}>
+            <h2 style={{ margin: 0 }}><span className="spark" aria-hidden>✦</span> AI overview</h2>
+            <div className="filters" style={{ gap: 6 }}>
+              <form action={refreshOverview}><input type="hidden" name="returnTo" value="/" /><Btn className="ghost sm">Refresh</Btn></form>
+              <form action={markSeen}><input type="hidden" name="returnTo" value="/" /><Btn className="ghost sm">Mark as seen</Btn></form>
+            </div>
+          </div>
+          {ai.data ? (
+            <>
+              <p style={{ fontSize: 15.5, lineHeight: 1.6, margin: '0 0 10px' }}>{ai.data.overview}</p>
+              <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
+                <span className="badge amber plain">AI-written</span> from the confirmed numbers above · {ai.at ? ago(ai.at) : ''}{ai.stale ? ' · numbers changed since — press Refresh' : ''}
+              </p>
+            </>
+          ) : (
+            <p className="muted" style={{ margin: 0 }}>{ai.error ? `AI overview unavailable: ${ai.error}` : 'No AI overview yet — press Refresh.'} The numbers above are always accurate.</p>
+          )}
+          {ai.error && ai.data && <p className="err" style={{ fontSize: 12.5, marginBottom: 0 }}>{ai.error}</p>}
+        </div>
+
+        <div className="card">
+          <div className="filters" style={{ justifyContent: 'space-between', marginBottom: 6 }}>
+            <h2 style={{ margin: 0 }}>Today’s tasks</h2>
+            <Link href="/overview" className="muted">View all {facts.openTasks} →</Link>
+          </div>
+          {!(tasks || []).length && <p className="muted" style={{ margin: 0 }}>Nothing needs doing right now.</p>}
+          {(tasks || []).map((t) => (
+            <div key={t.id} style={{ padding: '9px 0', borderTop: '1px solid var(--line)' }} className="filters">
+              <div style={{ flex: 1, minWidth: 180 }}>
+                <Link href={`/applications/${t.application_id}${t.kind === 'missing_docs' || t.kind === 'no_documents' ? '?tab=documents' : ''}`}>{t.title}</Link>
+                {t.priority === 1 && <> <span className="badge red plain">high</span></>}
+                <div className="muted" style={{ fontSize: 12.5 }}>{t.detail}</div>
+              </div>
+              <form action={completeTask}><input type="hidden" name="taskId" value={t.id} /><input type="hidden" name="returnTo" value="/" /><Btn className="sm">Done</Btn></form>
+              <form action={snoozeTask}><input type="hidden" name="taskId" value={t.id} /><input type="hidden" name="days" value="1" /><input type="hidden" name="returnTo" value="/" /><Btn className="ghost sm">Snooze</Btn></form>
+            </div>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+export function CommandCentreSkeleton() {
+  return (
+    <>
+      <div className="grid g5" style={{ marginBottom: 16 }}>{[0, 1, 2, 3, 4].map((i) => <div key={i} className="card"><div className="sk" style={{ width: 90, height: 11 }} /><div className="sk" style={{ width: 60, height: 36, marginTop: 12 }} /></div>)}</div>
+      <div className="grid g2" style={{ marginBottom: 16 }}>
+        <div className="card"><div className="sk" style={{ width: 120, height: 16 }} /><div className="sk" style={{ width: '90%', height: 14, marginTop: 16 }} /><div className="sk" style={{ width: '70%', height: 14, marginTop: 8 }} /></div>
+        <div className="card"><div className="sk" style={{ width: 120, height: 16 }} /><div className="sk" style={{ width: '80%', height: 14, marginTop: 16 }} /><div className="sk" style={{ width: '60%', height: 14, marginTop: 8 }} /></div>
+      </div>
+    </>
+  );
+}

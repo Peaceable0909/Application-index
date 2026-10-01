@@ -5,8 +5,8 @@ import { usePathname } from 'next/navigation';
 export default function Nav() {
   const p = usePathname();
   const items = [
-    { href: '/overview', label: 'Overview', on: p.startsWith('/overview') },
-    { href: '/', label: 'Applications', on: p === '/' || p.startsWith('/applications') },
+    { href: '/', label: 'Dashboard', on: p === '/' || p.startsWith('/applications') },
+    { href: '/overview', label: 'Tasks & activity', on: p.startsWith('/overview') },
     { href: '/drive', label: 'Drive matches', on: p.startsWith('/drive') },
     { href: '/settings', label: 'Settings', on: p.startsWith('/settings') },
   ];

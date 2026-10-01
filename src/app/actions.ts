@@ -225,11 +225,13 @@ export async function setDocType(f: FormData) {
 
 // ---- Overview, tasks, AI ----
 const DAY_MS = 864e5;
-export async function markSeen() {
+const homeOr = (f: FormData | undefined, def = '/overview') => { const r = f ? s(f, 'returnTo') : ''; return r === '/' || r.startsWith('/overview') ? r : def; };
+
+export async function markSeen(f?: FormData) {
   const staff = await requireStaff();
   await admin().from('portal_staff').update({ last_seen_at: new Date().toISOString() }).eq('email', staff.email);
-  revalidatePath('/overview');
-  redirect('/overview');
+  revalidatePath('/'); revalidatePath('/overview');
+  redirect(homeOr(f));
 }
 
 async function closeTask(f: FormData, status: 'done' | 'dismissed' | 'snoozed', days: number) {
@@ -241,21 +243,22 @@ async function closeTask(f: FormData, status: 'done' | 'dismissed' | 'snoozed', 
   await db.from('portal_tasks').update({ status, suppress_until: new Date(now.getTime() + days * DAY_MS).toISOString(), resolved_at: now.toISOString(), resolved_by: staff.email, updated_at: now.toISOString() }).eq('id', id);
   if (t?.application_id) await log(t.application_id, staff.email, `task_${status}`, { title: t.title });
   revalidatePath('/overview');
-  redirect(s(f, 'returnTo').startsWith('/overview') ? s(f, 'returnTo') : '/overview');
+  revalidatePath('/');
+  redirect(homeOr(f));
 }
 export async function completeTask(f: FormData) { return closeTask(f, 'done', 3); }
 export async function dismissTask(f: FormData) { return closeTask(f, 'dismissed', 14); }
 export async function snoozeTask(f: FormData) { return closeTask(f, 'snoozed', Math.max(1, Math.min(14, Number(s(f, 'days')) || 1))); }
 
-export async function refreshOverview() {
+export async function refreshOverview(f?: FormData) {
   await requireStaff();
   const { rows, all } = await loadStudents();
   await refreshTasks(rows);
   const staff = await requireStaff();
   const facts = await computeFacts(rows, all, staff.last_seen_at);
   const r = await aiOverview(facts, true);
-  revalidatePath('/overview');
-  redirect(`/overview${r.error ? `?err=${encodeURIComponent(r.error)}` : '?msg=Overview+refreshed'}`);
+  revalidatePath('/'); revalidatePath('/overview');
+  redirect(`${homeOr(f)}${r.error ? `?err=${encodeURIComponent(r.error)}` : '?msg=Overview+refreshed'}`);
 }
 
 export async function generateSummary(f: FormData) {

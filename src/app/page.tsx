@@ -6,6 +6,8 @@ import { missingDocs } from '@/lib/docs';
 import { REQUIRED_DOCS, STATUSES } from '@/lib/constants';
 import { bulkAddToMaster, syncNow } from './actions';
 import Btn from '@/components/Btn';
+import { Suspense } from 'react';
+import CommandCentre, { CommandCentreSkeleton } from '@/components/CommandCentre';
 import { statusTone } from '@/lib/ui';
 
 export const maxDuration = 60;
@@ -76,24 +78,17 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
 
   return (
     <>
-      <div className="head"><h1>Applications</h1></div>
+      <div className="head" style={{ justifyContent: 'space-between' }}>
+        <h1>Dashboard</h1>
+        <form action={syncNow} className="filters"><label className="muted"><input type="checkbox" name="full" value="1" /> full</label><Btn className="ghost">Sync now</Btn></form>
+      </div>
       <p className="sub">{filtered.length === base.length ? `${base.length} students` : `${filtered.length} of ${base.length} students`} across both sheets.</p>
       {sp.msg && <div className="card ok">{sp.msg}</div>}
       {sp.err && <div className="card err">{sp.err}</div>}
 
-      <div className="grid g4" style={{ marginBottom: 16 }}>
-        <div className="card rise" style={{ '--i': 0 } as React.CSSProperties}><div className="stat-l">Students</div><div className="stat">{base.length}</div></div>
-        <Link href="/?attention=1" className="card rise" style={{ '--i': 1, textDecoration: 'none' } as React.CSSProperties}><div className="stat-l">Need attention</div><div className="stat warn">{attentionTotal}</div></Link>
-        <Link href="/?status=__none" className="card rise" style={{ '--i': 2, textDecoration: 'none' } as React.CSSProperties}><div className="stat-l">No status yet</div><div className="stat">{base.filter((a) => !a.status).length}</div></Link>
-        <div className="card rise" style={{ '--i': 3 } as React.CSSProperties}>
-          <div className="stat-l">Data</div>
-          <form action={syncNow} className="filters" style={{ marginTop: 12 }}>
-            <Btn>Sync now</Btn>
-            <label className="muted"><input type="checkbox" name="full" value="1" /> full</label>
-          </form>
-        </div>
-      </div>
+      <Suspense fallback={<CommandCentreSkeleton />}><CommandCentre staff={staff} /></Suspense>
 
+      <h2 style={{ marginTop: 28 }}>All students</h2>
       <div className="tabs" style={{ marginTop: 0 }}>
         {[['', 'All', base.length], ['new', 'New since last visit', viewCount('new')], ['sheet1', 'Sheet1', viewCount('sheet1')], ['regent', 'Regent Only', viewCount('regent')], ['attention', 'Needs attention', viewCount('attention')], ['missing', 'Missing documents', viewCount('missing')], ['nofolder', 'No Drive folder', viewCount('nofolder')], ['notmaster', 'Not in Sheet1', viewCount('notmaster')]].map(([k, label, n]) => (
           <Link key={k as string} href={k ? `/?view=${k}` : '/'} className={`tab ${(sp.view || '') === k ? 'active' : ''}`}>{label}<span className="n">{n}</span></Link>
