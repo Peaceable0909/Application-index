@@ -57,16 +57,16 @@ export default async function Overview({ searchParams }: { searchParams: Promise
 
   return (
     <>
-      <div className="head"><h1>Overview</h1></div>
+      <div className="head"><h1>Tasks</h1></div>
       <p className="sub">Since your last visit · {new Date(lastSeen).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}</p>
       {sp.msg && <div className="card ok">{sp.msg}</div>}
       {sp.err && <div className="card err">{sp.err}</div>}
 
       <div className="grid g5" style={{ marginBottom: 16 }}>
-        {stat('New applications', facts.newApplicationsSinceLastVisit, '/?view=new')}
-        {stat('Need attention', facts.needAttention, '/?view=attention', 'warn')}
-        {stat('Missing documents', facts.missingDocuments, '/?view=missing')}
-        {stat('Interviews to book', facts.interviewsToBook, '/?interview=To%20be%20booked%20for%20interview')}
+        {stat('New applications', facts.newApplicationsSinceLastVisit, '/applications?view=new')}
+        {stat('Need attention', facts.needAttention, '/applications?view=attention', 'warn')}
+        {stat('Missing documents', facts.missingDocuments, '/applications?view=missing')}
+        {stat('Interviews to book', facts.interviewsToBook, '/applications?interview=To%20be%20booked%20for%20interview')}
         {stat('Open tasks', facts.openTasks, '#tasks')}
       </div>
 
@@ -124,7 +124,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                     </div>
                   </div>
                 ))}
-                {g.items.length > perGroup && <p className="muted" style={{ margin: '8px 0 0' }}><Link href="/overview?all=1#tasks">Show all {g.items.length}</Link></p>}
+                {g.items.length > perGroup && <p className="muted" style={{ margin: '8px 0 0' }}><Link href="/tasks?all=1">Show all {g.items.length}</Link></p>}
               </details>
             ))}
           </div>

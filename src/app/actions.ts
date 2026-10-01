@@ -14,7 +14,7 @@ import { aiOverview, aiStudentSummary, computeFacts, loadStudents, refreshTasks,
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const s = (f: FormData, k: string) => String(f.get(k) ?? '').trim();
 const back = (id: string, msg: string, err = false, returnTo?: string) => {
-  const base = returnTo && (returnTo.startsWith(`/applications/${id}`) || returnTo.startsWith('/drive')) ? returnTo : `/applications/${encodeURIComponent(id)}`;
+  const base = returnTo && /^\/(?!\/)/.test(returnTo) ? returnTo : `/applications/${encodeURIComponent(id)}`;
   redirect(`${base}${base.includes('?') ? '&' : '?'}${err ? 'err' : 'msg'}=${encodeURIComponent(msg)}`);
 };
 
@@ -63,6 +63,7 @@ export async function signOut() {
 }
 
 export async function syncNow(f: FormData) {
+  const ret = s(f, 'returnTo') === '/applications' ? '/applications' : '/';
   await requireStaff();
   let msg: string;
   try {
@@ -70,7 +71,7 @@ export async function syncNow(f: FormData) {
     msg = `Synced ${r.total} students · ${r.formSubmissions} with a form submission · ${r.inMaster} in Sheet1 · ${r.inRegent} in Regent Only · ${r.formOnly} not yet in Sheet1 · ${r.created} new.`;
   } catch (e) { msg = `Sync failed: ${(e as Error).message}`; }
   revalidatePath('/');
-  redirect(`/?msg=${encodeURIComponent(msg)}`);
+  redirect(`${ret}?msg=${encodeURIComponent(msg)}`);
 }
 
 // Appends a form-only student to the master sheet. Returns 'added' | 'exists' | error text.
@@ -106,14 +107,14 @@ export async function bulkAddToMaster(f: FormData) {
   const all = f.getAll('ids').map(String).filter(Boolean);
   const ids = all.slice(0, 15); // keep within the server time limit; do the rest in another batch
   const status = s(f, 'status') || 'New Lead';
-  if (!ids.length) redirect(`/?source=raw_only&err=${encodeURIComponent('Tick at least one student')}`);
+  if (!ids.length) redirect(`/applications?source=raw_only&err=${encodeURIComponent('Tick at least one student')}`);
   let added = 0, existed = 0, failed = 0;
   for (const id of ids) {
     try { (await pushToMaster(id, staff.email, status)) === 'added' ? added++ : existed++; } catch { failed++; }
   }
   try { await syncAll(); } catch { /* next sync will catch up */ }
   revalidatePath('/');
-  redirect(`/?source=raw_only&msg=${encodeURIComponent(`Added ${added} to the master sheet${existed ? `, ${existed} already there` : ''}${failed ? `, ${failed} failed` : ''}.${all.length > ids.length ? ` ${all.length - ids.length} left — run it again.` : ''}`)}`);
+  redirect(`/applications?source=raw_only&msg=${encodeURIComponent(`Added ${added} to the master sheet${existed ? `, ${existed} already there` : ''}${failed ? `, ${failed} failed` : ''}.${all.length > ids.length ? ` ${all.length - ids.length} left — run it again.` : ''}`)}`);
 }
 
 export async function updateRegent(f: FormData) {
@@ -140,10 +141,11 @@ export async function updateStatus(f: FormData) {
   const { data: cur } = await db.from('portal_applications').select('status').eq('application_id', id).single();
   await db.from('portal_applications').update({ status }).eq('application_id', id);
   await log(id, staff.email, 'status_change', { from: cur?.status ?? null, to: status });
+  const ret = s(f, 'returnTo');
   try { await writeBack(id, { status }); }
-  catch (e) { return back(id, `Saved in portal but sheet write-back failed: ${(e as Error).message}`, true); }
+  catch (e) { return back(id, `Saved in portal but sheet write-back failed: ${(e as Error).message}`, true, ret); }
   revalidatePath('/');
-  back(id, 'Status updated');
+  back(id, 'Status updated', false, ret);
 }
 
 export async function updateCounselor(f: FormData) {
@@ -153,10 +155,11 @@ export async function updateCounselor(f: FormData) {
   const { data: cur } = await db.from('portal_applications').select('counselor').eq('application_id', id).single();
   await db.from('portal_applications').update({ counselor: counselor || null }).eq('application_id', id);
   await log(id, staff.email, 'counselor_change', { from: cur?.counselor ?? null, to: counselor });
+  const ret = s(f, 'returnTo');
   try { await writeBack(id, { counselor }); }
-  catch (e) { return back(id, `Saved in portal but sheet write-back failed: ${(e as Error).message}`, true); }
+  catch (e) { return back(id, `Saved in portal but sheet write-back failed: ${(e as Error).message}`, true, ret); }
   revalidatePath('/');
-  back(id, 'Counselor updated');
+  back(id, 'Counselor updated', false, ret);
 }
 
 export async function addNote(f: FormData) {
@@ -171,13 +174,19 @@ export async function addNote(f: FormData) {
 
 export async function sendCounselorEmail(f: FormData) {
   const staff = await requireStaff();
-  const id = s(f, 'id'), to = s(f, 'to'), subject = s(f, 'subject'), body = s(f, 'body');
-  if (!EMAIL_RE.test(to)) return back(id, 'Enter a valid counselor email (add it under Settings)', true);
-  if (!subject || !body) return back(id, 'Subject and message are required', true);
+  const id = s(f, 'id'), ret = s(f, 'returnTo');
+  const to = s(f, 'custom') || s(f, 'to'), subject = s(f, 'subject'), body = s(f, 'body');
+  if (!EMAIL_RE.test(to)) return back(id, 'Enter a valid email address (counselor emails are managed under Counselors)', true, ret);
+  if (!subject || !body) return back(id, 'Subject and message are required', true, ret);
   try { await callScript('sendEmail', { to, subject, body, replyTo: staff.email }); }
-  catch (e) { return back(id, `Email failed: ${(e as Error).message}`, true); }
+  catch (e) { return back(id, `Email failed: ${(e as Error).message}`, true, ret); }
+  const db = admin();
+  const { data: a } = await db.from('portal_applications').select('email, counselor').eq('application_id', id).maybeSingle();
+  const kind = a?.email && a.email.toLowerCase() === to.toLowerCase() ? 'student' : 'counselor';
+  await db.from('portal_messages').insert({ application_id: id, counselor_name: a?.counselor || null, to_email: to, to_kind: kind, subject, body, sent_by: staff.email });
   await log(id, staff.email, 'email_sent', { to, subject });
-  back(id, `Email sent to ${to}`);
+  revalidatePath('/messages');
+  back(id, `Email sent to ${to}`, false, ret);
 }
 
 export async function uploadDocument(f: FormData) {
@@ -225,12 +234,12 @@ export async function setDocType(f: FormData) {
 
 // ---- Overview, tasks, AI ----
 const DAY_MS = 864e5;
-const homeOr = (f: FormData | undefined, def = '/overview') => { const r = f ? s(f, 'returnTo') : ''; return r === '/' || r.startsWith('/overview') ? r : def; };
+const homeOr = (f: FormData | undefined, def = '/tasks') => { const r = f ? s(f, 'returnTo') : ''; return r === '/' || r.startsWith('/tasks') ? r : def; };
 
 export async function markSeen(f?: FormData) {
   const staff = await requireStaff();
   await admin().from('portal_staff').update({ last_seen_at: new Date().toISOString() }).eq('email', staff.email);
-  revalidatePath('/'); revalidatePath('/overview');
+  revalidatePath('/'); revalidatePath('/tasks');
   redirect(homeOr(f));
 }
 
@@ -257,7 +266,7 @@ export async function refreshOverview(f?: FormData) {
   const staff = await requireStaff();
   const facts = await computeFacts(rows, all, staff.last_seen_at);
   const r = await aiOverview(facts, true);
-  revalidatePath('/'); revalidatePath('/overview');
+  revalidatePath('/'); revalidatePath('/tasks');
   redirect(`${homeOr(f)}${r.error ? `?err=${encodeURIComponent(r.error)}` : '?msg=Overview+refreshed'}`);
 }
 
@@ -392,20 +401,79 @@ export async function linkExactMatches() {
 // ---- Settings ----
 export async function saveCounselor(f: FormData) {
   await requireStaff();
-  const email = s(f, 'email');
-  if (email && !EMAIL_RE.test(email)) redirect(`/settings?err=${encodeURIComponent('Invalid email for ' + s(f, 'name'))}`);
+  const email = s(f, 'email'), ret = s(f, 'returnTo') || '/counselors';
+  if (email && !EMAIL_RE.test(email)) redirect(`${ret}?err=${encodeURIComponent('Invalid email for ' + s(f, 'name'))}`);
   await admin().from('portal_counselors').update({ email: email || null, active: f.get('active') === 'on' }).eq('id', s(f, 'id'));
-  revalidatePath('/settings');
-  redirect('/settings?msg=Saved');
+  revalidatePath('/counselors');
+  redirect(`${ret}?msg=Saved`);
 }
 export async function addCounselor(f: FormData) {
   await requireStaff();
-  const name = s(f, 'name'), email = s(f, 'email');
-  if (!name) redirect('/settings?err=Name+required');
-  if (email && !EMAIL_RE.test(email)) redirect('/settings?err=Invalid+email');
+  const name = s(f, 'name'), email = s(f, 'email'), ret = s(f, 'returnTo') || '/counselors';
+  if (!name) redirect(`${ret}?err=Name+required`);
+  if (email && !EMAIL_RE.test(email)) redirect(`${ret}?err=Invalid+email`);
   await admin().from('portal_counselors').upsert({ name, name_key: counselorKey(name), email: email || null }, { onConflict: 'name_key' });
-  redirect('/settings?msg=Counselor+saved');
+  redirect(`${ret}?msg=Counselor+saved`);
 }
+
+// Email a counselor the list of their students that need attention.
+export async function sendDigest(f: FormData) {
+  const staff = await requireStaff();
+  const db = admin();
+  const { data: c } = await db.from('portal_counselors').select('*').eq('id', s(f, 'id')).single();
+  if (!c?.email) redirect('/counselors?err=' + encodeURIComponent(`Add an email for ${c?.name || 'this counselor'} first`));
+  const { rows } = await loadStudents();
+  const mine = rows.filter((r) => counselorKey(r.a.counselor) === c.name_key && r.reasons.length && !(r.a.status && ['Enrolled', 'Rejected', 'Withdrawn'].includes(r.a.status)));
+  if (!mine.length) redirect(`/counselors?msg=${encodeURIComponent(`${c.name} has no students needing attention — nothing sent.`)}`);
+  const lines = mine.slice(0, 40).map((r) => `• ${r.a.name} (${[schoolShort(r.a.school), r.a.status || 'no status'].filter(Boolean).join(', ')}): ${r.reasons.join('; ')}${r.missing.length ? ` — missing ${r.missing.join(', ')}` : ''}`);
+  const subject = `${mine.length} student${mine.length === 1 ? '' : 's'} need attention`;
+  const body = `Hi ${c.name.replace(/^(mr|mrs|ms|miss|dr)\.?\s+/i, '')},\n\nHere are your students who need attention right now:\n\n${lines.join('\n')}${mine.length > 40 ? `\n…and ${mine.length - 40} more.` : ''}\n\nPlease follow up where you can.\n\nThanks,\n${staff.email.split('@')[0]}`;
+  try { await callScript('sendEmail', { to: c.email, subject, body, replyTo: staff.email }); }
+  catch (e) { redirect(`/counselors?err=${encodeURIComponent(`Email failed: ${(e as Error).message}`)}`); }
+  await db.from('portal_messages').insert({ application_id: null, counselor_name: c.name, to_email: c.email, to_kind: 'counselor', subject, body, sent_by: staff.email });
+  revalidatePath('/messages');
+  redirect(`/counselors?msg=${encodeURIComponent(`Digest sent to ${c.name} (${mine.length} students).`)}`);
+}
+
+// Free-form message from the Messages page (optionally tied to a student).
+export async function sendMessage(f: FormData) {
+  const staff = await requireStaff();
+  const to = s(f, 'custom') || s(f, 'to'), subject = s(f, 'subject'), body = s(f, 'body'), appId = s(f, 'applicationId') || null;
+  if (!EMAIL_RE.test(to) || !subject || !body) redirect('/messages?compose=1&err=' + encodeURIComponent('Recipient, subject and message are required'));
+  try { await callScript('sendEmail', { to, subject, body, replyTo: staff.email }); }
+  catch (e) { redirect('/messages?compose=1&err=' + encodeURIComponent(`Email failed: ${(e as Error).message}`)); }
+  const db = admin();
+  const { data: c } = await db.from('portal_counselors').select('name').eq('email', to).maybeSingle();
+  await db.from('portal_messages').insert({ application_id: appId, counselor_name: c?.name || null, to_email: to, to_kind: c ? 'counselor' : appId ? 'student' : 'other', subject, body, sent_by: staff.email });
+  if (appId) await log(appId, staff.email, 'email_sent', { to, subject });
+  revalidatePath('/messages');
+  redirect(`/messages?msg=${encodeURIComponent(`Email sent to ${to}`)}`);
+}
+
+// Adds a student by hand: a new row in Sheet1, then a sync so the portal shows it.
+export async function createApplication(f: FormData) {
+  const staff = await requireStaff();
+  const name = s(f, 'name'), email = s(f, 'email').toLowerCase();
+  if (!name) redirect('/applications/new?err=Name+is+required');
+  if (email && !EMAIL_RE.test(email)) redirect('/applications/new?err=Invalid+email');
+  const status = s(f, 'status') || 'New Lead';
+  try {
+    const r = await callScript<{ exists: boolean }>('addMaster', {
+      date: new Date().toISOString(), name, email, phone: s(f, 'phone'), school: schoolShort(s(f, 'school')), programme: s(f, 'programme'),
+      country: s(f, 'country'), city: s(f, 'city'), gender: s(f, 'gender'), dob: dobForMaster(s(f, 'dob')), age: s(f, 'age'), counselor: s(f, 'counselor'), status,
+    });
+    await syncAll();
+    const db = admin();
+    const q = email ? db.from('portal_applications').select('application_id').ilike('email', email) : db.from('portal_applications').select('application_id').ilike('name', name);
+    const { data: hit } = await q.order('created_at', { ascending: false }).limit(1).maybeSingle();
+    if (hit) { await log(hit.application_id, staff.email, 'moved_to_master', { status, exists: r.exists }); redirect(`/applications/${hit.application_id}?msg=${encodeURIComponent(r.exists ? 'Already in Sheet1 — opened the existing record' : 'Student added to Sheet1')}`); }
+  } catch (e) {
+    if ((e as { digest?: string }).digest?.startsWith('NEXT_REDIRECT')) throw e;
+    redirect('/applications/new?err=' + encodeURIComponent((e as Error).message));
+  }
+  redirect('/applications?msg=Student+added');
+}
+
 export async function addStaff(f: FormData) {
   const me = await requireStaff();
   if (me.role !== 'admin') redirect('/settings?err=Admins+only');
