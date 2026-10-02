@@ -4,7 +4,7 @@ import { requireStaff } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
 import Btn from '@/components/Btn';
 import { aiOverview, computeFacts, FACT_LABELS, loadStudents, refreshTasks } from '@/lib/overview';
-import { completeTask, dismissTask, markSeen, refreshOverview, snoozeTask } from '../actions';
+import { completeReminder, completeTask, dismissTask, markSeen, refreshOverview, snoozeTask } from '../actions';
 
 export const maxDuration = 60;
 
@@ -45,6 +45,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const facts = await computeFacts(rows, all, lastSeen);
   const ai = await aiOverview(facts);
 
+  const { data: reminders } = await db.from('portal_reminders').select('id,application_id,due_on,note,portal_applications(name)').eq('status', 'pending').order('due_on').limit(100);
   const [{ data: tasks }, { data: activity }] = await Promise.all([
     db.from('portal_tasks').select('*').eq('status', 'open').order('priority').order('created_at', { ascending: false }).limit(500),
     db.from('portal_activity').select('id,kind,actor,detail,created_at,application_id,portal_applications(name)').order('created_at', { ascending: false }).limit(14),
@@ -61,6 +62,23 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       <p className="sub">Since your last visit · {new Date(lastSeen).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}</p>
       {sp.msg && <div className="card ok">{sp.msg}</div>}
       {sp.err && <div className="card err">{sp.err}</div>}
+
+      {(reminders || []).length > 0 && (
+        <div className="card">
+          <h2>Reminders</h2>
+          {(reminders || []).map((r) => {
+            const nm = (r.portal_applications as unknown as { name: string } | null)?.name || 'Student';
+            const today = new Date().toISOString().slice(0, 10);
+            return (
+              <div key={r.id} className="filters" style={{ padding: '9px 0', borderTop: '1px solid var(--line)' }}>
+                <div style={{ flex: 1 }}><Link href={`/applications/${r.application_id}`}>{nm}: {r.note}</Link></div>
+                <span className={`badge plain ${r.due_on < today ? 'red' : r.due_on === today ? 'amber' : ''}`}>{r.due_on < today ? 'Overdue · ' : ''}{new Date(r.due_on).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
+                <form action={completeReminder}><input type="hidden" name="reminderId" value={r.id} /><input type="hidden" name="returnTo" value="/tasks" /><Btn className="sm">Done</Btn></form>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       <div className="grid g5" style={{ marginBottom: 16 }}>
         {stat('New applications', facts.newApplicationsSinceLastVisit, '/applications?view=new')}

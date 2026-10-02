@@ -9,11 +9,12 @@ import { statusTone } from '@/lib/ui';
 import { ago, dateTime, decodeId, describeActivity, initials, shortDate, STEPS, stepIndex } from '@/lib/format';
 import { hashOf } from '@/lib/ai';
 import { PURPOSES, TONES, Draft } from '@/lib/draft';
+import { docScanEnabled, Scan } from '@/lib/docscan';
 import { studentFacts, AppFull, StudentSummary } from '@/lib/overview';
 import Btn from '@/components/Btn';
 import Icon from '@/components/Icon';
 import { niceName } from '@/components/UserMenu';
-import { addNote, addToMaster, createDraft, dismissSuggestion, generateSummary, linkFolder, refreshDocuments, scanStudent, sendCounselorEmail, unlinkFolder, updateCounselor, updateRegent, updateStatus, uploadDocument } from '../../actions';
+import { addNote, addReminder, addToMaster, completeReminder, createDraft, scanDocs, setDocType, dismissSuggestion, generateSummary, linkFolder, refreshDocuments, scanStudent, sendCounselorEmail, unlinkFolder, updateCounselor, updateRegent, updateStatus, uploadDocument } from '../../actions';
 
 type SP = { msg?: string; err?: string; preview?: string; tab?: string; compose?: string; draft?: string };
 const TABS = ['overview', 'documents', 'notes', 'activity', 'messages', 'regent', 'sources'] as const;
@@ -21,6 +22,8 @@ const FIELDS: [string, string][] = [['oppId', 'OPP ID'], ['payment', 'Payment'],
 const kb = (n: number | null) => (n ? `${Math.max(1, Math.round(n / 1024))} KB` : '');
 const ext = (n: string) => (n.match(/\.([a-z0-9]+)$/i)?.[1] || '').toLowerCase();
 const ftClass = (e: string) => (e === 'pdf' ? '' : ['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic'].includes(e) ? 'img' : ['doc', 'docx'].includes(e) ? 'doc' : 'doc');
+
+export const maxDuration = 60;
 
 export default async function ApplicationPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<SP> }) {
   const staff = await requireStaff();
@@ -30,17 +33,21 @@ export default async function ApplicationPage({ params, searchParams }: { params
   const { data: app } = await db.from('portal_applications').select('*').eq('application_id', id).maybeSingle();
   if (!app) notFound();
 
-  const [{ data: siblings }, { data: notes }, { data: activity }, { data: counselors }, { data: suggestions }, { data: messages }] = await Promise.all([
+  const [{ data: siblings }, { data: notes }, { data: activity }, { data: counselors }, { data: suggestions }, { data: messages }, { data: reminders }] = await Promise.all([
     db.from('portal_applications').select('application_id,submitted_at').eq('student_key', app.student_key).order('submitted_at', { ascending: false }),
     db.from('portal_notes').select('*').eq('application_id', id).order('pinned', { ascending: false }).order('created_at', { ascending: false }),
     db.from('portal_activity').select('*').eq('application_id', id).order('created_at', { ascending: false }).limit(100),
     db.from('portal_counselors').select('name,email,active').order('name'),
     db.from('portal_folder_suggestions').select('*').eq('application_id', id).eq('status', 'new').order('score', { ascending: false }),
     db.from('portal_messages').select('*').eq('application_id', id).order('created_at', { ascending: false }).limit(50),
+    db.from('portal_reminders').select('*').eq('application_id', id).eq('status', 'pending').order('due_on'),
   ]);
   const { data: docs } = await db.from('portal_documents').select('*').in('application_id', (siblings || []).map((s) => s.application_id)).order('created_at', { ascending: false });
 
   const judged = isFormSubmission(app) || !!app.drive_folder_id;
+  const scanOn = docScanEnabled();
+  const { data: scanRows } = await db.from('portal_doc_scans').select('*').in('drive_file_id', (docs || []).map((d) => d.drive_file_id));
+  const scans = new Map((scanRows || []).map((r) => [r.drive_file_id as string, r as Scan]));
   const types = (docs || []).map(effType);
   const missing = judged ? missingDocs(types) : [];
   const presentRequired = REQUIRED_DOCS.filter((d) => types.includes(d)).length;
@@ -278,8 +285,29 @@ export default async function ApplicationPage({ params, searchParams }: { params
                   ? <Link href={`${tabHref('messages')}${tabHref('messages').includes('?') ? '&' : '?'}compose=missing`} className="qa"><span className="ico amber"><Icon n="file" size={19} /></span><span><b>Request Missing Documents</b><small>Send a friendly reminder</small></span><Icon n="right" size={16} /></Link>
                   : <div className="qa" style={{ opacity: .6, cursor: 'default' }}><span className="ico green"><Icon n="check-circle" size={19} /></span><span><b>Documents complete</b><small>Nothing to request</small></span></div>}
                 <details className="qa-d"><summary className="qa"><span className="ico purple"><Icon n="clock" size={19} /></span><span><b>Update Status</b><small>Change application status</small></span><Icon n="down" size={16} /></summary><div className="body">{statusForm}</div></details>
+                <details className="qa-d"><summary className="qa"><span className="ico amber"><Icon n="clock" size={19} /></span><span><b>Set Reminder</b><small>Follow up on a date</small></span><Icon n="down" size={16} /></summary>
+                  <div className="body">
+                    <form action={addReminder} className="grid" style={{ gap: 8 }}>
+                      <input type="hidden" name="id" value={id} />
+                      <input name="due" type="date" required min={new Date().toISOString().slice(0, 10)} defaultValue={new Date(Date.now() + 2 * 864e5).toISOString().slice(0, 10)} />
+                      <input name="note" placeholder="e.g. Chase for passport copy" required maxLength={300} />
+                      <Btn className="sm">Set reminder</Btn>
+                    </form>
+                  </div></details>
                 <Link href="#note-input" className="qa"><span className="ico green"><Icon n="note" size={19} /></span><span><b>Add Note</b><small>Add a private note</small></span><Icon n="right" size={16} /></Link>
               </div>
+
+              {(reminders || []).length > 0 && (
+                <div className="card">
+                  <h2><Icon n="clock" size={17} /> Reminders</h2>
+                  {(reminders || []).map((r) => (
+                    <div key={r.id} className="filters" style={{ padding: '8px 0', borderTop: '1px solid var(--line)', flexWrap: 'nowrap' }}>
+                      <div style={{ flex: 1 }}>{r.note}<div className="muted" style={{ fontSize: 12.5 }}>{new Date(r.due_on).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}{r.due_on < new Date().toISOString().slice(0, 10) ? ' · overdue' : ''}</div></div>
+                      <form action={completeReminder}><input type="hidden" name="reminderId" value={r.id} /><input type="hidden" name="returnTo" value={tabHref('overview')} /><Btn className="ghost sm">Done</Btn></form>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <div className="card">
                 <div className="filters" style={{ justifyContent: 'space-between', marginBottom: 8 }}><h2 style={{ margin: 0 }}><Icon n="note" size={17} /> Notes</h2><Link href={tabHref('notes')}>View all →</Link></div>
@@ -298,12 +326,23 @@ export default async function ApplicationPage({ params, searchParams }: { params
             </div>
             <div className="scroll" style={{ overflowX: 'auto' }}>
               <table>
-                <thead><tr><th>Type</th><th>File</th><th>Added</th><th>Location</th><th /></tr></thead>
+                <thead><tr><th>Type</th><th>File</th>{scanOn && <th>AI check</th>}<th>Added</th><th>Location</th><th /></tr></thead>
                 <tbody>
                   {(docs || []).map((d) => (
                     <tr key={d.drive_file_id} className="row">
                       <td><span className="badge plain">{effType(d)}</span></td>
                       <td>{d.name} <span className="muted">{kb(d.size_bytes)}</span>{d.application_id !== id && <> <span className="badge plain">other submission</span></>}{d.source === 'portal' && <> <span className="badge plain">added here</span></>}</td>
+                      {scanOn && (
+                        <td style={{ minWidth: 200 }}>
+                          {(() => { const sc = scans.get(d.drive_file_id); if (!sc) return (
+                            <form action={scanDocs}><input type="hidden" name="id" value={id} /><input type="hidden" name="fileId" value={d.drive_file_id} /><input type="hidden" name="returnTo" value={ret('documents')} /><Btn className="ghost sm" data-busy="Reading the document and asking the AI…">AI check</Btn></form>); 
+                            if (!sc.flags.length) return <span className="badge plain green" title={`Detected: ${sc.detected_type}`}>Looks fine</span>;
+                            return <div className="grid" style={{ gap: 6 }}>{sc.flags.map((fl, i) => (
+                              <div key={i}><span className="badge plain amber" style={{ whiteSpace: 'normal' }}>{fl.text}</span>
+                                {fl.kind === 'type' && fl.detected && <form action={setDocType} style={{ marginTop: 4 }}><input type="hidden" name="id" value={id} /><input type="hidden" name="fileId" value={d.drive_file_id} /><input type="hidden" name="docType" value={fl.detected} /><input type="hidden" name="returnTo" value={ret('documents')} /><Btn className="ghost sm">Use “{fl.detected}”</Btn></form>}
+                              </div>))}</div>; })()}
+                        </td>
+                      )}
                       <td className="muted">{dateTime(d.created_at)}</td>
                       <td><a href={d.drive_url} target="_blank">Drive ↗</a>{d.folder_path && <span className="muted"> · {d.folder_path}</span>}</td>
                       <td><Link href={`/applications/${id}/documents?file=${d.drive_file_id}`}>View</Link> · <a href={`/api/files/${d.drive_file_id}?download=1`}>Download</a></td>
@@ -317,6 +356,13 @@ export default async function ApplicationPage({ params, searchParams }: { params
               <div style={{ marginTop: 14 }}>
                 <b>{previewDoc.name}</b> · <Link href={tabHref('documents')}>close</Link>
                 {previewDoc.mime_type?.startsWith('image/') ? <img src={`/api/files/${previewDoc.drive_file_id}`} alt={previewDoc.name} style={{ maxWidth: '100%', marginTop: 8 }} /> : <iframe className="preview" src={`/api/files/${previewDoc.drive_file_id}`} />}
+              </div>
+            )}
+            {scanOn && (docs || []).length > 0 && (
+              <div className="callout" style={{ background: 'var(--blue-soft)', borderColor: '#cfdcfa', marginTop: 16 }}>
+                <Icon n="spark" className="ci" /><div style={{ flex: 1 }}><b style={{ color: 'var(--blue)' }}>AI document check <span className="badge blue plain">opt-in</span></b>
+                  <p style={{ color: 'var(--text)' }}>Reads each document and flags a wrong type, a name that doesn’t match, or a passport close to expiry. It’s an observation for you to review — never a decision. The document’s text is sent to Qwen to do this.</p>
+                  <form action={scanDocs}><input type="hidden" name="id" value={id} /><input type="hidden" name="returnTo" value={ret('documents')} /><Btn className="primary sm" data-busy="Reading documents and asking the AI — this takes a few seconds each…">AI-check unchecked documents</Btn></form></div>
               </div>
             )}
             <div style={{ marginTop: 16 }} className="chips"><b>Missing</b>{!judged ? <span className="muted">not checked — link a Drive folder</span> : missing.length ? missing.map((m) => <span key={m} className="badge amber">{m}</span>) : <span className="badge green">nothing — complete</span>}</div>

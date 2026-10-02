@@ -9,6 +9,7 @@ import { counselorKey, docTypeFromName, dobForMaster, schoolShort } from '@/lib/
 import { ALL_DOC_TYPES } from '@/lib/constants';
 import { syncAll, syncFolders } from '@/lib/sync';
 import { STATUSES } from '@/lib/constants';
+import { docScanEnabled, scanOne } from '@/lib/docscan';
 import { draftEmail, PURPOSES, PurposeKey, TONES, ToneKey } from '@/lib/draft';
 import { aiOverview, aiStudentSummary, computeFacts, loadStudents, refreshTasks, studentFacts } from '@/lib/overview';
 
@@ -105,19 +106,99 @@ export async function addToMaster(f: FormData) {
   } catch (e) { rethrow(e); return back(id, `Could not add: ${(e as Error).message}`, true); }
 }
 
+// ---- Bulk actions (Applications page) ----
+const BULK_MAX = 15; // keeps each run inside the server time limit; run again for the rest
+function bulkBack(f: FormData, msg: string, err = false): never {
+  const r = s(f, 'returnTo');
+  const base = r.startsWith('/applications') && !r.startsWith('/applications/') ? r.split(/[?&](msg|err)=/)[0] : '/applications';
+  redirect(`${base}${base.includes('?') ? '&' : '?'}${err ? 'err' : 'msg'}=${encodeURIComponent(msg)}`);
+}
+function pickIds(f: FormData) {
+  const all = f.getAll('ids').map(String).filter(Boolean);
+  if (!all.length) bulkBack(f, 'Tick at least one student first.', true);
+  return { ids: all.slice(0, BULK_MAX), left: Math.max(0, all.length - BULK_MAX) };
+}
+const leftNote = (n: number) => (n ? ` ${n} more left — run it again.` : '');
+
 export async function bulkAddToMaster(f: FormData) {
   const staff = await requireStaff();
-  const all = f.getAll('ids').map(String).filter(Boolean);
-  const ids = all.slice(0, 15); // keep within the server time limit; do the rest in another batch
-  const status = s(f, 'status') || 'New Lead';
-  if (!ids.length) redirect(`/applications?source=raw_only&err=${encodeURIComponent('Tick at least one student')}`);
+  const { ids, left } = pickIds(f);
+  const status = s(f, 'addStatus') || 'New Lead';
   let added = 0, existed = 0, failed = 0;
   for (const id of ids) {
     try { (await pushToMaster(id, staff.email, status)) === 'added' ? added++ : existed++; } catch { failed++; }
   }
   try { await syncAll(); } catch { /* next sync will catch up */ }
-  revalidatePath('/');
-  redirect(`/applications?source=raw_only&msg=${encodeURIComponent(`Added ${added} to the master sheet${existed ? `, ${existed} already there` : ''}${failed ? `, ${failed} failed` : ''}.${all.length > ids.length ? ` ${all.length - ids.length} left — run it again.` : ''}`)}`);
+  revalidatePath('/applications');
+  bulkBack(f, `Added ${added} to Sheet1${existed ? `, ${existed} already there` : ''}${failed ? `, ${failed} failed` : ''}.${leftNote(left)}`);
+}
+
+export async function bulkSetStatus(f: FormData) {
+  const staff = await requireStaff();
+  const status = s(f, 'setStatus');
+  if (!(STATUSES as readonly string[]).includes(status)) bulkBack(f, 'Choose a status first.', true);
+  const { ids, left } = pickIds(f);
+  const db = admin();
+  let ok = 0, sheetFail = 0;
+  for (const id of ids) {
+    const { data: cur } = await db.from('portal_applications').select('status').eq('application_id', id).single();
+    await db.from('portal_applications').update({ status }).eq('application_id', id);
+    await log(id, staff.email, 'status_change', { from: cur?.status ?? null, to: status });
+    try { await writeBack(id, { status }); } catch { sheetFail++; }
+    ok++;
+  }
+  revalidatePath('/applications'); revalidatePath('/');
+  bulkBack(f, `Status set to “${status}” for ${ok} student${ok === 1 ? '' : 's'}${sheetFail ? ` (${sheetFail} could not be written to the sheet)` : ''}.${leftNote(left)}`, sheetFail > 0);
+}
+
+export async function bulkAssign(f: FormData) {
+  const staff = await requireStaff();
+  const pick = s(f, 'setCounselor');
+  if (!pick) bulkBack(f, 'Choose a counselor first.', true);
+  const counselor = pick === '__clear' ? '' : pick;
+  const { ids, left } = pickIds(f);
+  const db = admin();
+  let ok = 0, sheetFail = 0;
+  for (const id of ids) {
+    const { data: cur } = await db.from('portal_applications').select('counselor').eq('application_id', id).single();
+    await db.from('portal_applications').update({ counselor: counselor || null }).eq('application_id', id);
+    await log(id, staff.email, 'counselor_change', { from: cur?.counselor ?? null, to: counselor });
+    try { await writeBack(id, { counselor }); } catch { sheetFail++; }
+    ok++;
+  }
+  revalidatePath('/applications'); revalidatePath('/counselors');
+  bulkBack(f, `${counselor ? `Assigned to ${counselor}` : 'Unassigned'}: ${ok} student${ok === 1 ? '' : 's'}${sheetFail ? ` (${sheetFail} could not be written to the sheet)` : ''}.${leftNote(left)}`, sheetFail > 0);
+}
+
+// One email per counselor listing the selected students that belong to them.
+export async function bulkEmailCounselors(f: FormData) {
+  const staff = await requireStaff();
+  const { ids } = pickIds(f);
+  const db = admin();
+  const [{ rows, all }, { data: counselors }] = await Promise.all([loadStudents({ dups: true }), db.from('portal_counselors').select('*')]);
+  const chosen = new Set(ids);
+  const byCounselor = new Map<string, typeof rows>();
+  for (const r of rows.filter((r) => chosen.has(r.a.application_id))) {
+    const k = counselorKey(r.a.counselor); if (!k) continue;
+    byCounselor.set(k, [...(byCounselor.get(k) || []), r]);
+  }
+  void all;
+  let sent = 0, students = 0, noEmail: string[] = [];
+  for (const [k, list] of byCounselor) {
+    const c = (counselors || []).find((x) => x.name_key === k);
+    if (!c?.email) { noEmail.push(c?.name || list[0].a.counselor || k); continue; }
+    const lines = list.map((r) => `• ${r.a.name} (${[schoolShort(r.a.school), r.a.status || 'no status'].filter(Boolean).join(', ')})${r.reasons.length ? `: ${r.reasons.join('; ')}` : ''}${r.missing.length ? ` — missing ${r.missing.join(', ')}` : ''}`);
+    const subject = `${list.length} of your student${list.length === 1 ? '' : 's'} — update from admissions`;
+    const body = `Hi ${c.name.replace(/^(mr|mrs|ms|miss|dr)\.?\s+/i, '')},\n\nA quick update on these students:\n\n${lines.join('\n')}\n\nPlease follow up where you can.\n\nThanks,\n${staff.email.split('@')[0]}`;
+    try {
+      await callScript('sendEmail', { to: c.email, subject, body, replyTo: staff.email });
+      await db.from('portal_messages').insert({ application_id: null, counselor_name: c.name, to_email: c.email, to_kind: 'counselor', subject, body, sent_by: staff.email });
+      sent++; students += list.length;
+    } catch { noEmail.push(`${c.name} (send failed)`); }
+  }
+  revalidatePath('/messages');
+  const skipped = noEmail.length ? ` Not emailed (no address or failed): ${noEmail.join(', ')}.` : '';
+  bulkBack(f, sent ? `Emailed ${sent} counselor${sent === 1 ? '' : 's'} about ${students} student${students === 1 ? '' : 's'}.${skipped}` : `No emails sent.${skipped || ' The selected students have no counselor.'}`, !sent);
 }
 
 export async function updateRegent(f: FormData) {
@@ -261,6 +342,24 @@ export async function setDocType(f: FormData) {
   back(id, `Marked as ${type}`, false, ret);
 }
 
+// ---- Reminders ----
+export async function addReminder(f: FormData) {
+  const staff = await requireStaff();
+  const id = s(f, 'id'), due = s(f, 'due'), note = s(f, 'note'), ret = s(f, 'returnTo');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(due) || !note) return back(id, 'Pick a date and write what to follow up on.', true, ret);
+  await admin().from('portal_reminders').insert({ application_id: id, due_on: due, note: note.slice(0, 300), created_by: staff.email });
+  await log(id, staff.email, 'reminder_set', { due, note: note.slice(0, 80) });
+  revalidatePath('/'); revalidatePath('/tasks');
+  back(id, `Reminder set for ${new Date(due).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}.`, false, ret);
+}
+export async function completeReminder(f: FormData) {
+  await requireStaff();
+  await admin().from('portal_reminders').update({ status: 'done', done_at: new Date().toISOString() }).eq('id', s(f, 'reminderId'));
+  revalidatePath('/'); revalidatePath('/tasks');
+  const ret = s(f, 'returnTo');
+  redirect(/^\/(?!\/)/.test(ret) ? ret : '/tasks');
+}
+
 // ---- Overview, tasks, AI ----
 const DAY_MS = 864e5;
 const homeOr = (f: FormData | undefined, def = '/tasks') => { const r = f ? s(f, 'returnTo') : ''; return r === '/' || r.startsWith('/tasks') ? r : def; };
@@ -308,6 +407,30 @@ export async function generateSummary(f: FormData) {
   const submissions = all.filter((x) => x.student_key === row.a.student_key).length;
   const r = await aiStudentSummary(id, studentFacts(row.a, { have: row.have, docCount: row.docCount, missing: row.missing, judged: row.judged, submissions }), true);
   back(id, r.error ? `AI summary: ${r.error}` : 'AI summary generated', !!r.error);
+}
+
+// ---- AI document check (opt-in) ----
+export async function scanDocs(f: FormData) {
+  const staff = await requireStaff();
+  const id = s(f, 'id'), fileId = s(f, 'fileId'), ret = s(f, 'returnTo') || `/applications/${id}?tab=documents`;
+  if (!docScanEnabled()) return back(id, 'The AI document check is switched off. Turn it on in Settings → AI document check.', true, ret);
+  const db = admin();
+  const { data: app } = await db.from('portal_applications').select('name, student_key').eq('application_id', id).single();
+  if (!app) return back(id, 'Student not found', true, ret);
+  const { data: sibs } = await db.from('portal_applications').select('application_id').eq('student_key', app.student_key);
+  const { data: docs } = await db.from('portal_documents').select('drive_file_id, application_id, doc_type, type_override, name').in('application_id', (sibs || []).map((x) => x.application_id));
+  const { data: done } = await db.from('portal_doc_scans').select('drive_file_id').in('drive_file_id', (docs || []).map((d) => d.drive_file_id));
+  const scanned = new Set((done || []).map((d) => d.drive_file_id));
+  const todo = (fileId ? (docs || []).filter((d) => d.drive_file_id === fileId) : (docs || []).filter((d) => !scanned.has(d.drive_file_id))).slice(0, 4);
+  if (!todo.length) return back(id, 'Nothing new to check.', false, ret);
+  let ok = 0, flagged = 0, failure = '';
+  for (const d of todo) {
+    try { const r = await scanOne({ appId: d.application_id, fileId: d.drive_file_id, filedAs: d.type_override || d.doc_type, studentName: app.name, actor: staff.email }); ok++; if (r.flags.length) flagged++; }
+    catch (e) { rethrow(e); failure = (e as Error).message; break; }
+  }
+  await log(id, staff.email, 'doc_scanned', { count: ok });
+  const more = !fileId && (docs || []).length - scanned.size - ok > 0 ? ' Run it again for the remaining files.' : '';
+  return back(id, failure ? `Checked ${ok}. Then: ${failure}` : `AI checked ${ok} document${ok === 1 ? '' : 's'}${flagged ? ` — ${flagged} need a look` : ' — nothing unusual'}.${more}`, !!failure, ret);
 }
 
 // ---- Linking Google Drive folders ----

@@ -45,6 +45,7 @@ function portalDispatch_(e) {
       case 'updateMaster':     return portalJson_({ ok: true, data: portalUpdateMaster_(p) });
       case 'addMaster':        return portalJson_({ ok: true, data: portalAddMaster_(p) });
       case 'listRegent':       return portalJson_({ ok: true, data: portalListRegent_() });
+      case 'extractText':      return portalJson_({ ok: true, data: portalExtractText_(p.fileId) });
       case 'aiChat':           return portalJson_({ ok: true, data: portalAiChat_(p) });
       case 'searchFolders':    return portalJson_({ ok: true, data: portalSearchFolders_(p.students || []) });
       case 'updateRegent':     return portalJson_({ ok: true, data: portalUpdateRegent_(p) });
@@ -414,6 +415,77 @@ function portalAiChat_(p) {
   const j = JSON.parse(txt);
   return { text: (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '',
            model: j.model || model, tokens: (j.usage && j.usage.total_tokens) || 0 };
+}
+
+// ---- Read text from a document (for the opt-in AI document check) ---------
+// Needs the Drive API advanced service: Apps Script > Services (+) > Drive API > Add.
+// PDFs, images and Word files are converted to a temporary Google Doc with OCR, read, then deleted.
+function portalExtractText_(fileId) {
+  const f = DriveApp.getFileById(fileId);
+  const mime = f.getMimeType();
+  let text = '';
+  if (mime === 'application/vnd.google-apps.document') {
+    text = DocumentApp.openById(fileId).getBody().getText();
+  } else {
+    if (f.getSize() > 10 * 1024 * 1024) throw new Error('File too large to read (10MB max)');
+    const tmp = Drive.Files.create({ name: 'portal-ocr-temp', mimeType: 'application/vnd.google-apps.document' }, f.getBlob(), { ocrLanguage: 'en' });
+    try { text = DocumentApp.openById(tmp.id).getBody().getText(); }
+    finally { try { Drive.Files.remove(tmp.id); } catch (e) { Logger.log('temp cleanup failed: ' + e); } }
+  }
+  text = String(text || '').replace(/\s+/g, ' ').trim();
+  return { text: text.slice(0, 5000), chars: text.length };
+}
+
+// ---- Background triggers (no edits to your form's doPost needed) -------------
+// 1) Paste your portal address + CRON_SECRET below.  2) Run portalInstallTriggers() once.
+const PORTAL_SITE_URL = '';     // e.g. https://applications-2026-peaceable-s-projects.vercel.app
+const PORTAL_CRON_SECRET = '';  // the same value as CRON_SECRET in Vercel
+
+function portalInstallTriggers() {
+  if (!PORTAL_SITE_URL || !PORTAL_CRON_SECRET) throw new Error('Fill in PORTAL_SITE_URL and PORTAL_CRON_SECRET near the top of this section first.');
+  const props = PropertiesService.getScriptProperties();
+  props.setProperty('PORTAL_WEBHOOK_URL', PORTAL_SITE_URL.replace(/\/$/, '') + '/api/sync');
+  props.setProperty('PORTAL_WEBHOOK_SECRET', PORTAL_CRON_SECRET);
+  portalRemoveTriggers();
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  ScriptApp.newTrigger('portalPoll_').timeBased().everyMinutes(1).create();          // tells the portal when new rows or edits appear
+  ScriptApp.newTrigger('portalEnforcePrivacy_').timeBased().everyMinutes(10).create(); // makes new student folders private
+  ScriptApp.newTrigger('portalOnEdit_').forSpreadsheet(ss).onEdit().create();         // notices manual edits to the sheets
+  Logger.log('Installed: instant-update poll (1 min), privacy sweep (10 min), edit watcher.');
+}
+
+function portalRemoveTriggers() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (['portalPoll_', 'portalEnforcePrivacy_', 'portalOnEdit_'].indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
+  });
+}
+
+function portalOnEdit_() { PropertiesService.getScriptProperties().setProperty('PORTAL_DIRTY', '1'); }
+
+// Runs every minute: if rows were added or someone edited a sheet, ping the portal to sync now.
+function portalPoll_() {
+  const props = PropertiesService.getScriptProperties();
+  const sig = SpreadsheetApp.openById(SPREADSHEET_ID).getSheets().map(function (s) { return s.getName() + ':' + s.getLastRow(); }).join('|');
+  const changed = props.getProperty('PORTAL_SIG') !== sig || props.getProperty('PORTAL_DIRTY') === '1';
+  if (!changed) return;
+  props.setProperty('PORTAL_SIG', sig);
+  props.deleteProperty('PORTAL_DIRTY');
+  notifyPortal_();
+}
+
+// Runs every 10 minutes: any student folder created in the last day that is still link-shareable becomes private (team-only).
+function portalEnforcePrivacy_() {
+  const main = getOrCreateFolder_(DRIVE_FOLDER_NAME);
+  const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString().slice(0, 19);
+  const it = main.searchFolders("createdDate > '" + since + "'");
+  while (it.hasNext()) {
+    const f = it.next();
+    if (f.getSharingAccess() === DriveApp.Access.PRIVATE) continue;
+    f.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE);
+    portalShareFolderPrivately_(f);
+    const files = f.getFiles();
+    while (files.hasNext()) files.next().setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE);
+  }
 }
 
 // ---- Privacy ----------------------------------------------------------

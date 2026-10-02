@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { admin } from '@/lib/supabase';
 import { Staff } from '@/lib/auth';
 import { aiOverview, AppFull, computeFacts, refreshTasks, SRow } from '@/lib/overview';
-import { completeTask, markSeen, refreshOverview, snoozeTask } from '@/app/actions';
+import { completeReminder, completeTask, markSeen, refreshOverview, snoozeTask } from '@/app/actions';
 import Btn from './Btn';
 
 const ago = (t: string) => { const m = Math.max(1, Math.round((Date.now() - new Date(t).getTime()) / 60000)); return m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; };
@@ -16,6 +16,7 @@ export default async function CommandCentre({ staff, rows, all }: { staff: Staff
   await refreshTasks(rows);
   const facts = await computeFacts(rows, all, lastSeen);
   const ai = await aiOverview(facts);
+  const { data: due } = await db.from('portal_reminders').select('id,application_id,due_on,note,portal_applications(name)').eq('status', 'pending').lte('due_on', new Date().toISOString().slice(0, 10)).order('due_on').limit(5);
   const { data: tasks } = await db.from('portal_tasks').select('*').eq('status', 'open').order('priority').order('created_at', { ascending: false }).limit(6);
 
   return (
@@ -47,7 +48,20 @@ export default async function CommandCentre({ staff, rows, all }: { staff: Staff
             <h2 style={{ margin: 0 }}>Today’s tasks</h2>
             <Link href="/tasks" className="muted">View all {facts.openTasks} →</Link>
           </div>
-          {!(tasks || []).length && <p className="muted" style={{ margin: 0 }}>Nothing needs doing right now.</p>}
+          {!(tasks || []).length && !(due || []).length && <p className="muted" style={{ margin: 0 }}>Nothing needs doing right now.</p>}
+          {(due || []).map((r) => {
+            const nm = (r.portal_applications as unknown as { name: string } | null)?.name || 'Student';
+            const over = r.due_on < new Date().toISOString().slice(0, 10);
+            return (
+              <div key={r.id} style={{ padding: '9px 0', borderTop: '1px solid var(--line)' }} className="filters">
+                <div style={{ flex: 1, minWidth: 180 }}>
+                  <Link href={`/applications/${r.application_id}`}>{nm}: {r.note}</Link> <span className={`badge plain ${over ? 'red' : 'amber'}`}>{over ? 'Overdue' : 'Reminder · today'}</span>
+                  <div className="muted" style={{ fontSize: 12.5 }}>Follow-up set for {new Date(r.due_on).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</div>
+                </div>
+                <form action={completeReminder}><input type="hidden" name="reminderId" value={r.id} /><input type="hidden" name="returnTo" value="/" /><Btn className="sm">Done</Btn></form>
+              </div>
+            );
+          })}
           {(tasks || []).map((t) => (
             <div key={t.id} style={{ padding: '9px 0', borderTop: '1px solid var(--line)' }} className="filters">
               <div style={{ flex: 1, minWidth: 180 }}>

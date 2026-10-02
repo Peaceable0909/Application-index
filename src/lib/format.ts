@@ -19,6 +19,8 @@ export function describeActivity(kind: string, d: Record<string, string>): { tit
     case 'folder_unlinked': return { title: 'Drive folder unlinked', icon: 'link', tone: 'amber' };
     case 'regent_update': return { title: 'Regent details updated', icon: 'note', tone: '' };
     case 'note': return { title: `Note added${d.preview ? ` · ${d.preview}` : ''}`, icon: 'note', tone: 'amber' };
+    case 'reminder_set': return { title: `Reminder set · ${d.note || ''}`, icon: 'clock', tone: 'amber' };
+    case 'doc_scanned': return { title: `AI checked ${d.count || ''} document(s)`, icon: 'spark', tone: 'purple' };
     case 'task_done': return { title: `Task completed · ${d.title || ''}`, icon: 'check', tone: 'green' };
     case 'task_dismissed': return { title: 'Task dismissed', icon: 'check', tone: '' };
     case 'task_snoozed': return { title: 'Task snoozed', icon: 'clock', tone: '' };

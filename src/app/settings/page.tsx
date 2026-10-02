@@ -28,6 +28,27 @@ export default async function Settings({ searchParams }: { searchParams: Promise
       </div>
 
       <div className="card">
+        <h2>Instant updates &amp; private documents</h2>
+        <p className="muted" style={{ marginTop: 0 }}>Two background jobs inside your Apps Script keep the portal fresh and your students’ files private — no changes to your form script needed.</p>
+        <ol style={{ margin: '0 0 8px', paddingLeft: 20, lineHeight: 1.7 }}>
+          <li>In Apps Script, open <b>PortalApi</b> and find <code>PORTAL_SITE_URL</code> and <code>PORTAL_CRON_SECRET</code> (near <i>Background triggers</i>).</li>
+          <li>Set <code>PORTAL_SITE_URL</code> to <code>{process.env.NEXT_PUBLIC_SITE_URL || 'your portal address'}</code> and <code>PORTAL_CRON_SECRET</code> to the same value as <code>CRON_SECRET</code> in Vercel. Save.</li>
+          <li>Choose <b>portalInstallTriggers</b> in the function dropdown, click <b>Run</b>, and approve the permissions.</li>
+          <li>(Once) run <b>lockDownExistingFolders</b> to make all earlier student folders private too.</li>
+        </ol>
+        <p className="muted" style={{ marginBottom: 0 }}>After that: new applications and sheet edits show up within about a minute, and any new student folder is made team-only within ten minutes.</p>
+      </div>
+
+      <div className="card">
+        <h2>AI document check <span className={`badge plain ${process.env.AI_DOC_SCAN === 'on' ? 'green' : ''}`} style={{ marginLeft: 6 }}>{process.env.AI_DOC_SCAN === 'on' ? 'on' : 'off'}</span></h2>
+        <p className="muted" style={{ marginTop: 0 }}>An opt-in helper that reads one document at a time and flags a wrong type, a mismatched name or a passport near expiry. Because it sends the document’s text to Qwen (Alibaba Cloud), it is <b>off by default</b>. Use it only if your students have agreed to that.</p>
+        <ol style={{ margin: 0, paddingLeft: 20, lineHeight: 1.7 }}>
+          <li>In Apps Script: <b>Services (+) → Drive API → Add</b>, then run any function once to approve the new permissions.</li>
+          <li>In Vercel add the variable <code>AI_DOC_SCAN</code> = <code>on</code> and redeploy.</li>
+        </ol>
+      </div>
+
+      <div className="card">
         <h2>AI usage today</h2>
         <dl className="kv" style={{ gridTemplateColumns: '180px 1fr' }}>
           <dt>Qwen calls</dt><dd><b>{calls}</b> of {process.env.AI_DAILY_LIMIT || 60} allowed</dd>

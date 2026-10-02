@@ -8,6 +8,7 @@ import Nav from '@/components/Nav';
 import TopSearch from '@/components/TopSearch';
 import Bell from '@/components/Bell';
 import UserMenu from '@/components/UserMenu';
+import NavProgress from '@/components/NavProgress';
 
 const ui = Inter({ subsets: ['latin'], variable: '--font-ui', display: 'swap' });
 const display = Instrument_Serif({ subsets: ['latin'], weight: '400', style: ['normal', 'italic'], variable: '--font-display', display: 'swap' });
@@ -23,6 +24,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <div className="splash" aria-hidden>
           <div className="splash-in"><Mark draw /><div className="splash-word">Peaceable <em>Portal</em></div><div className="splash-line" /></div>
         </div>
+        <NavProgress />
         {staff ? (
           <div className="shell">
             <aside className="side">

@@ -6,19 +6,21 @@ import Icon from './Icon';
 /** Notification bell: open tasks (high priority first) and applications new since the admin's last visit. */
 export default async function Bell({ staff }: { staff: Staff }) {
   const db = admin();
+  const { count: dueCount } = await db.from('portal_reminders').select('id', { count: 'exact', head: true }).eq('status', 'pending').lte('due_on', new Date().toISOString().slice(0, 10));
   const [{ data: tasks, count }, { count: fresh }] = await Promise.all([
     db.from('portal_tasks').select('id,title,detail,application_id,priority', { count: 'exact' }).eq('status', 'open').order('priority').order('created_at', { ascending: false }).limit(5),
     staff.last_seen_at
       ? db.from('portal_applications').select('application_id', { count: 'exact', head: true }).eq('has_raw', true).not('submitted_at', 'is', null).gt('created_at', staff.last_seen_at)
       : Promise.resolve({ count: 0 }),
   ]);
-  const n = (count || 0);
+  const n = (count || 0) + (dueCount || 0);
   return (
     <details className="dd">
       <summary className="iconbtn" aria-label="Notifications"><Icon n="bell" size={19} />{(n > 0 || (fresh || 0) > 0) && <i className="dot" />}</summary>
       <div className="menu" style={{ minWidth: 340 }}>
         <div className="hd">Notifications</div>
         {(fresh || 0) > 0 && <Link href="/applications?view=new"><Icon n="file" /> <span><b>{fresh} new application{fresh === 1 ? '' : 's'}</b><br /><small className="muted">since your last visit</small></span></Link>}
+        {(dueCount || 0) > 0 && <Link href="/tasks"><Icon n="clock" /> <span><b>{dueCount} reminder{dueCount === 1 ? '' : 's'} due</b><br /><small className="muted">follow-ups you set</small></span></Link>}
         {(tasks || []).map((t) => (
           <Link key={t.id} href={`/applications/${t.application_id}`}><Icon n={t.priority === 1 ? 'alert' : 'tasks'} /> <span><b>{t.title}</b><br /><small className="muted">{t.detail}</small></span></Link>
         ))}

@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { ALL_DOC_TYPES } from '@/lib/constants';
-import { setDocType, uploadDocument } from '@/app/actions';
+import { scanDocs, setDocType, uploadDocument } from '@/app/actions';
 import Btn from '@/components/Btn';
 
 export type ViewerDoc = {
@@ -11,8 +11,10 @@ export type ViewerDoc = {
 const INLINE_LIMIT = 4 * 1024 * 1024; // larger files can't be streamed through the portal
 const isOffice = (m: string, n: string) => /officedocument|msword|ms-excel|ms-powerpoint/.test(m) || /\.(docx?|xlsx?|pptx?)$/i.test(n);
 
-export default function DocViewer({ appId, docs, missing, initial, canUpload }: {
-  appId: string; docs: ViewerDoc[]; missing: string[]; initial: string | null; canUpload: boolean;
+export type ViewerScan = { flags: { kind: string; text: string; detected?: string }[]; detected: string | null; readable: boolean };
+
+export default function DocViewer({ appId, docs, missing, initial, canUpload, scans, scanOn }: {
+  appId: string; docs: ViewerDoc[]; missing: string[]; initial: string | null; canUpload: boolean; scans: Record<string, ViewerScan>; scanOn: boolean;
 }) {
   const [sel, setSel] = useState<string | null>(initial && docs.some((d) => d.id === initial) ? initial : docs[0]?.id ?? null);
   const [zoom, setZoom] = useState(false);
@@ -77,6 +79,16 @@ export default function DocViewer({ appId, docs, missing, initial, canUpload }: 
               <a href={doc.driveUrl} target="_blank" rel="noreferrer">Open in Drive ↗</a>
               {viaPortal && <a href={`/api/files/${doc.id}?download=1`}>Download</a>}
             </div>
+            {scanOn && (() => { const sc = scans[doc.id]; return (
+              <div className="callout" style={{ marginBottom: 12, background: sc && !sc.flags.length ? 'var(--green-soft)' : sc ? 'var(--amber-soft)' : '#f4f6fb', borderColor: 'var(--line)', alignItems: 'center' }}>
+                <div style={{ flex: 1, fontSize: 13.5 }}>
+                  {!sc && <span className="muted">AI check — not run on this file. Sends its text to Qwen; results are observations to review.</span>}
+                  {sc && !sc.flags.length && <span><b style={{ color: 'var(--green)' }}>AI check: looks fine</b>{sc.detected ? ` — reads as a ${sc.detected}` : ''}.</span>}
+                  {sc && sc.flags.map((f, i) => <div key={i}><b style={{ color: 'var(--amber)' }}>AI observation (review needed):</b> {f.text}
+                    {f.kind === 'type' && f.detected && <form action={setDocType} style={{ display: 'inline-block', marginLeft: 8 }}><input type="hidden" name="id" value={appId} /><input type="hidden" name="fileId" value={doc.id} /><input type="hidden" name="docType" value={f.detected} /><input type="hidden" name="returnTo" value={returnTo} /><Btn className="ghost sm">Use “{f.detected}”</Btn></form>}</div>)}
+                </div>
+                <form action={scanDocs}><input type="hidden" name="id" value={appId} /><input type="hidden" name="fileId" value={doc.id} /><input type="hidden" name="returnTo" value={returnTo} /><Btn className="ghost sm" data-busy="Reading the document and asking the AI…">{sc ? 'Re-check' : 'AI check'}</Btn></form>
+              </div>); })()}
             {viaPortal ? (
               isImage
                 ? <div style={{ overflow: 'auto', maxHeight: '75vh' }}><img src={`/api/files/${doc.id}`} alt={doc.name} style={zoom ? { maxWidth: 'none' } : { maxWidth: '100%' }} /></div>

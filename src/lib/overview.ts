@@ -5,13 +5,13 @@ import { FINAL_STATUSES, REQUIRED_DOCS, STALE_DAYS } from './constants';
 import { askAi, hashOf, numbersWithin } from './ai';
 
 export type AppFull = AppRow & { created_at: string; dob: string | null; age: string | null };
-export type SRow = { a: AppFull; have: Set<string>; docCount: number; judged: boolean; missing: string[]; reasons: string[] };
+export type SRow = { a: AppFull; have: Set<string>; docCount: number; judged: boolean; missing: string[]; reasons: string[]; submissions: number };
 
-const COLS = 'application_id,name,email,phone,school,programme,country,counselor,status,submitted_at,created_at,last_activity_at,student_key,in_master,has_raw,progress,in_regent,payment,interview,opp_id,drive_folder_id,dob,age';
+const COLS = 'application_id,name,email,phone,school,programme,country,city,counselor,status,submitted_at,created_at,last_activity_at,student_key,in_master,has_raw,progress,in_regent,payment,interview,opp_id,drive_folder_id,dob,age';
 const DAY = 864e5;
 
 /** One row per student (newest submission), with documents pooled across their submissions. */
-export async function loadStudents(): Promise<{ rows: SRow[]; all: AppFull[] }> {
+export async function loadStudents(opts: { dups?: boolean } = {}): Promise<{ rows: SRow[]; all: AppFull[] }> {
   const db = admin();
   const [{ data: apps }, { data: docs }] = await Promise.all([
     db.from('portal_applications').select(COLS).or('email.is.null,email.neq.test@example.com').order('submitted_at', { ascending: false, nullsFirst: false }).limit(5000),
@@ -25,13 +25,15 @@ export async function loadStudents(): Promise<{ rows: SRow[]; all: AppFull[] }> 
     (types.get(k) || types.set(k, new Set()).get(k)!).add(effType(d));
     counts.set(k, (counts.get(k) || 0) + 1);
   });
+  const per = new Map<string, number>();
+  all.forEach((a) => per.set(a.student_key, (per.get(a.student_key) || 0) + 1));
   const seen = new Set<string>();
-  const rows = all.filter((a) => (seen.has(a.student_key) ? false : (seen.add(a.student_key), true))).map((a) => {
+  const rows = all.filter((a) => (opts.dups ? true : seen.has(a.student_key) ? false : (seen.add(a.student_key), true))).map((a) => {
     const have = types.get(a.student_key) || new Set<string>();
     const judged = isFormSubmission(a) || !!a.drive_folder_id;
     const missing = judged ? missingDocs(have) : [];
     const docCount = counts.get(a.student_key) || 0;
-    return { a, have, docCount, judged, missing, reasons: attentionReasons(a, missing, docCount) };
+    return { a, have, docCount, judged, missing, reasons: attentionReasons(a, missing, docCount), submissions: per.get(a.student_key) || 1 };
   });
   return { rows, all };
 }
@@ -100,9 +102,11 @@ export async function computeFacts(rows: SRow[], all: AppFull[], lastSeen: strin
   const now = Date.now();
   const since = lastSeen ? new Date(lastSeen).getTime() : now;
   const startOfDay = new Date(); startOfDay.setUTCHours(0, 0, 0, 0);
-  const [{ data: open }, { count: doneToday }] = await Promise.all([
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const [{ data: open }, { count: doneToday }, { count: remindersDue }] = await Promise.all([
     db.from('portal_tasks').select('priority').eq('status', 'open'),
     db.from('portal_tasks').select('id', { count: 'exact', head: true }).eq('status', 'done').gte('resolved_at', startOfDay.toISOString()),
+    db.from('portal_reminders').select('id', { count: 'exact', head: true }).eq('status', 'pending').lte('due_on', todayIso),
   ]);
   const active = rows.filter((r) => !isFinal(r.a.status));
   return {
@@ -119,6 +123,7 @@ export async function computeFacts(rows: SRow[], all: AppFull[], lastSeen: strin
     openTasks: (open || []).length,
     highPriorityTasks: (open || []).filter((t) => t.priority === 1).length,
     tasksCompletedToday: doneToday || 0,
+    remindersDue: remindersDue || 0,
   };
 }
 
@@ -126,7 +131,7 @@ export const FACT_LABELS: Record<string, string> = {
   students: 'Students in the portal', newApplicationsSinceLastVisit: 'New applications since your last visit', submittedLast24Hours: 'Applications submitted in the last 24 hours',
   needAttention: 'Students needing attention', missingDocuments: 'Students missing required documents', noDocumentsReceived: 'Applications with no documents received',
   notInSheet1: 'Students not yet in Sheet1', noCounselor: 'Students with no counselor', interviewsToBook: 'Interviews waiting to be booked',
-  readyForNextStage: 'Applications with all documents, ready for next stage', openTasks: 'Open tasks', highPriorityTasks: 'High-priority tasks', tasksCompletedToday: 'Tasks completed today',
+  readyForNextStage: 'Applications with all documents, ready for next stage', openTasks: 'Open tasks', highPriorityTasks: 'High-priority tasks', tasksCompletedToday: 'Tasks completed today', remindersDue: 'Reminders due today or overdue',
 };
 
 export async function aiOverview(facts: Facts, force = false) {

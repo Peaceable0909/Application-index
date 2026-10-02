@@ -1,11 +1,14 @@
 import Link from 'next/link';
 import { requireStaff } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
-import { attentionReasons, AppRow, isFormSubmission } from '@/lib/attention';
-import { missingDocs } from '@/lib/docs';
+import { AppRow, isFormSubmission } from '@/lib/attention';
+import { loadStudents } from '@/lib/overview';
+import { filterRows, viewPredicates } from '@/lib/filters';
 import { REQUIRED_DOCS, STATUSES } from '@/lib/constants';
-import { bulkAddToMaster, syncNow } from '../actions';
+import { bulkAddToMaster, bulkAssign, bulkEmailCounselors, bulkSetStatus, syncNow } from '../actions';
 import Btn from '@/components/Btn';
+import Icon from '@/components/Icon';
+import { SelectAll, SelectedCount } from '@/components/BulkSelect';
 import { statusTone } from '@/lib/ui';
 
 export const maxDuration = 60;
@@ -16,60 +19,18 @@ const uniq = (xs: (string | null)[]) => [...new Set(xs.filter(Boolean) as string
 export default async function Dashboard({ searchParams }: { searchParams: Promise<SP> }) {
   const staff = await requireStaff();
   const sp = await searchParams;
-  const db = admin();
-  const [{ data: apps }, { data: docs }] = await Promise.all([
-    db.from('portal_applications')
-      .select('application_id,name,email,school,programme,country,counselor,status,submitted_at,last_activity_at,student_key,in_master,has_raw,progress,in_regent,payment,interview,opp_id,drive_folder_id,phone,created_at').or('email.is.null,email.neq.test@example.com')
-      .order('submitted_at', { ascending: false, nullsFirst: false }).limit(5000),
-    db.from('portal_documents').select('application_id,doc_type,type_override').limit(50000),
+  const [{ rows }, { data: counselorList }] = await Promise.all([
+    loadStudents({ dups: !!sp.dups }),
+    admin().from('portal_counselors').select('name').eq('active', true).order('name'),
   ]);
-  const all = (apps || []) as AppRow[];
-
-  // Documents are pooled per student so duplicate submissions don't look "missing".
-  const appToKey = new Map(all.map((a) => [a.application_id, a.student_key]));
-  const typesByKey = new Map<string, Set<string>>();
-  const countByKey = new Map<string, number>();
-  (docs || []).forEach((d) => {
-    const k = appToKey.get(d.application_id); if (!k) return;
-    (typesByKey.get(k) || typesByKey.set(k, new Set()).get(k)!).add(d.type_override || d.doc_type);
-    countByKey.set(k, (countByKey.get(k) || 0) + 1);
-  });
-  const dupCount = new Map<string, number>();
-  all.forEach((a) => dupCount.set(a.student_key, (dupCount.get(a.student_key) || 0) + 1));
-
-  // Newest submission per student unless "show duplicates" is ticked.
-  const seen = new Set<string>();
-  const base = sp.dups ? all : all.filter((a) => (seen.has(a.student_key) ? false : (seen.add(a.student_key), true)));
-
-  const rows = base.map((a) => {
-    const have = typesByKey.get(a.student_key) || new Set<string>();
-    const judged = isFormSubmission(a) || !!a.drive_folder_id;
-    const missing = judged ? missingDocs(have) : [];
-    const reasons = attentionReasons(a, missing, countByKey.get(a.student_key) || 0);
-    return { a, missing, reasons, judged, have };
-  });
-
-  const q = (sp.q || '').toLowerCase();
-  const views: Record<string, (r: (typeof rows)[number]) => boolean> = {
-    attention: (r) => r.reasons.length > 0, missing: (r) => r.judged && r.missing.length > 0,
-    nofolder: (r) => !r.a.drive_folder_id, notmaster: (r) => !r.a.in_master,
-    sheet1: (r) => r.a.in_master, regent: (r) => r.a.in_regent,
-    new: (r) => !!staff.last_seen_at && isFormSubmission(r.a) && !!r.a.created_at && new Date(r.a.created_at) > new Date(staff.last_seen_at),
-  };
+  const base = rows.map((r) => r.a);
+  const views = viewPredicates(staff.last_seen_at);
   const viewCount = (k: string) => rows.filter(views[k]).length;
-  const filtered = rows.filter((row) => { const { a, reasons } = row; return (!sp.view || !views[sp.view] || views[sp.view](row)) &&
-    (!q || [a.name, a.email, a.school, a.programme].some((v) => v?.toLowerCase().includes(q))) &&
-    (!sp.counselor || (sp.counselor === '__none' ? !a.counselor : a.counselor === sp.counselor)) && (!sp.country || a.country?.toLowerCase() === sp.country.toLowerCase()) &&
-    (!sp.school || a.school === sp.school) && (!sp.programme || a.programme === sp.programme) &&
-    (!sp.status || (sp.status === '__none' ? !a.status : a.status === sp.status)) &&
-    (!sp.source || ({ sheet1: a.in_master, regent: a.in_regent, form: isFormSubmission(a), both: a.in_master && isFormSubmission(a), raw_only: !a.in_master, no_sheet1: !a.in_master,
-      master_only: a.in_master && !isFormSubmission(a), sheet1_no_form: a.in_master && !isFormSubmission(a), no_regent: !a.in_regent } as Record<string, boolean>)[sp.source]) &&
-    (!sp.payment || (sp.payment === 'paid' ? /^paid/i.test(a.payment || '') : a.in_regent && !/^paid/i.test(a.payment || ''))) &&
-    (!sp.interview || (sp.interview === '__none' ? a.in_regent && !a.interview : a.interview === sp.interview)) &&
-    (!sp.attention || reasons.length > 0); });
+  const filtered = filterRows(rows, sp, staff.last_seen_at);
 
-  const attentionTotal = rows.filter((r) => r.reasons.length).length;
   const options = (k: keyof AppRow) => uniq(base.map((a) => a[k] as string | null));
+  const exportQs = new URLSearchParams(Object.entries(sp).filter(([k, v]) => v && !['msg', 'err'].includes(k)) as [string, string][]).toString();
+  const here = `/applications${exportQs ? `?${exportQs}` : ''}`;
   const countries = [...new Set(base.map((a) => (a.country || '').toLowerCase()).filter(Boolean))].sort();
 
   const hasFilters = Object.keys(sp).some((k) => !['msg', 'err'].includes(k) && sp[k]);
@@ -116,29 +77,36 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         {hasFilters && <Link href="/applications" className="muted">Clear</Link>}
       </form>
 
-      <form action={bulkAddToMaster}>
-        {filtered.some(({ a }) => !a.in_master && a.has_raw) && (
-          <div className="card gold filters" style={{ padding: '14px 16px' }}>
-            <b>Move form-only students into the master sheet</b>
-            <span className="muted">tick rows, then</span>
-            <select name="status" defaultValue="New Lead">{STATUSES.map((o) => <option key={o}>{o}</option>)}</select>
-            <Btn className="gold">Add selected</Btn>
-            <span className="muted">Up to 15 at a time · counselor comes from the form</span>
-          </div>
-        )}
+      <form>
+        <input type="hidden" name="returnTo" value={here} />
+        <div className="card filters" style={{ padding: '12px 16px', position: 'sticky', top: 74, zIndex: 5 }}>
+          <SelectedCount />
+          <select name="setStatus" defaultValue=""><option value="" disabled>Set status…</option>{STATUSES.map((o) => <option key={o}>{o}</option>)}</select>
+          <Btn className="sm" formAction={bulkSetStatus}>Apply</Btn>
+          <span className="muted">|</span>
+          <select name="setCounselor" defaultValue=""><option value="" disabled>Assign counselor…</option><option value="__clear">(unassign)</option>{(counselorList || []).map((c) => <option key={c.name}>{c.name}</option>)}</select>
+          <Btn className="sm" formAction={bulkAssign}>Apply</Btn>
+          <span className="muted">|</span>
+          <Btn className="ghost sm" formAction={bulkEmailCounselors}><Icon n="mail" size={14} /> Email their counselors</Btn>
+          {filtered.some(({ a }) => !a.in_master) && <><select name="addStatus" defaultValue="New Lead">{STATUSES.map((o) => <option key={o}>{o}</option>)}</select><Btn className="gold sm" formAction={bulkAddToMaster}>Add to Sheet1</Btn></>}
+          <span style={{ marginLeft: 'auto' }} className="filters">
+            <Btn className="ghost sm" formAction="/api/export" data-busy="Preparing file…"><Icon n="download" size={14} /> Export selected</Btn>
+            <a className="btn ghost sm" href={`/api/export?${exportQs}`}><Icon n="download" size={14} /> Export all {filtered.length}</a>
+          </span>
+        </div>
         <div className="card tablecard">
           <div className="scroll">
             <table>
-              <thead><tr><th style={{ width: 28 }} /><th>Student</th><th>University / Programme</th><th>Counselor</th><th>Status</th><th>Regent</th><th>Documents</th><th>Attention</th><th>Submitted</th></tr></thead>
+              <thead><tr><th style={{ width: 28 }}><SelectAll /></th><th>Student</th><th>University / Programme</th><th>Counselor</th><th>Status</th><th>Regent</th><th>Documents</th><th>Attention</th><th>Submitted</th></tr></thead>
               <tbody>
-                {filtered.map(({ a, missing, reasons, judged, have }, i) => (
+                {filtered.map(({ a, missing, reasons, judged, have, submissions }, i) => (
                   <tr key={a.application_id} className="row" style={{ '--i': Math.min(i, 14) } as React.CSSProperties}>
-                    <td>{!a.in_master && a.has_raw && <input type="checkbox" name="ids" value={a.application_id} />}</td>
+                    <td><input type="checkbox" name="ids" value={a.application_id} aria-label={`Select ${a.name}`} /></td>
                     <td><Link href={`/applications/${a.application_id}`}><b>{a.name}</b></Link><div className="muted">{[a.email, a.phone].filter(Boolean).join(' · ')}</div>
-                      {dupCount.get(a.student_key)! > 1 && <span className="badge plain">{dupCount.get(a.student_key)} submissions</span>}</td>
+                      {submissions > 1 && <span className="badge plain">{submissions} submissions</span>}</td>
                     <td>{a.school}<div className="muted">{a.programme}</div></td>
                     <td>{a.counselor || <span className="muted">—</span>}</td>
-                    <td>{a.status ? <span className={`badge ${`tone-${statusTone(a.status)}`}`}>{a.status}</span> : <span className="muted">—</span>}
+                    <td>{a.status ? <span className={`badge plain tone-${statusTone(a.status)}`}>{a.status}</span> : <span className="muted">—</span>}
                       {a.progress != null && <div className="bar" title={`${a.progress}%`}><i style={{ width: `${a.progress}%` }} /></div>}</td>
                     <td>{a.in_regent ? <div className="chips">{a.opp_id && <span className="badge plain" title="OPP ID">{a.opp_id.replace(/^OPP ID-/i, '')}</span>}
                       {a.payment ? <span className={`badge ${/^paid/i.test(a.payment) ? 'green' : 'amber'}`}>{a.payment}</span> : <span className="badge amber">Unpaid</span>}
