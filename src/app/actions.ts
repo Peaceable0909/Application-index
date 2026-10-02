@@ -428,6 +428,18 @@ export async function linkExactMatches() {
 }
 
 // ---- Settings ----
+export async function testConnection() {
+  await requireStaff();
+  const t0 = Date.now();
+  try {
+    await callScript('listFiles', { folderIds: [] });   // lightest command the script supports
+    redirect(`/settings?msg=${encodeURIComponent(`Apps Script is connected ✓ (${Date.now() - t0} ms).`)}`);
+  } catch (e) {
+    rethrow(e);
+    redirect(`/settings?err=${encodeURIComponent((e as Error).message)}`);
+  }
+}
+
 export async function saveCounselor(f: FormData) {
   await requireStaff();
   const email = s(f, 'email'), ret = s(f, 'returnTo') || '/counselors';

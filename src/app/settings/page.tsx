@@ -2,7 +2,7 @@ import { requireStaff } from '@/lib/auth';
 import Btn from '@/components/Btn';
 import { admin } from '@/lib/supabase';
 import Link from 'next/link';
-import { addStaff, removeStaff } from '../actions';
+import { addStaff, removeStaff, testConnection } from '../actions';
 
 export default async function Settings({ searchParams }: { searchParams: Promise<{ msg?: string; err?: string }> }) {
   const me = await requireStaff();
@@ -20,6 +20,12 @@ export default async function Settings({ searchParams }: { searchParams: Promise
       <h1>Settings</h1>
       {sp.msg && <div className="card ok">{sp.msg}</div>}
       {sp.err && <div className="card err">{sp.err}</div>}
+
+      <div className="card">
+        <h2>Apps Script connection</h2>
+        <p className="muted" style={{ marginTop: 0 }}>Checks that the portal can reach your Google Apps Script web app (the link behind the sheets, Drive and AI features).</p>
+        <form action={testConnection}><Btn className="ghost">Test connection</Btn></form>
+      </div>
 
       <div className="card">
         <h2>AI usage today</h2>
