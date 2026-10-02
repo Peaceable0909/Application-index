@@ -38,7 +38,7 @@ export default function DocViewer({ appId, docs, missing, initial, canUpload, sc
   const isImage = doc?.mime.startsWith('image/');
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: 16, alignItems: 'start' }}>
+    <div className="viewer">
       <div className="card" style={{ position: 'sticky', top: 12, maxHeight: '85vh', overflow: 'auto' }}>
         {types.map((t) => (
           <div key={t} style={{ marginBottom: 12 }}>

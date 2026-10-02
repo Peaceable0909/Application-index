@@ -50,7 +50,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
 
       <div className="card">
         <h2>AI usage today</h2>
-        <dl className="kv" style={{ gridTemplateColumns: '180px 1fr' }}>
+        <dl className="kv wide-k">
           <dt>Qwen calls</dt><dd><b>{calls}</b> of {process.env.AI_DAILY_LIMIT || 60} allowed</dd>
           <dt>Tokens used</dt><dd>{tokens.toLocaleString()}</dd>
           <dt>Rejected / failed</dt><dd>{failed} <span className="muted">(replies that failed the safety checks or errored)</span></dd>

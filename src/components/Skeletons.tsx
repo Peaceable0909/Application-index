@@ -81,7 +81,7 @@ export function SkViewer() {
   return (
     <>
       <Head title="Documents" />
-      <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: 16 }}>
+      <div className="viewer">
         <div className="card">{[0, 1, 2, 3, 4, 5].map((i) => <Bar key={i} h={36} mt={i ? 10 : 0} />)}</div>
         <div className="card"><Bar w="50%" h={16} /><div className="sk" style={{ height: '62vh', marginTop: 16, borderRadius: 12 }} /></div>
       </div>

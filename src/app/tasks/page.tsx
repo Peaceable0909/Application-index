@@ -108,7 +108,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
 
           <div className="card">
             <h2>Confirmed numbers</h2>
-            <dl className="kv" style={{ gridTemplateColumns: '1fr auto' }}>
+            <dl className="kv" style={{ gridTemplateColumns: "minmax(0,1fr) auto" }}>
               {Object.entries(FACT_LABELS).map(([k, label]) => (<Fragment key={k}><dt>{label}</dt><dd style={{ textAlign: 'right', fontWeight: 600 }}>{facts[k] ?? 0}</dd></Fragment>))}
             </dl>
             <form action={markSeen} style={{ marginTop: 14 }}><Btn className="ghost">Mark everything as seen</Btn></form>

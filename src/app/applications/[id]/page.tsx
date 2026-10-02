@@ -209,7 +209,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
 
                 <div className="card">
                   <h2><Icon n="file" size={17} /> Application Summary</h2>
-                  <dl className="kv" style={{ gridTemplateColumns: '130px 1fr' }}>
+                  <dl className="kv narrow-k">
                     <dt>Student Name</dt><dd>{app.name}</dd>
                     <dt>Program</dt><dd>{app.programme && app.programme.toUpperCase() !== 'N/A' ? app.programme : '—'}</dd>
                     <dt>School</dt><dd>{app.school || '—'}</dd>
