@@ -11,7 +11,7 @@ export default async function Documents({ params, searchParams }: { params: Prom
   const id = decodeId((await params).id);
   const sp = await searchParams;
   const db = admin();
-  const { data: app } = await db.from('portal_applications').select('application_id,has_raw,name,school,programme,student_key,drive_folder_id,drive_folder_url').eq('application_id', id).maybeSingle();
+  const { data: app } = await db.from('portal_applications').select('application_id,has_raw,submitted_at,name,school,programme,student_key,drive_folder_id,drive_folder_url').eq('application_id', id).maybeSingle();
   if (!app) notFound();
   const { data: sibs } = await db.from('portal_applications').select('application_id').eq('student_key', app.student_key);
   const { data: rows } = await db.from('portal_documents').select('*').in('application_id', (sibs || []).map((s) => s.application_id)).order('created_at', { ascending: false });
@@ -20,7 +20,7 @@ export default async function Documents({ params, searchParams }: { params: Prom
     id: d.drive_file_id, name: d.name, type: effType(d), path: d.folder_path, size: Number(d.size_bytes || 0), mime: d.mime_type || '',
     driveUrl: d.drive_url, fromOther: d.application_id !== id, added: new Date(d.created_at).toLocaleDateString('en-GB'),
   }));
-  const missing = app.has_raw || app.drive_folder_id ? missingDocs(docs.map((d) => d.type)) : [];
+  const missing = (app.has_raw && app.submitted_at) || app.drive_folder_id ? missingDocs(docs.map((d) => d.type)) : [];
 
   return (
     <>

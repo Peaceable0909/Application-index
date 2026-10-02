@@ -12,7 +12,7 @@ export async function GET(req: Request) {
     .or(`name.ilike.%${q}%,email.ilike.%${q}%,programme.ilike.%${q}%,school.ilike.%${q}%,opp_id.ilike.%${q}%,student_ref.ilike.%${q}%,phone.ilike.%${q}%`)
     .order('submitted_at', { ascending: false, nullsFirst: false }).limit(40);
   const seen = new Set<string>();
-  const out = (data || []).filter((r) => (seen.has(r.student_key) ? false : (seen.add(r.student_key), true))).slice(0, 8)
+  const out = (data || []).filter((r) => r.email !== 'test@example.com').filter((r) => (seen.has(r.student_key) ? false : (seen.add(r.student_key), true))).slice(0, 8)
     .map((r) => ({ id: r.application_id, name: r.name, email: r.email, school: r.school, programme: r.programme, status: r.status }));
   return NextResponse.json(out);
 }

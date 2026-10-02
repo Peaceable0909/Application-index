@@ -9,7 +9,7 @@ export default async function Bell({ staff }: { staff: Staff }) {
   const [{ data: tasks, count }, { count: fresh }] = await Promise.all([
     db.from('portal_tasks').select('id,title,detail,application_id,priority', { count: 'exact' }).eq('status', 'open').order('priority').order('created_at', { ascending: false }).limit(5),
     staff.last_seen_at
-      ? db.from('portal_applications').select('application_id', { count: 'exact', head: true }).eq('has_raw', true).gt('created_at', staff.last_seen_at)
+      ? db.from('portal_applications').select('application_id', { count: 'exact', head: true }).eq('has_raw', true).not('submitted_at', 'is', null).gt('created_at', staff.last_seen_at)
       : Promise.resolve({ count: 0 }),
   ]);
   const n = (count || 0);

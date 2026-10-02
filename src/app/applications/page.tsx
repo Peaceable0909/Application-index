@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { requireStaff } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
-import { attentionReasons, AppRow } from '@/lib/attention';
+import { attentionReasons, AppRow, isFormSubmission } from '@/lib/attention';
 import { missingDocs } from '@/lib/docs';
 import { REQUIRED_DOCS, STATUSES } from '@/lib/constants';
 import { bulkAddToMaster, syncNow } from '../actions';
@@ -19,7 +19,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const db = admin();
   const [{ data: apps }, { data: docs }] = await Promise.all([
     db.from('portal_applications')
-      .select('application_id,name,email,school,programme,country,counselor,status,submitted_at,last_activity_at,student_key,in_master,has_raw,progress,in_regent,payment,interview,opp_id,drive_folder_id,phone,created_at')
+      .select('application_id,name,email,school,programme,country,counselor,status,submitted_at,last_activity_at,student_key,in_master,has_raw,progress,in_regent,payment,interview,opp_id,drive_folder_id,phone,created_at').or('email.is.null,email.neq.test@example.com')
       .order('submitted_at', { ascending: false, nullsFirst: false }).limit(5000),
     db.from('portal_documents').select('application_id,doc_type,type_override').limit(50000),
   ]);
@@ -43,7 +43,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
 
   const rows = base.map((a) => {
     const have = typesByKey.get(a.student_key) || new Set<string>();
-    const judged = a.has_raw || !!a.drive_folder_id;
+    const judged = isFormSubmission(a) || !!a.drive_folder_id;
     const missing = judged ? missingDocs(have) : [];
     const reasons = attentionReasons(a, missing, countByKey.get(a.student_key) || 0);
     return { a, missing, reasons, judged, have };
@@ -54,7 +54,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     attention: (r) => r.reasons.length > 0, missing: (r) => r.judged && r.missing.length > 0,
     nofolder: (r) => !r.a.drive_folder_id, notmaster: (r) => !r.a.in_master,
     sheet1: (r) => r.a.in_master, regent: (r) => r.a.in_regent,
-    new: (r) => !!staff.last_seen_at && r.a.has_raw && !!r.a.created_at && new Date(r.a.created_at) > new Date(staff.last_seen_at),
+    new: (r) => !!staff.last_seen_at && isFormSubmission(r.a) && !!r.a.created_at && new Date(r.a.created_at) > new Date(staff.last_seen_at),
   };
   const viewCount = (k: string) => rows.filter(views[k]).length;
   const filtered = rows.filter((row) => { const { a, reasons } = row; return (!sp.view || !views[sp.view] || views[sp.view](row)) &&
@@ -62,8 +62,8 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     (!sp.counselor || (sp.counselor === '__none' ? !a.counselor : a.counselor === sp.counselor)) && (!sp.country || a.country?.toLowerCase() === sp.country.toLowerCase()) &&
     (!sp.school || a.school === sp.school) && (!sp.programme || a.programme === sp.programme) &&
     (!sp.status || (sp.status === '__none' ? !a.status : a.status === sp.status)) &&
-    (!sp.source || ({ sheet1: a.in_master, regent: a.in_regent, form: a.has_raw, both: a.in_master && a.has_raw, raw_only: !a.in_master, no_sheet1: !a.in_master,
-      master_only: a.in_master && !a.has_raw, sheet1_no_form: a.in_master && !a.has_raw, no_regent: !a.in_regent } as Record<string, boolean>)[sp.source]) &&
+    (!sp.source || ({ sheet1: a.in_master, regent: a.in_regent, form: isFormSubmission(a), both: a.in_master && isFormSubmission(a), raw_only: !a.in_master, no_sheet1: !a.in_master,
+      master_only: a.in_master && !isFormSubmission(a), sheet1_no_form: a.in_master && !isFormSubmission(a), no_regent: !a.in_regent } as Record<string, boolean>)[sp.source]) &&
     (!sp.payment || (sp.payment === 'paid' ? /^paid/i.test(a.payment || '') : a.in_regent && !/^paid/i.test(a.payment || ''))) &&
     (!sp.interview || (sp.interview === '__none' ? a.in_regent && !a.interview : a.interview === sp.interview)) &&
     (!sp.attention || reasons.length > 0); });
@@ -102,9 +102,9 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           <option value="">All sources</option>
           <option value="sheet1">In Sheet1 — all ({viewCount('sheet1')})</option>
           <option value="regent">In Regent Only — all ({viewCount('regent')})</option>
-          <option value="form">Submitted via form — all ({rows.filter((r) => r.a.has_raw).length})</option>
-          <option value="both">In Sheet1 and form ({rows.filter((r) => r.a.in_master && r.a.has_raw).length})</option>
-          <option value="sheet1_no_form">In Sheet1, no form ({rows.filter((r) => r.a.in_master && !r.a.has_raw).length})</option>
+          <option value="form">Submitted via form — all ({rows.filter((r) => isFormSubmission(r.a)).length})</option>
+          <option value="both">In Sheet1 and form ({rows.filter((r) => r.a.in_master && isFormSubmission(r.a)).length})</option>
+          <option value="sheet1_no_form">In Sheet1, no form ({rows.filter((r) => r.a.in_master && !isFormSubmission(r.a)).length})</option>
           <option value="no_sheet1">Not in Sheet1 ({viewCount('notmaster')})</option>
           <option value="no_regent">Not in Regent Only ({rows.filter((r) => !r.a.in_regent).length})</option>
         </select>

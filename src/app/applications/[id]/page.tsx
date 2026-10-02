@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requireStaff } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
-import { attentionReasons, AppRow } from '@/lib/attention';
+import { attentionReasons, AppRow, isFormSubmission } from '@/lib/attention';
 import { missingDocs, counselorKey, effType, schoolShort } from '@/lib/docs';
 import { ALL_DOC_TYPES, REQUIRED_DOCS, STATUSES } from '@/lib/constants';
 import { statusTone } from '@/lib/ui';
@@ -40,7 +40,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
   ]);
   const { data: docs } = await db.from('portal_documents').select('*').in('application_id', (siblings || []).map((s) => s.application_id)).order('created_at', { ascending: false });
 
-  const judged = app.has_raw || !!app.drive_folder_id;
+  const judged = isFormSubmission(app) || !!app.drive_folder_id;
   const types = (docs || []).map(effType);
   const missing = judged ? missingDocs(types) : [];
   const presentRequired = REQUIRED_DOCS.filter((d) => types.includes(d)).length;
@@ -444,7 +444,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
         {tab === 'sources' && (
           <div className="card">
             <h2>Where the data comes from</h2>
-            <p className="muted" style={{ marginTop: -6 }}>{app.in_master ? 'Sheet1 is the curated record for status, counselor, notes and programme.' : <b>Not in Sheet1 yet.</b>} {app.in_regent ? 'Regent Only adds OPP ID, payment and interview booking.' : 'Not in the Regent Only tab.'} {app.has_raw ? 'The Applications log supplies documents and submission details.' : <b>No form submission found.</b>} Highlighted rows disagree.</p>
+            <p className="muted" style={{ marginTop: -6 }}>{app.in_master ? 'Sheet1 is the curated record for status, counselor, notes and programme.' : <b>Not in Sheet1 yet.</b>} {app.in_regent ? 'Regent Only adds OPP ID, payment and interview booking.' : 'Not in the Regent Only tab.'} {isFormSubmission(app) ? 'The Applications log supplies documents and submission details.' : app.has_raw ? <b>Entered by hand in the Applications tab (no submission date, no form folder).</b> : <b>No form submission found.</b>} Highlighted rows disagree.</p>
             <table className="cmp">
               <thead><tr><th>Field</th><th>Sheet1 (curated)</th><th>Regent Only</th><th>Form log (raw)</th></tr></thead>
               <tbody>

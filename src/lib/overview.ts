@@ -1,5 +1,5 @@
 import { admin } from './supabase';
-import { AppRow, attentionReasons } from './attention';
+import { AppRow, attentionReasons, isFormSubmission } from './attention';
 import { effType, missingDocs } from './docs';
 import { FINAL_STATUSES, REQUIRED_DOCS, STALE_DAYS } from './constants';
 import { askAi, hashOf, numbersWithin } from './ai';
@@ -14,7 +14,7 @@ const DAY = 864e5;
 export async function loadStudents(): Promise<{ rows: SRow[]; all: AppFull[] }> {
   const db = admin();
   const [{ data: apps }, { data: docs }] = await Promise.all([
-    db.from('portal_applications').select(COLS).order('submitted_at', { ascending: false, nullsFirst: false }).limit(5000),
+    db.from('portal_applications').select(COLS).or('email.is.null,email.neq.test@example.com').order('submitted_at', { ascending: false, nullsFirst: false }).limit(5000),
     db.from('portal_documents').select('application_id,doc_type,type_override').limit(50000),
   ]);
   const all = (apps || []) as AppFull[];
@@ -28,7 +28,7 @@ export async function loadStudents(): Promise<{ rows: SRow[]; all: AppFull[] }> 
   const seen = new Set<string>();
   const rows = all.filter((a) => (seen.has(a.student_key) ? false : (seen.add(a.student_key), true))).map((a) => {
     const have = types.get(a.student_key) || new Set<string>();
-    const judged = a.has_raw || !!a.drive_folder_id;
+    const judged = isFormSubmission(a) || !!a.drive_folder_id;
     const missing = judged ? missingDocs(have) : [];
     const docCount = counts.get(a.student_key) || 0;
     return { a, have, docCount, judged, missing, reasons: attentionReasons(a, missing, docCount) };
@@ -49,7 +49,7 @@ export function desiredTasks(rows: SRow[], now = Date.now()): TaskDraft[] {
     const add = (kind: string, title: string, detail: string, priority: number) => out.push({ key: `${kind}:${id}`, kind, application_id: id, title, detail, priority });
     const ageDays = (t: string | null) => (t ? Math.floor((now - new Date(t).getTime()) / DAY) : 0);
 
-    if (a.has_raw && !a.status && now - new Date(a.created_at).getTime() < 7 * DAY) add('review_new', `Review new application: ${who}`, sub, 2);
+    if (isFormSubmission(a) && !a.status && now - new Date(a.created_at).getTime() < 7 * DAY) add('review_new', `Review new application: ${who}`, sub, 2);
     if (a.has_raw && docCount === 0 && a.submitted_at && now - new Date(a.submitted_at).getTime() > 30 * 60_000) add('no_documents', `No documents received: ${who}`, 'Possible upload problem — check the Drive folder.', 1);
     else if (judged && docCount > 0 && missing.length) add('missing_docs', `Request ${missing.join(', ')} from ${who}`, sub, 2);
     if (judged && docCount > 0 && !missing.length && (!a.status || ['New Lead', 'Submitted', 'Documents Requested'].includes(a.status))) add('ready_next', `Ready for next stage: ${who}`, 'All required documents are present.', 2);
@@ -107,11 +107,11 @@ export async function computeFacts(rows: SRow[], all: AppFull[], lastSeen: strin
   const active = rows.filter((r) => !isFinal(r.a.status));
   return {
     students: rows.length,
-    newApplicationsSinceLastVisit: all.filter((a) => a.has_raw && new Date(a.created_at).getTime() > since).length,
+    newApplicationsSinceLastVisit: all.filter((a) => isFormSubmission(a) && new Date(a.created_at).getTime() > since).length,
     submittedLast24Hours: all.filter((a) => a.has_raw && a.submitted_at && now - new Date(a.submitted_at).getTime() < DAY).length,
     needAttention: active.filter((r) => r.reasons.length).length,
     missingDocuments: active.filter((r) => r.judged && r.docCount > 0 && r.missing.length).length,
-    noDocumentsReceived: active.filter((r) => r.a.has_raw && r.docCount === 0).length,
+    noDocumentsReceived: active.filter((r) => isFormSubmission(r.a) && r.docCount === 0).length,
     notInSheet1: active.filter((r) => !r.a.in_master).length,
     noCounselor: active.filter((r) => !r.a.counselor).length,
     interviewsToBook: active.filter((r) => /to be booked/i.test(r.a.interview || '')).length,
@@ -153,7 +153,7 @@ export function studentFacts(a: AppFull, p: { have: Set<string>; docCount: numbe
   const gaps = [!a.programme || a.programme.toUpperCase() === 'N/A' ? 'programme' : '', !a.phone ? 'phone' : '', !a.email ? 'email' : '', !a.dob ? 'date of birth' : '', !a.counselor ? 'counselor' : ''].filter(Boolean);
   return {
     programme: a.programme || null, university: a.school || null, status: a.status || null, country: a.country || null,
-    counselorAssigned: !!a.counselor, inSheet1: a.in_master, hasFormSubmission: a.has_raw, submissionsFromThisStudent: p.submissions,
+    counselorAssigned: !!a.counselor, inSheet1: a.in_master, hasFormSubmission: isFormSubmission(a), submissionsFromThisStudent: p.submissions,
     documentsChecked: p.judged, requiredDocuments: [...REQUIRED_DOCS], documentsPresent: [...p.have], documentsMissing: p.missing, filesInDrive: p.docCount,
     daysSinceSubmitted: a.submitted_at ? Math.floor((Date.now() - new Date(a.submitted_at).getTime()) / DAY) : null,
     paymentRecorded: !!a.payment, interviewStatus: a.interview || null, missingInformation: gaps, flags: attentionReasons(a, p.missing, p.docCount),

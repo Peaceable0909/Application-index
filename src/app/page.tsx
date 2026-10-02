@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { requireStaff } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
 import { loadStudents } from '@/lib/overview';
+import { isFormSubmission } from '@/lib/attention';
 import { FINAL_STATUSES } from '@/lib/constants';
 import { statusTone } from '@/lib/ui';
 import { schoolShort } from '@/lib/docs';
@@ -25,7 +26,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   // Daily snapshot so each card can show "vs last 7 days" once there is history.
   const now = {
     total: rows.length,
-    awaiting: live.filter((r) => r.a.has_raw && (!r.a.status || AWAITING.includes(r.a.status))).length,
+    awaiting: live.filter((r) => isFormSubmission(r.a) && (!r.a.status || AWAITING.includes(r.a.status))).length,
     missing: live.filter((r) => r.judged && r.docCount > 0 && r.missing.length).length,
     in_progress: live.filter((r) => r.a.status && IN_PROGRESS.includes(r.a.status)).length,
   };
@@ -42,7 +43,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
 
   const { data: activity } = await db.from('portal_activity').select('id,kind,detail,created_at,application_id,portal_applications(name)').order('created_at', { ascending: false }).limit(6);
   // Real form submissions first (newest first), then anything else the sheets know about.
-  const isForm = (r: (typeof rows)[number]) => r.a.has_raw && !!r.a.submitted_at;
+  const isForm = (r: (typeof rows)[number]) => isFormSubmission(r.a);
   const byDate = (k: 'submitted_at' | 'created_at') => (x: (typeof rows)[number], y: (typeof rows)[number]) => new Date(y.a[k] || 0).getTime() - new Date(x.a[k] || 0).getTime();
   const recent = [...rows.filter(isForm).sort(byDate('submitted_at')), ...rows.filter((r) => !isForm(r)).sort(byDate('created_at'))].slice(0, 8);
   const card = (icon: string, tone: string, label: string, n: number, href: string, d: React.ReactNode, i: number) => (
