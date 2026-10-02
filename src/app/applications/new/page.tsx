@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { requireStaff } from '@/lib/auth';
+import { requireTeam } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
 import { STATUSES } from '@/lib/constants';
 import Btn from '@/components/Btn';
@@ -9,7 +9,7 @@ import { createApplication } from '../../actions';
 export const maxDuration = 60;
 
 export default async function NewApplication({ searchParams }: { searchParams: Promise<{ err?: string }> }) {
-  await requireStaff();
+  await requireTeam();
   const sp = await searchParams;
   const { data: counselors } = await admin().from('portal_counselors').select('name').eq('active', true).order('name');
   const f = (label: string, input: React.ReactNode) => <label className="grid" style={{ gap: 6 }}><span className="muted">{label}</span>{input}</label>;

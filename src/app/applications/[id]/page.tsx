@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { requireStaff } from '@/lib/auth';
+import { requireStaff, canAccessApp } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
 import { attentionReasons, AppRow, isFormSubmission } from '@/lib/attention';
 import { missingDocs, counselorKey, effType, schoolShort } from '@/lib/docs';
@@ -31,7 +31,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
   const sp = await searchParams;
   const db = admin();
   const { data: app } = await db.from('portal_applications').select('*').eq('application_id', id).maybeSingle();
-  if (!app) notFound();
+  if (!app || !(await canAccessApp(staff, app.application_id))) notFound();
 
   const [{ data: siblings }, { data: notes }, { data: activity }, { data: counselors }, { data: suggestions }, { data: messages }, { data: reminders }] = await Promise.all([
     db.from('portal_applications').select('application_id,submitted_at').eq('student_key', app.student_key).order('submitted_at', { ascending: false }),
@@ -116,7 +116,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
 
   return (
     <>
-      <Link href="/applications" className="crumb"><Icon n="left" size={15} /> Back to Applications</Link>
+      <Link href={staff.role === 'counselor' ? '/my' : '/applications'} className="crumb"><Icon n="left" size={15} /> {staff.role === 'counselor' ? 'Back to My students' : 'Back to Applications'}</Link>
 
       <div className="sh">
         <span className="avatar lg">{initials(app.name)}</span>

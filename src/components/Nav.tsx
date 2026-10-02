@@ -16,12 +16,15 @@ const ITEMS = [
   { href: '/settings', label: 'Settings', icon: 'settings' },
 ];
 
-export default function Nav({ taskCount = 0, mobile = false }: { taskCount?: number; mobile?: boolean }) {
+const COUNSELOR_ITEMS: typeof ITEMS = [{ href: '/my', label: 'My students', icon: 'users' }];
+
+export default function Nav({ taskCount = 0, mobile = false, role = 'staff' }: { taskCount?: number; mobile?: boolean; role?: string }) {
   const p = usePathname();
-  const on = (i: (typeof ITEMS)[number]) => (i.exact ? p === '/' : p.startsWith(i.href));
+  const items = role === 'counselor' ? COUNSELOR_ITEMS : ITEMS;
+  const on = (i: (typeof ITEMS)[number]) => (i.exact ? p === '/' : p.startsWith(i.href) || (i.href === '/my' && p.startsWith('/applications/')));
   return (
     <nav className={mobile ? 'mnav' : ''}>
-      {ITEMS.map((i) => (
+      {items.map((i) => (
         <Link key={i.href} href={i.href} className={on(i) ? 'active' : ''}>
           {!mobile && <Icon n={i.icon} size={19} />}
           <span>{i.label}</span>

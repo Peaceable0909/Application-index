@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { requireStaff } from '@/lib/auth';
+import { requireTeam } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
 import { AppRow, isFormSubmission } from '@/lib/attention';
 import { loadStudents } from '@/lib/overview';
@@ -17,7 +17,7 @@ type SP = Record<string, string | undefined>;
 const uniq = (xs: (string | null)[]) => [...new Set(xs.filter(Boolean) as string[])].sort();
 
 export default async function Dashboard({ searchParams }: { searchParams: Promise<SP> }) {
-  const staff = await requireStaff();
+  const staff = await requireTeam();
   const sp = await searchParams;
   const [{ rows }, { data: counselorList }] = await Promise.all([
     loadStudents({ dups: !!sp.dups }),

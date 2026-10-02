@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { requireStaff } from '@/lib/auth';
+import { requireTeam } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
 import { loadStudents } from '@/lib/overview';
 import { ALL_DOC_TYPES, REQUIRED_DOCS } from '@/lib/constants';
@@ -12,7 +12,7 @@ import { uploadDocument } from '../actions';
 const kb = (n: number | null) => (n ? `${Math.max(1, Math.round(n / 1024))} KB` : '');
 
 export default async function Documents({ searchParams }: { searchParams: Promise<{ type?: string; q?: string; msg?: string; err?: string }> }) {
-  await requireStaff();
+  await requireTeam();
   const sp = await searchParams;
   const db = admin();
   const [{ rows }, { data: docs }] = await Promise.all([

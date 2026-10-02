@@ -1,11 +1,11 @@
-import { requireStaff } from '@/lib/auth';
+import { requireTeam } from '@/lib/auth';
 import Btn from '@/components/Btn';
 import { admin } from '@/lib/supabase';
 import Link from 'next/link';
 import { addStaff, removeStaff, testConnection } from '../actions';
 
 export default async function Settings({ searchParams }: { searchParams: Promise<{ msg?: string; err?: string }> }) {
-  const me = await requireStaff();
+  const me = await requireTeam();
   const sp = await searchParams;
   const db = admin();
   const day = new Date(); day.setUTCHours(0, 0, 0, 0);

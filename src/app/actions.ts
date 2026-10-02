@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { headers } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 import { admin, sessionClient } from '@/lib/supabase';
-import { requireStaff } from '@/lib/auth';
+import { guardApp, requireStaff, requireTeam } from '@/lib/auth';
 import { callScript, DriveFile } from '@/lib/appsScript';
 import { counselorKey, docTypeFromName, dobForMaster, schoolShort } from '@/lib/docs';
 import { ALL_DOC_TYPES } from '@/lib/constants';
@@ -68,7 +68,7 @@ export async function signOut() {
 
 export async function syncNow(f: FormData) {
   const ret = s(f, 'returnTo') === '/applications' ? '/applications' : '/';
-  await requireStaff();
+  await requireTeam();
   let msg: string;
   try {
     const r = await syncAll({ full: f.get('full') === '1' });
@@ -95,7 +95,7 @@ async function pushToMaster(id: string, actor: string, status: string, counselor
 }
 
 export async function addToMaster(f: FormData) {
-  const staff = await requireStaff();
+  const staff = await requireTeam();
   const id = s(f, 'id');
   if (!(STATUSES as readonly string[]).includes(s(f, 'status'))) return back(id, 'Choose a status', true);
   try {
@@ -121,7 +121,7 @@ function pickIds(f: FormData) {
 const leftNote = (n: number) => (n ? ` ${n} more left — run it again.` : '');
 
 export async function bulkAddToMaster(f: FormData) {
-  const staff = await requireStaff();
+  const staff = await requireTeam();
   const { ids, left } = pickIds(f);
   const status = s(f, 'addStatus') || 'New Lead';
   let added = 0, existed = 0, failed = 0;
@@ -134,7 +134,7 @@ export async function bulkAddToMaster(f: FormData) {
 }
 
 export async function bulkSetStatus(f: FormData) {
-  const staff = await requireStaff();
+  const staff = await requireTeam();
   const status = s(f, 'setStatus');
   if (!(STATUSES as readonly string[]).includes(status)) bulkBack(f, 'Choose a status first.', true);
   const { ids, left } = pickIds(f);
@@ -152,7 +152,7 @@ export async function bulkSetStatus(f: FormData) {
 }
 
 export async function bulkAssign(f: FormData) {
-  const staff = await requireStaff();
+  const staff = await requireTeam();
   const pick = s(f, 'setCounselor');
   if (!pick) bulkBack(f, 'Choose a counselor first.', true);
   const counselor = pick === '__clear' ? '' : pick;
@@ -172,7 +172,7 @@ export async function bulkAssign(f: FormData) {
 
 // One email per counselor listing the selected students that belong to them.
 export async function bulkEmailCounselors(f: FormData) {
-  const staff = await requireStaff();
+  const staff = await requireTeam();
   const { ids } = pickIds(f);
   const db = admin();
   const [{ rows, all }, { data: counselors }] = await Promise.all([loadStudents({ dups: true }), db.from('portal_counselors').select('*')]);
@@ -202,7 +202,7 @@ export async function bulkEmailCounselors(f: FormData) {
 }
 
 export async function updateRegent(f: FormData) {
-  const staff = await requireStaff();
+  const staff = await requireTeam();
   const id = s(f, 'id');
   const db = admin();
   const { data: a } = await db.from('portal_applications').select('in_regent, regent_data, opp_id, payment, interview').eq('application_id', id).single();
@@ -220,6 +220,7 @@ export async function updateRegent(f: FormData) {
 export async function updateStatus(f: FormData) {
   const staff = await requireStaff();
   const id = s(f, 'id'), status = s(f, 'status');
+  await guardApp(staff, id);
   if (!(STATUSES as readonly string[]).includes(status)) return back(id, 'Invalid status', true);
   const db = admin();
   const { data: cur } = await db.from('portal_applications').select('status').eq('application_id', id).single();
@@ -233,7 +234,7 @@ export async function updateStatus(f: FormData) {
 }
 
 export async function updateCounselor(f: FormData) {
-  const staff = await requireStaff();
+  const staff = await requireTeam();
   const id = s(f, 'id'), counselor = s(f, 'counselor');
   const db = admin();
   const { data: cur } = await db.from('portal_applications').select('counselor').eq('application_id', id).single();
@@ -249,6 +250,7 @@ export async function updateCounselor(f: FormData) {
 export async function addNote(f: FormData) {
   const staff = await requireStaff();
   const id = s(f, 'id'), body = s(f, 'body'), ret = s(f, 'returnTo');
+  await guardApp(staff, id);
   if (!body) return back(id, 'Note is empty', true, ret);
   await admin().from('portal_notes').insert({ application_id: id, author: staff.email, body, pinned: f.get('pinned') === 'on' });
   await log(id, staff.email, 'note', { preview: body.slice(0, 120) });
@@ -260,6 +262,7 @@ export async function addNote(f: FormData) {
 export async function createDraft(f: FormData) {
   const staff = await requireStaff();
   const id = s(f, 'id');
+  await guardApp(staff, id);
   const purpose = (s(f, 'purpose') in PURPOSES ? s(f, 'purpose') : 'custom') as PurposeKey;
   const tone = (s(f, 'tone') in TONES ? s(f, 'tone') : 'friendly') as ToneKey;
   const tab = `/applications/${id}?tab=messages`;
@@ -284,8 +287,13 @@ export async function createDraft(f: FormData) {
 export async function sendCounselorEmail(f: FormData) {
   const staff = await requireStaff();
   const id = s(f, 'id'), ret = s(f, 'returnTo');
+  await guardApp(staff, id);
   const to = s(f, 'custom') || s(f, 'to'), subject = s(f, 'subject'), body = s(f, 'body');
   if (!EMAIL_RE.test(to)) return back(id, 'Enter a valid email address (counselor emails are managed under Counselors)', true, ret);
+  if (staff.role === 'counselor') {   // counselors may email their student (or themselves), not arbitrary addresses
+    const { data: a0 } = await admin().from('portal_applications').select('email').eq('application_id', id).single();
+    if (![a0?.email, staff.email].filter(Boolean).map((x) => String(x).toLowerCase()).includes(to.toLowerCase())) return back(id, 'You can email the student from here.', true, ret);
+  }
   if (!subject || !body) return back(id, 'Subject and message are required', true, ret);
   try { await callScript('sendEmail', { to, subject, body, replyTo: staff.email }); }
   catch (e) { rethrow(e); return back(id, `Email failed: ${(e as Error).message}`, true, ret); }
@@ -302,6 +310,7 @@ export async function sendCounselorEmail(f: FormData) {
 export async function uploadDocument(f: FormData) {
   const staff = await requireStaff();
   const id = s(f, 'id'), docType = s(f, 'docType'), ret = s(f, 'returnTo');
+  await guardApp(staff, id);
   const file = f.get('file') as File | null;
   if (!file || !file.size) return back(id, 'Choose a file', true, ret);
   const db = admin();
@@ -324,8 +333,9 @@ export async function uploadDocument(f: FormData) {
 }
 
 export async function refreshDocuments(f: FormData) {
-  await requireStaff();
+  const staff = await requireStaff();
   const id = s(f, 'id'), ret = s(f, 'returnTo');
+  await guardApp(staff, id);
   const { data: app } = await admin().from('portal_applications').select('drive_folder_id, extra_folder_ids').eq('application_id', id).single();
   const folders = [...new Set([app?.drive_folder_id, ...(app?.extra_folder_ids || [])].filter(Boolean) as string[])];
   if (folders.length) await syncFolders([{ id, folders }]);
@@ -335,8 +345,10 @@ export async function refreshDocuments(f: FormData) {
 export async function setDocType(f: FormData) {
   const staff = await requireStaff();
   const id = s(f, 'id'), fileId = s(f, 'fileId'), type = s(f, 'docType'), ret = s(f, 'returnTo');
+  await guardApp(staff, id);
   if (!(ALL_DOC_TYPES as readonly string[]).includes(type)) return back(id, 'Invalid document type', true, ret);
-  const { data: doc } = await admin().from('portal_documents').select('name, doc_type').eq('drive_file_id', fileId).single();
+  const { data: doc } = await admin().from('portal_documents').select('name, doc_type, application_id').eq('drive_file_id', fileId).single();
+  if (doc) await guardApp(staff, doc.application_id);
   await admin().from('portal_documents').update({ type_override: type === doc?.doc_type ? null : type }).eq('drive_file_id', fileId);
   await log(id, staff.email, 'doc_retyped', { name: doc?.name, type });
   back(id, `Marked as ${type}`, false, ret);
@@ -346,6 +358,7 @@ export async function setDocType(f: FormData) {
 export async function addReminder(f: FormData) {
   const staff = await requireStaff();
   const id = s(f, 'id'), due = s(f, 'due'), note = s(f, 'note'), ret = s(f, 'returnTo');
+  await guardApp(staff, id);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(due) || !note) return back(id, 'Pick a date and write what to follow up on.', true, ret);
   await admin().from('portal_reminders').insert({ application_id: id, due_on: due, note: note.slice(0, 300), created_by: staff.email });
   await log(id, staff.email, 'reminder_set', { due, note: note.slice(0, 80) });
@@ -353,7 +366,9 @@ export async function addReminder(f: FormData) {
   back(id, `Reminder set for ${new Date(due).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}.`, false, ret);
 }
 export async function completeReminder(f: FormData) {
-  await requireStaff();
+  const staff = await requireStaff();
+  const { data: rem } = await admin().from('portal_reminders').select('application_id').eq('id', s(f, 'reminderId')).single();
+  if (rem) await guardApp(staff, rem.application_id);
   await admin().from('portal_reminders').update({ status: 'done', done_at: new Date().toISOString() }).eq('id', s(f, 'reminderId'));
   revalidatePath('/'); revalidatePath('/tasks');
   const ret = s(f, 'returnTo');
@@ -362,7 +377,7 @@ export async function completeReminder(f: FormData) {
 
 // ---- Overview, tasks, AI ----
 const DAY_MS = 864e5;
-const homeOr = (f: FormData | undefined, def = '/tasks') => { const r = f ? s(f, 'returnTo') : ''; return r === '/' || r.startsWith('/tasks') ? r : def; };
+const homeOr = (f: FormData | undefined, def = '/tasks') => { const r = f ? s(f, 'returnTo') : ''; return /^\/(?!\/)/.test(r) ? r : def; };
 
 export async function markSeen(f?: FormData) {
   const staff = await requireStaff();
@@ -377,6 +392,7 @@ async function closeTask(f: FormData, status: 'done' | 'dismissed' | 'snoozed', 
   const id = s(f, 'taskId');
   const now = new Date();
   const { data: t } = await db.from('portal_tasks').select('application_id, title').eq('id', id).single();
+  if (t?.application_id) await guardApp(staff, t.application_id);
   await db.from('portal_tasks').update({ status, suppress_until: new Date(now.getTime() + days * DAY_MS).toISOString(), resolved_at: now.toISOString(), resolved_by: staff.email, updated_at: now.toISOString() }).eq('id', id);
   if (t?.application_id) await log(t.application_id, staff.email, `task_${status}`, { title: t.title });
   revalidatePath('/overview');
@@ -388,10 +404,10 @@ export async function dismissTask(f: FormData) { return closeTask(f, 'dismissed'
 export async function snoozeTask(f: FormData) { return closeTask(f, 'snoozed', Math.max(1, Math.min(14, Number(s(f, 'days')) || 1))); }
 
 export async function refreshOverview(f?: FormData) {
-  await requireStaff();
+  await requireTeam();
   const { rows, all } = await loadStudents();
   await refreshTasks(rows);
-  const staff = await requireStaff();
+  const staff = await requireTeam();
   const facts = await computeFacts(rows, all, staff.last_seen_at);
   const r = await aiOverview(facts, true);
   revalidatePath('/'); revalidatePath('/tasks');
@@ -399,8 +415,9 @@ export async function refreshOverview(f?: FormData) {
 }
 
 export async function generateSummary(f: FormData) {
-  await requireStaff();
+  const staff = await requireStaff();
   const id = s(f, 'id');
+  await guardApp(staff, id);
   const { rows, all } = await loadStudents();
   const row = rows.find((r) => r.a.application_id === id) || rows.find((r) => all.some((x) => x.application_id === id && x.student_key === r.a.student_key));
   if (!row) return back(id, 'Student not found', true);
@@ -413,6 +430,7 @@ export async function generateSummary(f: FormData) {
 export async function scanDocs(f: FormData) {
   const staff = await requireStaff();
   const id = s(f, 'id'), fileId = s(f, 'fileId'), ret = s(f, 'returnTo') || `/applications/${id}?tab=documents`;
+  await guardApp(staff, id);
   if (!docScanEnabled()) return back(id, 'The AI document check is switched off. Turn it on in Settings → AI document check.', true, ret);
   const db = admin();
   const { data: app } = await db.from('portal_applications').select('name, student_key').eq('application_id', id).single();
@@ -481,7 +499,7 @@ async function scanApps(apps: { application_id: string; name: string }[]): Promi
 }
 
 export async function scanDrive() {
-  await requireStaff();
+  await requireTeam();
   const { data: apps } = await admin().from('portal_applications').select('application_id, name')
     .is('drive_folder_id', null).order('drive_scan_at', { ascending: true, nullsFirst: true }).limit(12);
   let msg: string;
@@ -492,7 +510,7 @@ export async function scanDrive() {
 }
 
 export async function scanStudent(f: FormData) {
-  await requireStaff();
+  await requireTeam();
   const id = s(f, 'id');
   const { data: a } = await admin().from('portal_applications').select('application_id, name').eq('application_id', id).single();
   try { const n = a ? await scanApps([a]) : 0; return back(id, n ? `Found ${n} possible folder${n > 1 ? 's' : ''} — check below and link the right one.` : 'No matching folders found. Paste the folder link instead.', false, docsTab(id)); }
@@ -500,7 +518,7 @@ export async function scanStudent(f: FormData) {
 }
 
 export async function linkFolder(f: FormData) {
-  const staff = await requireStaff();
+  const staff = await requireTeam();
   const id = s(f, 'id'), ret = s(f, 'returnTo') || docsTab(id);
   const folderId = folderIdFrom(s(f, 'folder'));
   if (!folderId) return back(id, 'That doesn’t look like a Google Drive folder link or ID', true, ret);
@@ -509,7 +527,7 @@ export async function linkFolder(f: FormData) {
 }
 
 export async function dismissSuggestion(f: FormData) {
-  await requireStaff();
+  await requireTeam();
   const id = s(f, 'id'), ret = s(f, 'returnTo') || '/drive';
   await admin().from('portal_folder_suggestions').update({ status: 'dismissed' }).eq('id', s(f, 'sid'));
   revalidatePath('/drive');
@@ -517,7 +535,7 @@ export async function dismissSuggestion(f: FormData) {
 }
 
 export async function unlinkFolder(f: FormData) {
-  const staff = await requireStaff();
+  const staff = await requireTeam();
   const id = s(f, 'id'), folderId = s(f, 'folderId');
   const db = admin();
   const { data: a } = await db.from('portal_applications').select('extra_folder_ids, drive_folder_id, raw_data').eq('application_id', id).single();
@@ -535,7 +553,7 @@ export async function unlinkFolder(f: FormData) {
 
 // Link every student whose search found exactly one folder with their full name.
 export async function linkExactMatches() {
-  const staff = await requireStaff();
+  const staff = await requireTeam();
   const db = admin();
   const { data: sugg } = await db.from('portal_folder_suggestions').select('id, application_id, folder_id, exact').eq('status', 'new');
   const byApp = new Map<string, { folder_id: string; exact: boolean }[]>();
@@ -552,7 +570,7 @@ export async function linkExactMatches() {
 
 // ---- Settings ----
 export async function testConnection() {
-  await requireStaff();
+  await requireTeam();
   const t0 = Date.now();
   try {
     await callScript('listFiles', { folderIds: [] });   // lightest command the script supports
@@ -564,7 +582,7 @@ export async function testConnection() {
 }
 
 export async function saveCounselor(f: FormData) {
-  await requireStaff();
+  await requireTeam();
   const email = s(f, 'email'), ret = s(f, 'returnTo') || '/counselors';
   if (email && !EMAIL_RE.test(email)) redirect(`${ret}?err=${encodeURIComponent('Invalid email for ' + s(f, 'name'))}`);
   await admin().from('portal_counselors').update({ email: email || null, active: f.get('active') === 'on' }).eq('id', s(f, 'id'));
@@ -572,7 +590,7 @@ export async function saveCounselor(f: FormData) {
   redirect(`${ret}?msg=Saved`);
 }
 export async function addCounselor(f: FormData) {
-  await requireStaff();
+  await requireTeam();
   const name = s(f, 'name'), email = s(f, 'email'), ret = s(f, 'returnTo') || '/counselors';
   if (!name) redirect(`${ret}?err=Name+required`);
   if (email && !EMAIL_RE.test(email)) redirect(`${ret}?err=Invalid+email`);
@@ -580,9 +598,31 @@ export async function addCounselor(f: FormData) {
   redirect(`${ret}?msg=Counselor+saved`);
 }
 
+// Lets a counselor sign in (with Google, using their saved email) and see only their own students.
+export async function grantCounselorAccess(f: FormData) {
+  await requireTeam();
+  const db = admin();
+  const { data: c } = await db.from('portal_counselors').select('*').eq('id', s(f, 'id')).single();
+  if (!c?.email) redirect('/counselors?err=' + encodeURIComponent('Save the counselor’s email first.'));
+  const email = c.email.toLowerCase();
+  const { data: ex } = await db.from('portal_staff').select('role').eq('email', email).maybeSingle();
+  if (ex && ex.role !== 'counselor') redirect('/counselors?err=' + encodeURIComponent(`${email} already has team access.`));
+  await db.from('portal_staff').upsert({ email, role: 'counselor', counselor_key: c.name_key });
+  revalidatePath('/counselors');
+  redirect(`/counselors?msg=${encodeURIComponent(`${c.name} can now sign in with ${email} and will see only their own students.`)}`);
+}
+export async function revokeCounselorAccess(f: FormData) {
+  await requireTeam();
+  const db = admin();
+  const { data: c } = await db.from('portal_counselors').select('email').eq('id', s(f, 'id')).single();
+  if (c?.email) await db.from('portal_staff').delete().eq('email', c.email.toLowerCase()).eq('role', 'counselor');
+  revalidatePath('/counselors');
+  redirect('/counselors?msg=Access+removed');
+}
+
 // Email a counselor the list of their students that need attention.
 export async function sendDigest(f: FormData) {
-  const staff = await requireStaff();
+  const staff = await requireTeam();
   const db = admin();
   const { data: c } = await db.from('portal_counselors').select('*').eq('id', s(f, 'id')).single();
   if (!c?.email) redirect('/counselors?err=' + encodeURIComponent(`Add an email for ${c?.name || 'this counselor'} first`));
@@ -601,7 +641,7 @@ export async function sendDigest(f: FormData) {
 
 // Free-form message from the Messages page (optionally tied to a student).
 export async function sendMessage(f: FormData) {
-  const staff = await requireStaff();
+  const staff = await requireTeam();
   const to = s(f, 'custom') || s(f, 'to'), subject = s(f, 'subject'), body = s(f, 'body'), appId = s(f, 'applicationId') || null;
   if (!EMAIL_RE.test(to) || !subject || !body) redirect('/messages?compose=1&err=' + encodeURIComponent('Recipient, subject and message are required'));
   try { await callScript('sendEmail', { to, subject, body, replyTo: staff.email }); }
@@ -616,7 +656,7 @@ export async function sendMessage(f: FormData) {
 
 // Adds a student by hand: a new row in Sheet1, then a sync so the portal shows it.
 export async function createApplication(f: FormData) {
-  const staff = await requireStaff();
+  const staff = await requireTeam();
   const name = s(f, 'name'), email = s(f, 'email').toLowerCase();
   if (!name) redirect('/applications/new?err=Name+is+required');
   if (email && !EMAIL_RE.test(email)) redirect('/applications/new?err=Invalid+email');
@@ -639,7 +679,7 @@ export async function createApplication(f: FormData) {
 }
 
 export async function addStaff(f: FormData) {
-  const me = await requireStaff();
+  const me = await requireTeam();
   if (me.role !== 'admin') redirect('/settings?err=Admins+only');
   const email = s(f, 'email').toLowerCase();
   if (!EMAIL_RE.test(email)) redirect('/settings?err=Invalid+email');
@@ -647,7 +687,7 @@ export async function addStaff(f: FormData) {
   redirect('/settings?msg=Staff+added');
 }
 export async function removeStaff(f: FormData) {
-  const me = await requireStaff();
+  const me = await requireTeam();
   const email = s(f, 'email');
   if (me.role !== 'admin' || email === me.email) redirect('/settings?err=Not+allowed');
   await admin().from('portal_staff').delete().eq('email', email);

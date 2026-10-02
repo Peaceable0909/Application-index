@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { requireStaff } from '@/lib/auth';
+import { requireTeam } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
 import { dateTime, describeActivity } from '@/lib/format';
 import Btn from '@/components/Btn';
@@ -8,7 +8,7 @@ import Icon from '@/components/Icon';
 const KINDS = ['new_application', 'status_change', 'counselor_change', 'doc_uploaded', 'email_sent', 'note', 'moved_to_master', 'folder_linked', 'payment_change', 'interview_change', 'task_done'];
 
 export default async function Activity({ searchParams }: { searchParams: Promise<{ kind?: string }> }) {
-  await requireStaff();
+  await requireTeam();
   const sp = await searchParams;
   let q = admin().from('portal_activity').select('id,kind,actor,detail,created_at,application_id,portal_applications(name)').order('created_at', { ascending: false }).limit(250);
   if (sp.kind) q = q.eq('kind', sp.kind);

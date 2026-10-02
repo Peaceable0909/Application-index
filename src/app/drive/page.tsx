@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { requireStaff } from '@/lib/auth';
+import { requireTeam } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
 import Btn from '@/components/Btn';
 import { dismissSuggestion, linkExactMatches, linkFolder, scanDrive } from '../actions';
@@ -7,7 +7,7 @@ import { dismissSuggestion, linkExactMatches, linkFolder, scanDrive } from '../a
 export const maxDuration = 60;
 
 export default async function DriveMatches({ searchParams }: { searchParams: Promise<{ msg?: string; err?: string }> }) {
-  await requireStaff();
+  await requireTeam();
   const sp = await searchParams;
   const db = admin();
   const [{ data: sugg }, { count: noFolder }, { count: scanned }] = await Promise.all([

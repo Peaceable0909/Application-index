@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { requireStaff } from '@/lib/auth';
+import { requireTeam } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
 import { loadStudents } from '@/lib/overview';
 import { counselorKey } from '@/lib/docs';
@@ -9,7 +9,7 @@ import Icon from '@/components/Icon';
 import { addCounselor, saveCounselor, sendDigest } from '../actions';
 
 export default async function Counselors({ searchParams }: { searchParams: Promise<{ msg?: string; err?: string }> }) {
-  await requireStaff();
+  await requireTeam();
   const sp = await searchParams;
   const db = admin();
   const [{ rows }, { data: counselors }, { data: msgs }] = await Promise.all([
@@ -47,6 +47,7 @@ export default async function Counselors({ searchParams }: { searchParams: Promi
                 <div className="filters" style={{ justifyContent: 'space-between' }}><label className="muted"><input type="checkbox" name="active" defaultChecked={c.active} /> active</label><Btn className="ghost sm">Save email</Btn></div>
               </form>
               <div className="filters" style={{ marginTop: 12 }}>
+                <Link href={`/counselors/${encodeURIComponent(c.name_key)}`} className="btn sm"><Icon n="eye" size={14} /> Open board</Link>
                 <Link href={`/applications?counselor=${encodeURIComponent(c.name)}`} className="btn ghost sm"><Icon n="users" size={14} /> Students</Link>
                 <form action={sendDigest}><input type="hidden" name="id" value={c.id} /><Btn className="sm" disabled={!c.email || !attention}><Icon n="send" size={14} /> Send digest</Btn></form>
               </div>

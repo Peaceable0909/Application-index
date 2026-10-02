@@ -1,15 +1,17 @@
 import Link from 'next/link';
 import { admin } from '@/lib/supabase';
-import { Staff } from '@/lib/auth';
+import { Staff, appIdsFor } from '@/lib/auth';
 import Icon from './Icon';
 
 /** Notification bell: open tasks (high priority first) and applications new since the admin's last visit. */
 export default async function Bell({ staff }: { staff: Staff }) {
   const db = admin();
-  const { count: dueCount } = await db.from('portal_reminders').select('id', { count: 'exact', head: true }).eq('status', 'pending').lte('due_on', new Date().toISOString().slice(0, 10));
+  const mine = staff.role === 'counselor' ? await appIdsFor(staff.counselor_key) : null; // counselors only see their own students' items
+  const dueQ = db.from('portal_reminders').select('id', { count: 'exact', head: true }).eq('status', 'pending').lte('due_on', new Date().toISOString().slice(0, 10));
+  const { count: dueCount } = mine ? await dueQ.in('application_id', mine) : await dueQ;
   const [{ data: tasks, count }, { count: fresh }] = await Promise.all([
-    db.from('portal_tasks').select('id,title,detail,application_id,priority', { count: 'exact' }).eq('status', 'open').order('priority').order('created_at', { ascending: false }).limit(5),
-    staff.last_seen_at
+    (() => { const q = db.from('portal_tasks').select('id,title,detail,application_id,priority', { count: 'exact' }).eq('status', 'open').order('priority').order('created_at', { ascending: false }).limit(5); return mine ? q.in('application_id', mine) : q; })(),
+    staff.last_seen_at && !mine
       ? db.from('portal_applications').select('application_id', { count: 'exact', head: true }).eq('has_raw', true).not('submitted_at', 'is', null).gt('created_at', staff.last_seen_at)
       : Promise.resolve({ count: 0 }),
   ]);
@@ -25,7 +27,7 @@ export default async function Bell({ staff }: { staff: Staff }) {
           <Link key={t.id} href={`/applications/${t.application_id}`}><Icon n={t.priority === 1 ? 'alert' : 'tasks'} /> <span><b>{t.title}</b><br /><small className="muted">{t.detail}</small></span></Link>
         ))}
         {!n && !(fresh || 0) && <div className="hd" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>You’re all caught up.</div>}
-        <Link href="/tasks" style={{ justifyContent: 'center', color: 'var(--blue)', fontWeight: 600 }}>View all {n} task{n === 1 ? '' : 's'} →</Link>
+        <Link href={mine ? '/my' : '/tasks'} style={{ justifyContent: 'center', color: 'var(--blue)', fontWeight: 600 }}>View all {n} task{n === 1 ? '' : 's'} →</Link>
       </div>
     </details>
   );

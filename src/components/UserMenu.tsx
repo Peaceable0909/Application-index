@@ -9,10 +9,10 @@ export default function UserMenu({ staff }: { staff: Staff }) {
   const name = niceName(staff.email);
   return (
     <details className="dd">
-      <summary className="me"><span className="avatar">{name.slice(0, 2)}</span><div><b>{name}</b><small>{staff.role === 'admin' ? 'Admin' : 'Staff'}</small></div><Icon n="down" size={16} /></summary>
+      <summary className="me"><span className="avatar">{name.slice(0, 2)}</span><div><b>{name}</b><small>{staff.role === 'admin' ? 'Admin' : staff.role === 'counselor' ? 'Counselor' : 'Staff'}</small></div><Icon n="down" size={16} /></summary>
       <div className="menu" style={{ minWidth: 230 }}>
         <div className="hd">{staff.email}</div>
-        <Link href="/settings"><Icon n="settings" /> Settings</Link>
+        {staff.role !== 'counselor' && <Link href="/settings"><Icon n="settings" /> Settings</Link>}
         <form action={signOut}><button className="item"><Icon n="logout" /> Sign out</button></form>
       </div>
     </details>

@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { requireStaff } from '@/lib/auth';
+import { requireStaff, canAccessApp } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
 import { effType, missingDocs } from '@/lib/docs';
 import { decodeId } from '@/lib/format';
@@ -10,12 +10,12 @@ import { docScanEnabled } from '@/lib/docscan';
 export const maxDuration = 60;
 
 export default async function Documents({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ file?: string; msg?: string; err?: string }> }) {
-  await requireStaff();
+  const staff = await requireStaff();
   const id = decodeId((await params).id);
   const sp = await searchParams;
   const db = admin();
   const { data: app } = await db.from('portal_applications').select('application_id,has_raw,submitted_at,name,school,programme,student_key,drive_folder_id,drive_folder_url').eq('application_id', id).maybeSingle();
-  if (!app) notFound();
+  if (!app || !(await canAccessApp(staff, app.application_id))) notFound();
   const { data: sibs } = await db.from('portal_applications').select('application_id').eq('student_key', app.student_key);
   const { data: rows } = await db.from('portal_documents').select('*').in('application_id', (sibs || []).map((s) => s.application_id)).order('created_at', { ascending: false });
 

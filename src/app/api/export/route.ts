@@ -8,7 +8,7 @@ const csv = (body: string) => new NextResponse(body, { headers: { 'Content-Type'
 // GET = everything matching the current filters.
 export async function GET(req: Request) {
   const staff = await currentStaff();
-  if (!staff) return new NextResponse('Unauthorized', { status: 401 });
+  if (!staff || staff.role === 'counselor') return new NextResponse('Unauthorized', { status: 401 });
   const sp = Object.fromEntries(new URL(req.url).searchParams.entries());
   const { rows } = await loadStudents({ dups: !!sp.dups });
   return csv(toCsv(filterRows(rows, sp, staff.last_seen_at)));
@@ -16,7 +16,8 @@ export async function GET(req: Request) {
 
 // POST = only the rows ticked on the Applications page.
 export async function POST(req: Request) {
-  if (!(await currentStaff())) return new NextResponse('Unauthorized', { status: 401 });
+  const who = await currentStaff();
+  if (!who || who.role === 'counselor') return new NextResponse('Unauthorized', { status: 401 });
   const ids = new Set((await req.formData()).getAll('ids').map(String));
   if (!ids.size) return new NextResponse('Tick at least one student first.', { status: 400 });
   const { rows } = await loadStudents({ dups: true });

@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 import Link from 'next/link';
-import { requireStaff } from '@/lib/auth';
+import { requireTeam } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
 import { loadStudents } from '@/lib/overview';
 import { isFormSubmission } from '@/lib/attention';
@@ -17,7 +17,7 @@ import { syncNow } from './actions';
 export const maxDuration = 60;
 
 export default async function Overview({ searchParams }: { searchParams: Promise<{ msg?: string; err?: string }> }) {
-  const staff = await requireStaff();
+  const staff = await requireTeam();
   const sp = await searchParams;
   const db = admin();
   const { rows, all } = await loadStudents();

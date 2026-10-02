@@ -1,12 +1,12 @@
 import Link from 'next/link';
-import { requireStaff } from '@/lib/auth';
+import { requireTeam } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
 import { dateTime, initials } from '@/lib/format';
 import Btn from '@/components/Btn';
 import { niceName } from '@/components/UserMenu';
 
 export default async function Notes({ searchParams }: { searchParams: Promise<{ q?: string; pinned?: string }> }) {
-  await requireStaff();
+  await requireTeam();
   const sp = await searchParams;
   let query = admin().from('portal_notes').select('*, portal_applications(name, application_id)').order('pinned', { ascending: false }).order('created_at', { ascending: false }).limit(300);
   if (sp.pinned) query = query.eq('pinned', true);

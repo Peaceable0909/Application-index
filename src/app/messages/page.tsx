@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { requireStaff } from '@/lib/auth';
+import { requireTeam } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
 import { dateTime } from '@/lib/format';
 import Btn from '@/components/Btn';
@@ -7,7 +7,7 @@ import { niceName } from '@/components/UserMenu';
 import { sendMessage } from '../actions';
 
 export default async function Messages({ searchParams }: { searchParams: Promise<{ q?: string; compose?: string; msg?: string; err?: string }> }) {
-  await requireStaff();
+  await requireTeam();
   const sp = await searchParams;
   const db = admin();
   const [{ data: msgs }, { data: counselors }, { data: students }] = await Promise.all([

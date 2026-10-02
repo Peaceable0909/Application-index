@@ -1,6 +1,6 @@
 import { Fragment } from 'react';
 import Link from 'next/link';
-import { requireStaff } from '@/lib/auth';
+import { requireTeam } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
 import Btn from '@/components/Btn';
 import { aiOverview, computeFacts, FACT_LABELS, loadStudents, refreshTasks } from '@/lib/overview';
@@ -33,7 +33,7 @@ function describe(kind: string, d: Record<string, string>) {
 }
 
 export default async function Overview({ searchParams }: { searchParams: Promise<{ msg?: string; err?: string; all?: string }> }) {
-  const staff = await requireStaff();
+  const staff = await requireTeam();
   const sp = await searchParams;
   const db = admin();
 
