@@ -12,6 +12,8 @@ import { STATUSES } from '@/lib/constants';
 import { draftEmail, PURPOSES, PurposeKey, TONES, ToneKey } from '@/lib/draft';
 import { aiOverview, aiStudentSummary, computeFacts, loadStudents, refreshTasks, studentFacts } from '@/lib/overview';
 
+// redirect() works by throwing; a catch block must pass that through instead of reporting it as an error.
+const rethrow = (e: unknown) => { if ((e as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw e; };
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const s = (f: FormData, k: string) => String(f.get(k) ?? '').trim();
 const back = (id: string, msg: string, err = false, returnTo?: string) => {
@@ -70,7 +72,7 @@ export async function syncNow(f: FormData) {
   try {
     const r = await syncAll({ full: f.get('full') === '1' });
     msg = `Synced ${r.total} students · ${r.formSubmissions} with a form submission · ${r.inMaster} in Sheet1 · ${r.inRegent} in Regent Only · ${r.formOnly} not yet in Sheet1 · ${r.created} new.`;
-  } catch (e) { msg = `Sync failed: ${(e as Error).message}`; }
+  } catch (e) { rethrow(e); msg = `Sync failed: ${(e as Error).message}`; }
   revalidatePath('/');
   redirect(`${ret}?msg=${encodeURIComponent(msg)}`);
 }
@@ -100,7 +102,7 @@ export async function addToMaster(f: FormData) {
     await syncAll();
     revalidatePath('/');
     return back(id, res === 'exists' ? 'Already in the master sheet' : 'Added to the master sheet (Sheet1)');
-  } catch (e) { return back(id, `Could not add: ${(e as Error).message}`, true); }
+  } catch (e) { rethrow(e); return back(id, `Could not add: ${(e as Error).message}`, true); }
 }
 
 export async function bulkAddToMaster(f: FormData) {
@@ -127,7 +129,7 @@ export async function updateRegent(f: FormData) {
   const g = a.regent_data as { email: string; name: string; school: string };
   const fields = { oppId: s(f, 'oppId'), payment: s(f, 'payment'), interview: s(f, 'interview') };
   try { await callScript('updateRegent', { email: g.email, name: g.name, school: g.school, fields }); }
-  catch (e) { return back(id, `Could not update the sheet: ${(e as Error).message}`, true, `/applications/${id}?tab=regent`); }
+  catch (e) { rethrow(e); return back(id, `Could not update the sheet: ${(e as Error).message}`, true, `/applications/${id}?tab=regent`); }
   await db.from('portal_applications').update({ opp_id: fields.oppId || null, payment: fields.payment || null, interview: fields.interview || null }).eq('application_id', id);
   await log(id, staff.email, 'regent_update', fields);
   revalidatePath('/');
@@ -144,7 +146,7 @@ export async function updateStatus(f: FormData) {
   await log(id, staff.email, 'status_change', { from: cur?.status ?? null, to: status });
   const ret = s(f, 'returnTo');
   try { await writeBack(id, { status }); }
-  catch (e) { return back(id, `Saved in portal but sheet write-back failed: ${(e as Error).message}`, true, ret); }
+  catch (e) { rethrow(e); return back(id, `Saved in portal but sheet write-back failed: ${(e as Error).message}`, true, ret); }
   revalidatePath('/');
   back(id, 'Status updated', false, ret);
 }
@@ -158,7 +160,7 @@ export async function updateCounselor(f: FormData) {
   await log(id, staff.email, 'counselor_change', { from: cur?.counselor ?? null, to: counselor });
   const ret = s(f, 'returnTo');
   try { await writeBack(id, { counselor }); }
-  catch (e) { return back(id, `Saved in portal but sheet write-back failed: ${(e as Error).message}`, true, ret); }
+  catch (e) { rethrow(e); return back(id, `Saved in portal but sheet write-back failed: ${(e as Error).message}`, true, ret); }
   revalidatePath('/');
   back(id, 'Counselor updated', false, ret);
 }
@@ -195,7 +197,7 @@ export async function createDraft(f: FormData) {
     });
     await db.from('portal_ai_cache').upsert({ cache_key: `draft:${id}:${staff.email}`, kind: 'draft', input_hash: draft.at, output: draft, created_at: draft.at });
     return back(id, 'AI draft ready — review and edit it before sending.', false, `${tab}&draft=1`);
-  } catch (e) { return back(id, (e as Error).message, true, tab); }
+  } catch (e) { rethrow(e); return back(id, (e as Error).message, true, tab); }
 }
 
 export async function sendCounselorEmail(f: FormData) {
@@ -205,7 +207,7 @@ export async function sendCounselorEmail(f: FormData) {
   if (!EMAIL_RE.test(to)) return back(id, 'Enter a valid email address (counselor emails are managed under Counselors)', true, ret);
   if (!subject || !body) return back(id, 'Subject and message are required', true, ret);
   try { await callScript('sendEmail', { to, subject, body, replyTo: staff.email }); }
-  catch (e) { return back(id, `Email failed: ${(e as Error).message}`, true, ret); }
+  catch (e) { rethrow(e); return back(id, `Email failed: ${(e as Error).message}`, true, ret); }
   const db = admin();
   const { data: a } = await db.from('portal_applications').select('email, counselor').eq('application_id', id).maybeSingle();
   const kind = a?.email && a.email.toLowerCase() === to.toLowerCase() ? 'student' : 'counselor';
@@ -236,7 +238,7 @@ export async function uploadDocument(f: FormData) {
       size_bytes: up.size, drive_url: up.url, source: 'portal', uploaded_by: staff.email,
     });
     await log(id, staff.email, 'doc_uploaded', { name: up.name });
-  } catch (e) { return back(id, `Upload failed: ${(e as Error).message}`, true, ret); }
+  } catch (e) { rethrow(e); return back(id, `Upload failed: ${(e as Error).message}`, true, ret); }
   back(id, 'Document uploaded to Drive and linked', false, ret);
 }
 
@@ -361,7 +363,7 @@ export async function scanDrive() {
     .is('drive_folder_id', null).order('drive_scan_at', { ascending: true, nullsFirst: true }).limit(12);
   let msg: string;
   try { const n = await scanApps(apps || []); msg = `Searched Drive for ${(apps || []).length} students — ${n} possible folders found.`; }
-  catch (e) { msg = `Drive search failed: ${(e as Error).message}`; }
+  catch (e) { rethrow(e); msg = `Drive search failed: ${(e as Error).message}`; }
   revalidatePath('/drive');
   redirect(`/drive?msg=${encodeURIComponent(msg)}`);
 }
@@ -371,7 +373,7 @@ export async function scanStudent(f: FormData) {
   const id = s(f, 'id');
   const { data: a } = await admin().from('portal_applications').select('application_id, name').eq('application_id', id).single();
   try { const n = a ? await scanApps([a]) : 0; return back(id, n ? `Found ${n} possible folder${n > 1 ? 's' : ''} — check below and link the right one.` : 'No matching folders found. Paste the folder link instead.', false, docsTab(id)); }
-  catch (e) { return back(id, `Drive search failed: ${(e as Error).message}`, true, docsTab(id)); }
+  catch (e) { rethrow(e); return back(id, `Drive search failed: ${(e as Error).message}`, true, docsTab(id)); }
 }
 
 export async function linkFolder(f: FormData) {
@@ -380,7 +382,7 @@ export async function linkFolder(f: FormData) {
   const folderId = folderIdFrom(s(f, 'folder'));
   if (!folderId) return back(id, 'That doesn’t look like a Google Drive folder link or ID', true, ret);
   try { const n = await attachFolder(id, folderId, staff.email); revalidatePath('/'); revalidatePath('/drive'); return back(id, `Folder linked — ${n} file${n === 1 ? '' : 's'} found`, false, ret); }
-  catch (e) { return back(id, (e as Error).message, true, ret); }
+  catch (e) { rethrow(e); return back(id, (e as Error).message, true, ret); }
 }
 
 export async function dismissSuggestion(f: FormData) {
