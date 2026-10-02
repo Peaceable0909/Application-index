@@ -3,11 +3,12 @@ import { notFound } from 'next/navigation';
 import { requireStaff } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
 import { effType, missingDocs } from '@/lib/docs';
+import { decodeId } from '@/lib/format';
 import DocViewer, { ViewerDoc } from './DocViewer';
 
 export default async function Documents({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ file?: string; msg?: string; err?: string }> }) {
   await requireStaff();
-  const { id } = await params;
+  const id = decodeId((await params).id);
   const sp = await searchParams;
   const db = admin();
   const { data: app } = await db.from('portal_applications').select('application_id,has_raw,name,school,programme,student_key,drive_folder_id,drive_folder_url').eq('application_id', id).maybeSingle();

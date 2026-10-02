@@ -6,7 +6,7 @@ import { attentionReasons, AppRow } from '@/lib/attention';
 import { missingDocs, counselorKey, effType, schoolShort } from '@/lib/docs';
 import { ALL_DOC_TYPES, REQUIRED_DOCS, STATUSES } from '@/lib/constants';
 import { statusTone } from '@/lib/ui';
-import { ago, dateTime, describeActivity, initials, shortDate, STEPS, stepIndex } from '@/lib/format';
+import { ago, dateTime, decodeId, describeActivity, initials, shortDate, STEPS, stepIndex } from '@/lib/format';
 import { hashOf } from '@/lib/ai';
 import { PURPOSES, TONES, Draft } from '@/lib/draft';
 import { studentFacts, AppFull, StudentSummary } from '@/lib/overview';
@@ -24,7 +24,7 @@ const ftClass = (e: string) => (e === 'pdf' ? '' : ['jpg', 'jpeg', 'png', 'webp'
 
 export default async function ApplicationPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<SP> }) {
   const staff = await requireStaff();
-  const { id } = await params;
+  const id = decodeId((await params).id);
   const sp = await searchParams;
   const db = admin();
   const { data: app } = await db.from('portal_applications').select('*').eq('application_id', id).maybeSingle();

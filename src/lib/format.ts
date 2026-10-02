@@ -38,3 +38,6 @@ export function stepIndex(status: string | null): number {
 }
 export const IN_PROGRESS = ['CF Gotten', 'Offer Received', 'Interview Taken', 'Interview Passed', 'Unconditional Offer', 'CAS Applied', 'CAS Received', 'Visa Applied', 'Awaiting CAS', 'CAS Request'];
 export const AWAITING = ['New Lead', 'Submitted', 'Documents Requested'];
+
+// Route params can arrive URL-encoded ("stub%3Aabc"); IDs in the database are stored decoded ("stub:abc").
+export const decodeId = (v: string) => { try { return decodeURIComponent(v); } catch { return v; } };

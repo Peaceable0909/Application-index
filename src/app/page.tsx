@@ -41,7 +41,10 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   };
 
   const { data: activity } = await db.from('portal_activity').select('id,kind,detail,created_at,application_id,portal_applications(name)').order('created_at', { ascending: false }).limit(6);
-  const recent = [...rows].sort((a, b) => new Date(b.a.submitted_at || b.a.created_at).getTime() - new Date(a.a.submitted_at || a.a.created_at).getTime()).slice(0, 8);
+  // Real form submissions first (newest first), then anything else the sheets know about.
+  const isForm = (r: (typeof rows)[number]) => r.a.has_raw && !!r.a.submitted_at;
+  const byDate = (k: 'submitted_at' | 'created_at') => (x: (typeof rows)[number], y: (typeof rows)[number]) => new Date(y.a[k] || 0).getTime() - new Date(x.a[k] || 0).getTime();
+  const recent = [...rows.filter(isForm).sort(byDate('submitted_at')), ...rows.filter((r) => !isForm(r)).sort(byDate('created_at'))].slice(0, 8);
   const card = (icon: string, tone: string, label: string, n: number, href: string, d: React.ReactNode, i: number) => (
     <Link href={href} className="sc rise" style={{ '--i': i } as React.CSSProperties}><div className={`ico ${tone}`}><Icon n={icon} size={22} /></div><div className="lbl">{label}</div><div className="num">{n}</div>{d}</Link>
   );
@@ -89,7 +92,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                         {a.status ? <span className={`badge plain tone-${statusTone(a.status)}`}>{a.status}</span> : <span className="badge plain">New</span>}
                         {judged && missing.length > 0 && <span className="badge plain red">Missing Docs</span>}
                       </div></td>
-                      <td className="muted">{shortDate(a.submitted_at || a.created_at)}</td>
+                      <td className="muted">{shortDate(a.submitted_at)}</td>
                       <td><Link href={`/applications/${a.application_id}`} className="iact" aria-label="Open"><Icon n="more" /></Link></td>
                     </tr>
                   ))}
