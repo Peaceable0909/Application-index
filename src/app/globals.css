@@ -57,7 +57,7 @@ h3 { font-size:14px; margin:0 0 8px; color:var(--ink); }
 .avatar.sm { width:30px; height:30px; font-size:11px; background:#e9eefb; color:var(--ink); } .avatar.lg { width:76px; height:76px; font-size:26px; background:#e6ecfa; color:var(--ink); }
 main { padding:28px 32px 90px; width:100%; max-width:1400px; }
 .mnav { display:none; }
-@media (max-width:980px){ .shell { grid-template-columns:1fr; } .side { display:none; } .topbar { padding:12px 16px; } main { padding:20px 16px 70px; } .me div { display:none; }
+@media (max-width:980px){ .shell { grid-template-columns:minmax(0,1fr); } .side { display:none; } .topbar { padding:12px 16px; } main { padding:20px 16px 70px; } .me div { display:none; }
   .mnav { display:flex; gap:6px; overflow-x:auto; padding:10px 16px; background:var(--navy); } .mnav a { color:#c4d0ee; padding:7px 12px; border-radius:9px; white-space:nowrap; font-weight:550; text-decoration:none; } .mnav a.active { background:#1b3f8f; color:#fff; } }
 
 /* ---- tabs ---- */
@@ -233,3 +233,14 @@ textarea, input, select { max-width:100%; }
   .topright { gap:8px; } .iconbtn { width:38px; height:38px; }
 }
 @media (max-width:400px){ .g2,.g3,.g4,.g5 { grid-template-columns:1fr; } }
+
+/* stop min-content from stretching the page wider than the screen */
+html, body { max-width:100%; overflow-x:hidden; }
+.shell, .maincol, main { min-width:0; max-width:100%; }
+.grid > *, .split > *, .head > *, .filters > * { min-width:0; }
+@media (max-width:640px){
+  .filters select, .filters input:not([type=checkbox]):not([type=radio]) { width:100%; min-width:0 !important; }
+  .filters label { white-space:normal; }
+  .toolbar.filters { flex-direction:column; align-items:stretch; }
+  .kv dd { word-break:break-word; }
+}
