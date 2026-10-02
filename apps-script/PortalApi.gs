@@ -438,7 +438,7 @@ function portalExtractText_(fileId) {
 
 // ---- Background triggers (no edits to your form's doPost needed) -------------
 // 1) Paste your portal address + CRON_SECRET below.  2) Run portalInstallTriggers() once.
-const PORTAL_SITE_URL = '';     // e.g. https://applications-2026-peaceable-s-projects.vercel.app
+const PORTAL_SITE_URL = 'https://applications-2026-kohl.vercel.app';  // your portal address
 const PORTAL_CRON_SECRET = '';  // the same value as CRON_SECRET in Vercel
 
 function portalInstallTriggers() {
