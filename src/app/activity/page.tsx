@@ -1,4 +1,7 @@
 import Link from 'next/link';
+import Who from '@/components/Who';
+import Avatar from '@/components/Avatar';
+import { loadPeople, personFor } from '@/lib/people';
 import { requireTeam } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
 import { dateTime, describeActivity } from '@/lib/format';
@@ -8,6 +11,7 @@ import Icon from '@/components/Icon';
 const KINDS = ['new_application', 'status_change', 'counselor_change', 'doc_uploaded', 'email_sent', 'note', 'moved_to_master', 'folder_linked', 'payment_change', 'interview_change', 'task_done'];
 
 export default async function Activity({ searchParams }: { searchParams: Promise<{ kind?: string }> }) {
+  const people = await loadPeople();
   await requireTeam();
   const sp = await searchParams;
   let q = admin().from('portal_activity').select('id,kind,actor,detail,created_at,application_id,portal_applications(name)').order('created_at', { ascending: false }).limit(250);
@@ -27,7 +31,7 @@ export default async function Activity({ searchParams }: { searchParams: Promise
           <h2>{day}</h2>
           <ul className="feed">
             {items.map((a) => { const d = describeActivity(a.kind, a.detail as Record<string, string>); const app = a.portal_applications as unknown as { name: string } | null; return (
-              <li key={a.id}><span className={`ico ${d.tone}`}><Icon n={d.icon} size={17} /></span><div><b>{d.title}</b><small><Link href={`/applications/${a.application_id}`}>{app?.name || 'Student'}</Link> · {a.actor}</small></div><time>{dateTime(a.created_at)}</time></li>); })}
+              <li key={a.id}><span className={`ico ${d.tone}`}><Icon n={d.icon} size={17} /></span><div><b>{d.title}</b><small><Link href={`/applications/${a.application_id}`}>{app?.name || 'Student'}</Link> · <Who people={people} email={a.actor} size={18} bare /></small></div><time>{dateTime(a.created_at)}</time></li>); })}
           </ul>
         </div>
       ))}

@@ -1,12 +1,15 @@
 import Link from 'next/link';
+import Who from '@/components/Who';
+import Avatar from '@/components/Avatar';
+import { loadPeople, personFor } from '@/lib/people';
 import { requireTeam } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
 import { dateTime } from '@/lib/format';
 import Btn from '@/components/Btn';
-import { niceName } from '@/components/UserMenu';
 import { sendMessage } from '../actions';
 
 export default async function Messages({ searchParams }: { searchParams: Promise<{ q?: string; compose?: string; msg?: string; err?: string }> }) {
+  const people = await loadPeople();
   await requireTeam();
   const sp = await searchParams;
   const db = admin();
@@ -50,7 +53,7 @@ export default async function Messages({ searchParams }: { searchParams: Promise
               <td>{m.to_email} <span className={`badge plain ${m.to_kind === 'student' ? 'blue' : 'purple'}`}>{m.to_kind}</span></td>
               <td><details><summary style={{ cursor: 'pointer', fontWeight: 600, color: 'var(--ink)' }}>{m.subject}</summary><p style={{ whiteSpace: 'pre-wrap', margin: '8px 0 0' }} className="muted">{m.body}</p></details></td>
               <td>{a ? <Link href={`/applications/${a.application_id}?tab=messages`}>{a.name}</Link> : <span className="muted">—</span>}</td>
-              <td className="muted">{niceName(m.sent_by)}</td>
+              <td><Who people={people} email={m.sent_by} size={24} /></td>
             </tr>); })}
           {!list.length && <tr><td colSpan={5} className="muted" style={{ textAlign: 'center', padding: 36 }}>No messages yet.</td></tr>}
         </tbody></table></div></div>

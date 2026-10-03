@@ -1,4 +1,7 @@
 import { Fragment } from 'react';
+import Who from '@/components/Who';
+import Avatar from '@/components/Avatar';
+import { loadPeople, personFor } from '@/lib/people';
 import Link from 'next/link';
 import { requireTeam } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
@@ -34,6 +37,7 @@ function describe(kind: string, d: Record<string, string>) {
 }
 
 export default async function Overview({ searchParams }: { searchParams: Promise<{ msg?: string; err?: string; all?: string }> }) {
+  const people = await loadPeople();
   const staff = await requireTeam();
   const sp = await searchParams;
   const db = admin();
@@ -157,7 +161,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             <ul className="tl">
               {(activity || []).map((a) => {
                 const app = a.portal_applications as unknown as { name: string } | null;
-                return <li key={a.id}><Link href={`/applications/${a.application_id}`}>{app?.name || 'Student'}</Link> — {describe(a.kind, a.detail as Record<string, string>)}<div className="muted">{a.actor} · {ago(a.created_at)}</div></li>;
+                return <li key={a.id}><Link href={`/applications/${a.application_id}`}>{app?.name || 'Student'}</Link> — {describe(a.kind, a.detail as Record<string, string>)}<div className="muted"><Who people={people} email={a.actor} size={18} bare /> · {ago(a.created_at)}</div></li>;
               })}
             </ul>
           </div>

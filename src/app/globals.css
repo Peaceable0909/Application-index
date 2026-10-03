@@ -328,3 +328,6 @@ html, body { max-width:100%; overflow-x:clip; }
 .tmember h3 { margin:10px 0 2px; } .tbio { margin:10px 0 0; font-size:13.5px; color:var(--text); }
 .tlinks { margin-top:12px; display:grid; gap:6px; font-size:13px; max-width:100%; } .tlinks a { display:inline-flex; gap:6px; align-items:center; justify-content:center; color:var(--muted); overflow-wrap:anywhere; text-align:left; } .tlinks a:hover { color:var(--ink); }
 @media (max-width:640px){ .pgrid { grid-template-columns:1fr; } .pwho { padding:0 18px; } .pcard > .filters { padding:0 18px 18px; } }
+
+.who { display:inline-flex; align-items:center; gap:8px; vertical-align:middle; max-width:100%; } .who .pic { box-shadow:none; } .who > span, .who > b { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.note > .pic { margin-top:2px; }

@@ -1,4 +1,7 @@
 import Link from 'next/link';
+import Who from '@/components/Who';
+import Avatar from '@/components/Avatar';
+import { loadPeople, personFor } from '@/lib/people';
 import { notFound } from 'next/navigation';
 import { requireStaff, canAccessApp } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
@@ -26,6 +29,7 @@ const ftClass = (e: string) => (e === 'pdf' ? '' : ['jpg', 'jpeg', 'png', 'webp'
 export const maxDuration = 60;
 
 export default async function ApplicationPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<SP> }) {
+  const people = await loadPeople();
   const staff = await requireStaff();
   const id = decodeId((await params).id);
   const sp = await searchParams;
@@ -108,7 +112,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
   const notesBlock = (limit?: number) => (
     <>
       {(notes || []).slice(0, limit).map((n) => (
-        <div key={n.id} className="note"><span className="avatar sm">{initials(niceName(n.author))}</span><div><b>{niceName(n.author)} {n.pinned && '📌'}</b><small>{dateTime(n.created_at)}</small><p style={{ whiteSpace: 'pre-wrap' }}>{n.body}</p></div></div>
+        <div key={n.id} className="note"><Avatar name={personFor(people, n.author).name} url={personFor(people, n.author).avatar_url} color={personFor(people, n.author).color} size={34} /><div><b>{personFor(people, n.author).name} {n.pinned && '📌'}</b><small>{dateTime(n.created_at)}</small><p style={{ whiteSpace: 'pre-wrap' }}>{n.body}</p></div></div>
       ))}
       {!(notes || []).length && <p className="muted" style={{ margin: 0 }}>No notes yet.</p>}
     </>
@@ -220,7 +224,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
                   <div style={{ borderTop: '1px solid var(--line)', marginTop: 16, paddingTop: 14 }}>
                     <div className="stat-l" style={{ marginBottom: 10 }}><Icon n="users" size={14} /> Counselor</div>
                     <div className="filters" style={{ justifyContent: 'space-between' }}>
-                      <div className="who-c"><span className="avatar">{initials(app.counselor || '—')}</span><div><b>{app.counselor || 'Unassigned'}</b><div className="muted" style={{ fontSize: 12.5 }}>{counselor?.email || (app.counselor ? 'no email saved' : 'Assigned Counselor')}</div></div></div>
+                      <div className="who-c"><Avatar name={app.counselor || '—'} url={people.get((counselor?.email || '').toLowerCase())?.avatar_url} color={people.get((counselor?.email || '').toLowerCase())?.color} size={44} /><div><b>{app.counselor || 'Unassigned'}</b><div className="muted" style={{ fontSize: 12.5 }}>{counselor?.email || (app.counselor ? 'no email saved' : 'Assigned Counselor')}</div></div></div>
                       <details className="dd"><summary className="btn ghost sm" style={{ listStyle: 'none' }}>Change</summary>
                         <div className="menu" style={{ minWidth: 260, padding: 12 }}>
                           <form action={updateCounselor} className="grid" style={{ gap: 8 }}><input type="hidden" name="id" value={id} />
@@ -416,7 +420,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
           <div className="card">
             <h2>Activity</h2>
             <ul className="feed">
-              {(activity || []).map((a) => { const d = describeActivity(a.kind, a.detail as Record<string, string>); return <li key={a.id}><span className={`ico ${d.tone}`}><Icon n={d.icon} size={17} /></span><div><b>{d.title}</b><small>{a.actor}</small></div><time>{dateTime(a.created_at)}</time></li>; })}
+              {(activity || []).map((a) => { const d = describeActivity(a.kind, a.detail as Record<string, string>); return <li key={a.id}><span className={`ico ${d.tone}`}><Icon n={d.icon} size={17} /></span><div><b>{d.title}</b><small><Who people={people} email={a.actor} size={18} bare /></small></div><time>{dateTime(a.created_at)}</time></li>; })}
               {!(activity || []).length && <li className="muted">No activity yet.</li>}
             </ul>
           </div>
@@ -459,7 +463,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
               <h2>Sent messages</h2>
               {(messages || []).map((m) => (
                 <details key={m.id} className="note" style={{ display: 'block' }}>
-                  <summary style={{ cursor: 'pointer' }}><b>{m.subject}</b> <span className={`badge plain ${m.to_kind === 'student' ? 'blue' : 'purple'}`}>{m.to_kind}</span><small>{m.to_email} · {dateTime(m.created_at)} · {niceName(m.sent_by)}</small></summary>
+                  <summary style={{ cursor: 'pointer' }}><b>{m.subject}</b> <span className={`badge plain ${m.to_kind === 'student' ? 'blue' : 'purple'}`}>{m.to_kind}</span><small>{m.to_email} · {dateTime(m.created_at)} · <Who people={people} email={m.sent_by} size={18} bare /></small></summary>
                   <p style={{ whiteSpace: 'pre-wrap' }}>{m.body}</p>
                 </details>
               ))}
