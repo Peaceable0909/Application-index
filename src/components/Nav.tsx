@@ -1,6 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import Icon from './Icon';
 
 const ITEMS = [
@@ -13,14 +14,18 @@ const ITEMS = [
   { href: '/notes', label: 'Notes', icon: 'note' },
   { href: '/activity', label: 'Activity', icon: 'clock' },
   { href: '/drive', label: 'Drive matches', icon: 'link' },
+  { href: '/chat', label: 'Chat', icon: 'chat', badge: 'chat' },
   { href: '/team', label: 'Team', icon: 'user' },
   { href: '/settings', label: 'Settings', icon: 'settings' },
 ];
 
-const COUNSELOR_ITEMS: typeof ITEMS = [{ href: '/my', label: 'My students', icon: 'users' }, { href: '/team', label: 'Team', icon: 'user' }];
+const COUNSELOR_ITEMS: typeof ITEMS = [{ href: '/my', label: 'My students', icon: 'users' }, { href: '/chat', label: 'Chat', icon: 'chat', badge: 'chat' }, { href: '/team', label: 'Team', icon: 'user' }];
 
-export default function Nav({ taskCount = 0, mobile = false, role = 'staff' }: { taskCount?: number; mobile?: boolean; role?: string }) {
+export default function Nav({ taskCount = 0, chatCount = 0, mobile = false, role = 'staff' }: { taskCount?: number; chatCount?: number; mobile?: boolean; role?: string }) {
   const p = usePathname();
+  const [chat, setChat] = useState(chatCount);
+  useEffect(() => setChat(chatCount), [chatCount]);
+  useEffect(() => { const h = (e: Event) => setChat((e as CustomEvent<number>).detail || 0); window.addEventListener('chat-unread', h); return () => window.removeEventListener('chat-unread', h); }, []);
   const items = role === 'counselor' ? COUNSELOR_ITEMS : ITEMS;
   const on = (i: (typeof ITEMS)[number]) => (i.exact ? p === '/' : p.startsWith(i.href) || (i.href === '/my' && p.startsWith('/applications/')));
   return (
@@ -30,6 +35,7 @@ export default function Nav({ taskCount = 0, mobile = false, role = 'staff' }: {
           {!mobile && <Icon n={i.icon} size={19} />}
           <span>{i.label}</span>
           {!mobile && i.badge === 'tasks' && taskCount > 0 && <span className="n">{taskCount > 99 ? '99+' : taskCount}</span>}
+          {!mobile && i.badge === 'chat' && chat > 0 && <span className="n">{chat > 99 ? '99+' : chat}</span>}
         </Link>
       ))}
     </nav>

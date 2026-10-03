@@ -19,9 +19,10 @@ export const metadata = { title: 'Peaceable Portal', description: 'Applications,
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const staff = await currentStaff();
-  let taskCount = 0;
+  let taskCount = 0, chatCount = 0;
   if (staff) {
     const q = admin().from('portal_tasks').select('id', { count: 'exact', head: true }).eq('status', 'open');
+    chatCount = (await admin().from('portal_chat').select('id', { count: 'exact', head: true }).eq('to_email', staff.email).is('read_at', null)).count || 0;
     taskCount = (staff.role === 'counselor' ? await q.in('application_id', await appIdsFor(staff.counselor_key)) : await q).count || 0;
   }
   return (
@@ -35,7 +36,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <div className="shell">
             <aside className="side">
               <Link href="/" className="brand"><Mark size={36} inverse /><span><b>Peaceable <em>Portal</em></b><small>Application Portal</small></span></Link>
-              <Nav taskCount={taskCount} role={staff.role} />
+              <Nav taskCount={taskCount} chatCount={chatCount} role={staff.role} />
               <div className="tag">More opportunities.<br />Brighter futures.</div>
             </aside>
             <div className="maincol">
