@@ -18,7 +18,7 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
       <div className="card">
         {blocked && (
           <div className="err" style={{ marginBottom: 14 }}>
-            {blocked} isn’t on the staff list. Ask an admin to add it in Settings.
+            <b>{blocked}</b> doesn’t have access yet. Ask an admin to open <b>Counselors</b> in the portal and press <b>Give portal access</b> for you, or to check this is the email saved for you. Then sign in again.
             <form action={signOut} style={{ marginTop: 8 }}><Btn className="ghost sm">Sign out</Btn></form>
           </div>
         )}

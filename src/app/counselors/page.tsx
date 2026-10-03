@@ -8,7 +8,7 @@ import { counselorKey } from '@/lib/docs';
 import { ago, initials } from '@/lib/format';
 import Btn from '@/components/Btn';
 import Icon from '@/components/Icon';
-import { addCounselor, saveCounselor, sendDigest } from '../actions';
+import { addCounselor, grantAllCounselorAccess, saveCounselor, sendDigest } from '../actions';
 
 export default async function Counselors({ searchParams }: { searchParams: Promise<{ msg?: string; err?: string }> }) {
   const people = await loadPeople();
@@ -25,7 +25,7 @@ export default async function Counselors({ searchParams }: { searchParams: Promi
 
   return (
     <>
-      <div className="head"><h1>Counselors</h1></div>
+      <div className="head" style={{ justifyContent: 'space-between' }}><h1>Counselors</h1><form action={grantAllCounselorAccess}><Btn className="ghost sm" data-busy="Giving access…"><Icon n="user-plus" size={14} /> Give everyone portal access</Btn></form></div>
       <p className="sub">Who handles which students, their email, and a one-click summary of what needs attention.</p>
       {sp.msg && <div className="card ok">{sp.msg}</div>}{sp.err && <div className="card err">{sp.err}</div>}
       {unassigned > 0 && <div className="card gold"><b>{unassigned} student{unassigned === 1 ? '' : 's'} have no counselor.</b> <Link href="/applications?counselor=__none">Assign them →</Link></div>}

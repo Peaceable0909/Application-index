@@ -613,6 +613,17 @@ export async function grantCounselorAccess(f: FormData) {
   revalidatePath('/counselors');
   redirect(`/counselors?msg=${encodeURIComponent(`${c.name} can now sign in with ${email} and will see only their own students.`)}`);
 }
+export async function grantAllCounselorAccess() {
+  await requireTeam();
+  const db = admin();
+  const [{ data: cs }, { data: staff }] = await Promise.all([db.from('portal_counselors').select('name, name_key, email, active').not('email', 'is', null), db.from('portal_staff').select('email, role')]);
+  const have = new Map((staff || []).map((r) => [r.email.toLowerCase(), r.role]));
+  const add = (cs || []).filter((c) => c.email && c.active !== false && !have.has(c.email.toLowerCase())).map((c) => ({ email: c.email!.toLowerCase(), role: 'counselor', counselor_key: c.name_key }));
+  if (add.length) await db.from('portal_staff').upsert(add);
+  const skipped = (cs || []).filter((c) => c.email && have.has(c.email.toLowerCase())).length;
+  revalidatePath('/counselors');
+  redirect(`/counselors?msg=${encodeURIComponent(add.length ? `Access given to ${add.length} counselor${add.length === 1 ? '' : 's'}: ${add.map((a) => a.email).join(', ')}.${skipped ? ` ${skipped} already had access.` : ''}` : 'Everyone with an email already has access.')}`);
+}
 export async function revokeCounselorAccess(f: FormData) {
   await requireTeam();
   const db = admin();
