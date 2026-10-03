@@ -9,6 +9,8 @@ import { counselorKey, docTypeFromName, dobForMaster, schoolShort } from '@/lib/
 import { ALL_DOC_TYPES } from '@/lib/constants';
 import { syncAll, syncFolders } from '@/lib/sync';
 import { STATUSES } from '@/lib/constants';
+import { requestDocs, summarise } from '@/lib/requests';
+import { canAccessApp } from '@/lib/auth';
 import { docScanEnabled, scanOne } from '@/lib/docscan';
 import { draftEmail, PURPOSES, PurposeKey, TONES, ToneKey } from '@/lib/draft';
 import { aiOverview, aiStudentSummary, computeFacts, loadStudents, refreshTasks, studentFacts } from '@/lib/overview';
@@ -692,4 +694,26 @@ export async function removeStaff(f: FormData) {
   if (me.role !== 'admin' || email === me.email) redirect('/settings?err=Not+allowed');
   await admin().from('portal_staff').delete().eq('email', email);
   redirect('/settings?msg=Removed');
+}
+
+// Emails students their own list of missing documents (fixed wording, verified facts only).
+// Team: from the Applications bulk bar. Counselors: only their own students, from their board.
+export async function bulkRequestDocs(f: FormData) {
+  const staff = await requireStaff();
+  const asTeam = staff.role !== 'counselor';
+  const all = f.getAll('ids').map(String).filter(Boolean).slice(0, BULK_MAX);
+  const returnTo = s(f, 'returnTo');
+  const fail = (m: string): never => (asTeam ? bulkBack(f, m, true) : back('', m, true, returnTo || '/my'));
+  if (!all.length) fail('Pick at least one student first.');
+  const allowed: string[] = [];
+  for (const id of all) if (await canAccessApp(staff, id)) allowed.push(id);
+  const chosen = new Set(allowed);
+  const { rows } = await loadStudents();
+  let res;
+  try { res = await requestDocs(rows.filter((r) => chosen.has(r.a.application_id)), staff.email); }
+  catch (e) { rethrow(e); fail(`Could not send: ${(e as Error).message}`); return; }
+  revalidatePath('/messages');
+  const msg = summarise(res);
+  if (asTeam) bulkBack(f, msg, !res.sent);
+  back('', msg, !res.sent, returnTo || '/my');
 }

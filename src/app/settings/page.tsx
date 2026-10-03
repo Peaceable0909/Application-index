@@ -40,6 +40,11 @@ export default async function Settings({ searchParams }: { searchParams: Promise
       </div>
 
       <div className="card">
+        <h2>Weekly counselor digest <span className={`badge plain ${process.env.WEEKLY_DIGEST === 'on' ? 'green' : ''}`} style={{ marginLeft: 6 }}>{process.env.WEEKLY_DIGEST === 'on' ? 'on' : 'off'}</span></h2>
+        <p className="muted">Every Monday morning each counselor with an email saved gets one email listing their students who need attention. Nothing is sent when they have none. It is off until you turn it on:</p>
+        <ol><li>In Vercel add the variable <code>WEEKLY_DIGEST</code> = <code>on</code> and redeploy.</li></ol>
+      </div>
+      <div className="card">
         <h2>AI document check <span className={`badge plain ${process.env.AI_DOC_SCAN === 'on' ? 'green' : ''}`} style={{ marginLeft: 6 }}>{process.env.AI_DOC_SCAN === 'on' ? 'on' : 'off'}</span></h2>
         <p className="muted" style={{ marginTop: 0 }}>An opt-in helper that reads one document at a time and flags a wrong type, a mismatched name or a passport near expiry. Because it sends the document’s text to Qwen (Alibaba Cloud), it is <b>off by default</b>. Use it only if your students have agreed to that.</p>
         <ol style={{ margin: 0, paddingLeft: 20, lineHeight: 1.7 }}>

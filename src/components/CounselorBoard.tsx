@@ -6,7 +6,7 @@ import { loadStudents } from '@/lib/overview';
 import { REQUIRED_DOCS, FINAL_STATUSES } from '@/lib/constants';
 import { IN_PROGRESS, ago, describeActivity, initials, shortDate } from '@/lib/format';
 import { statusTone } from '@/lib/ui';
-import { completeReminder, completeTask, grantCounselorAccess, revokeCounselorAccess, sendDigest, snoozeTask } from '@/app/actions';
+import { bulkRequestDocs, completeReminder, completeTask, grantCounselorAccess, revokeCounselorAccess, sendDigest, snoozeTask } from '@/app/actions';
 import Icon from './Icon';
 import Btn from './Btn';
 import { niceName } from './UserMenu';
@@ -76,6 +76,14 @@ export default async function CounselorBoard({ staff, ckey, mode, basePath, sp }
       {sp.msg && <div className="card ok">{sp.msg}</div>}
       {sp.err && <div className="card err">{sp.err}</div>}
 
+      {missing.length > 0 && (
+        <form action={bulkRequestDocs} className="card filters" style={{ padding: '12px 16px' }}>
+          <input type="hidden" name="returnTo" value={basePath} />
+          {missing.slice(0, 15).map((r) => <input key={r.a.application_id} type="hidden" name="ids" value={r.a.application_id} />)}
+          <span style={{ flex: 1, minWidth: 200 }}><b style={{ color: 'var(--ink)' }}>{missing.length} student{missing.length === 1 ? ' is' : 's are'} missing documents.</b> <span className="muted">Email each one exactly what’s missing{missing.length > 15 ? ' (first 15 — run again for the rest)' : ''}.</span></span>
+          <Btn data-busy="Emailing students…"><Icon n="send" size={14} /> Ask students for missing docs</Btn>
+        </form>
+      )}
       <div className="grid g5" style={{ margin: '20px 0 16px' }}>
         {stat('users', '', 'Active students', live.length)}
         {stat('alert', 'red', 'Need attention', attention.length, tabHref('attention'))}
@@ -102,7 +110,7 @@ export default async function CounselorBoard({ staff, ckey, mode, basePath, sp }
                   <td className="mc-name"><Link href={`/applications/${a.application_id}`}><div className="who-c"><span className="avatar sm">{initials(a.name)}</span><div><b>{a.name}</b><div className="muted" style={{ fontSize: 12.5 }}>{a.email || a.phone || ''}</div></div></div></Link></td>
                   <td data-l="Programme">{a.programme && a.programme.toUpperCase() !== 'N/A' ? a.programme : <span className="muted">—</span>}<div className="muted" style={{ fontSize: 12.5 }}>{schoolShort(a.school)}</div></td>
                   <td data-l="Status">{a.status ? <span className={`badge plain tone-${statusTone(a.status)}`}>{a.status}</span> : <span className="muted">—</span>}{a.progress != null && <div className="bar"><i style={{ width: `${a.progress}%` }} /></div>}</td>
-                  <td data-l="Documents">{judged ? <div title={miss.length ? `Missing: ${miss.join(', ')}` : 'Complete'}><div className="dots">{REQUIRED_DOCS.map((d) => <i key={d} className={have.has(d) ? 'on' : ''} title={d} />)}</div><div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{REQUIRED_DOCS.length - miss.length}/{REQUIRED_DOCS.length}{miss.length ? ` · needs ${miss.slice(0, 2).join(', ')}${miss.length > 2 ? '…' : ''}` : ''}</div></div> : <span className="muted" style={{ fontSize: 12.5 }}>Not checked</span>}</td>
+                  <td data-l="Documents">{judged ? <div title={miss.length ? `Missing: ${miss.join(', ')}` : 'Complete'}><div className="dots">{REQUIRED_DOCS.map((d) => <i key={d} className={have.has(d) ? 'on' : ''} title={d} />)}</div><div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{REQUIRED_DOCS.length - miss.length}/{REQUIRED_DOCS.length}{miss.length ? ` · needs ${miss.slice(0, 2).join(', ')}${miss.length > 2 ? '…' : ''}` : ''}</div>{miss.length > 0 && a.email && !isFinal(a.status) && <form action={bulkRequestDocs} style={{ marginTop: 6 }}><input type="hidden" name="returnTo" value={basePath} /><input type="hidden" name="ids" value={a.application_id} /><Btn className="ghost sm" data-busy="Emailing…">Remind student</Btn></form>}</div> : <span className="muted" style={{ fontSize: 12.5 }}>Not checked</span>}</td>
                   <td data-l="Needs"><div className="chips">{reasons.filter((r) => !/Not in master|No counselor/.test(r)).slice(0, 3).map((r) => <span key={r} className="badge plain red">{r}</span>)}</div></td>
                   <td data-l="Updated" className="muted" style={{ whiteSpace: 'nowrap' }}>{ago(a.last_activity_at)}</td>
                 </tr>
