@@ -9,7 +9,8 @@ import { statusTone } from '@/lib/ui';
 import { bulkRequestDocs, completeReminder, completeTask, grantCounselorAccess, revokeCounselorAccess, sendDigest, snoozeTask } from '@/app/actions';
 import Icon from './Icon';
 import Btn from './Btn';
-import { niceName } from './UserMenu';
+import { firstWord, shownName } from '@/lib/profile';
+import Avatar from './Avatar';
 
 type SP = { view?: string; q?: string; msg?: string; err?: string };
 const VIEWS = [['', 'All'], ['attention', 'Needs attention'], ['missing', 'Missing documents'], ['progress', 'In progress'], ['done', 'Finished']] as const;
@@ -32,7 +33,7 @@ export default async function CounselorBoard({ staff, ckey, mode, basePath, sp }
     ids.length ? db.from('portal_tasks').select('*, portal_applications(name)').eq('status', 'open').in('application_id', ids).order('priority').order('created_at', { ascending: false }).limit(8) : Promise.resolve({ data: [] as never[] }),
     ids.length ? db.from('portal_reminders').select('id,application_id,due_on,note,portal_applications(name)').eq('status', 'pending').in('application_id', ids).order('due_on').limit(6) : Promise.resolve({ data: [] as never[] }),
     ids.length ? db.from('portal_activity').select('id,kind,detail,created_at,application_id,portal_applications(name)').in('application_id', ids).order('created_at', { ascending: false }).limit(8) : Promise.resolve({ data: [] as never[] }),
-    c?.email ? db.from('portal_staff').select('role').eq('email', c.email.toLowerCase()).maybeSingle() : Promise.resolve({ data: null }),
+    c?.email ? db.from('portal_staff').select('role, display_name, avatar_url, color, title').eq('email', c.email.toLowerCase()).maybeSingle() : Promise.resolve({ data: null }),
   ]);
 
   const live = mine.filter((r) => !isFinal(r.a.status));
@@ -57,9 +58,9 @@ export default async function CounselorBoard({ staff, ckey, mode, basePath, sp }
       {mode === 'admin' && <Link href="/counselors" className="crumb"><Icon n="left" size={15} /> Back to Counselors</Link>}
       <div className="head" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div className="sh">
-          <span className="avatar lg">{initials(name)}</span>
+          <Avatar name={mode === 'self' ? shownName(staff) : (access?.display_name || name)} url={mode === 'self' ? staff.avatar_url : access?.avatar_url} color={mode === 'self' ? staff.color : access?.color} size={76} />
           <div>
-            {mode === 'self' && <div className="eyebrow">Welcome back, {niceName(staff.email)}</div>}
+            {mode === 'self' && <div className="eyebrow">Welcome back, {firstWord(staff)}</div>}
             <h1>{mode === 'self' ? 'Your students' : name}</h1>
             <div className="meta">{mode === 'admin' ? `Counselor view${c?.email ? ` · ${c.email}` : ' · no email saved'}` : `${live.length} active student${live.length === 1 ? '' : 's'} assigned to you`}</div>
           </div>

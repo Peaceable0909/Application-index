@@ -717,3 +717,53 @@ export async function bulkRequestDocs(f: FormData) {
   if (asTeam) bulkBack(f, msg, !res.sent);
   back('', msg, !res.sent, returnTo || '/my');
 }
+
+// ---- profiles ----
+const clip = (v: string, n: number) => v.replace(/\s+/g, ' ').trim().slice(0, n);
+
+export async function saveProfile(f: FormData) {
+  const staff = await requireStaff();
+  const { COLORS } = await import('@/lib/profile');
+  const color = s(f, 'color');
+  const phone = clip(s(f, 'phone'), 30);
+  if (phone && !/^[+\d][\d\s().-]{5,}$/.test(phone)) redirect('/profile?err=' + encodeURIComponent('That phone number doesn’t look right.'));
+  const { error } = await admin().from('portal_staff').update({
+    display_name: clip(s(f, 'display_name'), 60) || null,
+    title: clip(s(f, 'title'), 80) || null,
+    phone: phone || null,
+    bio: s(f, 'bio').trim().slice(0, 400) || null,
+    color: COLORS[color] ? color : 'navy',
+    updated_at: new Date().toISOString(),
+  }).eq('email', staff.email);
+  if (error) redirect('/profile?err=' + encodeURIComponent(`Could not save: ${error.message}`));
+  revalidatePath('/', 'layout');
+  redirect('/profile?msg=' + encodeURIComponent('Profile saved.'));
+}
+
+export async function uploadAvatar(f: FormData) {
+  const staff = await requireStaff();
+  const file = f.get('photo');
+  if (!(file instanceof File) || !file.size) redirect('/profile?err=' + encodeURIComponent('Choose a photo first.'));
+  if (file.size > 1_000_000) redirect('/profile?err=' + encodeURIComponent('That photo is too large (max 1 MB).'));
+  const buf = Buffer.from(await file.arrayBuffer());
+  const kind = buf[0] === 0xff && buf[1] === 0xd8 ? ['jpg', 'image/jpeg'] : buf.subarray(1, 4).toString() === 'PNG' ? ['png', 'image/png'] : buf.subarray(8, 12).toString() === 'WEBP' ? ['webp', 'image/webp'] : null;
+  if (!kind) redirect('/profile?err=' + encodeURIComponent('Please use a JPG, PNG or WebP photo.'));
+  const db = admin();
+  const path = `${staff.email.replace(/[^a-z0-9]/gi, '_')}-${Date.now()}.${kind![0]}`;
+  const up = await db.storage.from('avatars').upload(path, buf, { contentType: kind![1], upsert: true });
+  if (up.error) redirect('/profile?err=' + encodeURIComponent(`Upload failed: ${up.error.message}`));
+  const url = db.storage.from('avatars').getPublicUrl(path).data.publicUrl;
+  if (staff.avatar_url) { const old = staff.avatar_url.split('/avatars/')[1]; if (old) await db.storage.from('avatars').remove([old]); }
+  await db.from('portal_staff').update({ avatar_url: url, updated_at: new Date().toISOString() }).eq('email', staff.email);
+  revalidatePath('/', 'layout');
+  redirect('/profile?msg=' + encodeURIComponent('Photo updated.'));
+}
+
+export async function removeAvatar() {
+  const staff = await requireStaff();
+  const db = admin();
+  if (staff.avatar_url) { const old = staff.avatar_url.split('/avatars/')[1]; if (old) await db.storage.from('avatars').remove([old]); }
+  await db.from('portal_staff').update({ avatar_url: null, updated_at: new Date().toISOString() }).eq('email', staff.email);
+  revalidatePath('/', 'layout');
+  redirect('/profile?msg=' + encodeURIComponent('Photo removed.'));
+}

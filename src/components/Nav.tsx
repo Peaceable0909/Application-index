@@ -13,10 +13,11 @@ const ITEMS = [
   { href: '/notes', label: 'Notes', icon: 'note' },
   { href: '/activity', label: 'Activity', icon: 'clock' },
   { href: '/drive', label: 'Drive matches', icon: 'link' },
+  { href: '/team', label: 'Team', icon: 'user' },
   { href: '/settings', label: 'Settings', icon: 'settings' },
 ];
 
-const COUNSELOR_ITEMS: typeof ITEMS = [{ href: '/my', label: 'My students', icon: 'users' }];
+const COUNSELOR_ITEMS: typeof ITEMS = [{ href: '/my', label: 'My students', icon: 'users' }, { href: '/team', label: 'Team', icon: 'user' }];
 
 export default function Nav({ taskCount = 0, mobile = false, role = 'staff' }: { taskCount?: number; mobile?: boolean; role?: string }) {
   const p = usePathname();

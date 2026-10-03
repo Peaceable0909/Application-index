@@ -2,15 +2,18 @@ import { redirect } from 'next/navigation';
 import { admin, sessionClient } from './supabase';
 import { counselorKey } from './docs';
 
-export type Staff = { email: string; role: 'admin' | 'staff' | 'counselor'; last_seen_at: string | null; counselor_key: string | null };
+export type Staff = {
+  email: string; role: 'admin' | 'staff' | 'counselor'; last_seen_at: string | null; counselor_key: string | null;
+  display_name: string | null; avatar_url: string | null; title: string | null; phone: string | null; bio: string | null; color: string | null;
+};
 
 export async function currentStaff(): Promise<Staff | null> {
   const sb = await sessionClient();
   const { data } = await sb.auth.getUser();
   const email = data.user?.email?.toLowerCase();
   if (!email) return null;
-  const { data: row } = await admin().from('portal_staff').select('email, role, last_seen_at, counselor_key').eq('email', email).maybeSingle();
-  return row ? { email: row.email, role: row.role, last_seen_at: row.last_seen_at, counselor_key: row.counselor_key } : null;
+  const { data: row } = await admin().from('portal_staff').select('email, role, last_seen_at, counselor_key, display_name, avatar_url, title, phone, bio, color').eq('email', email).maybeSingle();
+  return row ? (row as Staff) : null;
 }
 
 /** Any signed-in person on the allowlist (team member or counselor). */

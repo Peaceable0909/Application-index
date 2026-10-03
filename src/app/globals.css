@@ -305,3 +305,26 @@ html, body { max-width:100%; overflow-x:clip; }
 @media (max-width:760px){
   table.mcards td.mc-act { grid-column:1 / -1; display:flex; gap:12px; padding-top:10px; border-top:1px dashed var(--line); }
 }
+
+/* ---- profiles ---- */
+.pic { display:inline-grid; place-items:center; border-radius:50%; overflow:hidden; color:#fff; font-family:var(--font-ui); font-weight:650; letter-spacing:.02em; text-transform:uppercase; flex:none; box-shadow:0 0 0 2px #fff, 0 0 0 3px rgba(15,31,77,.08); }
+.pic img { width:100%; height:100%; object-fit:cover; display:block; }
+.dd .menu .mhead { display:flex; align-items:center; gap:12px; padding:10px 12px 12px; margin-bottom:4px; border-bottom:1px solid var(--line); } .mhead b { display:block; color:var(--ink); } .mhead small { color:var(--muted); font-size:12px; overflow-wrap:anywhere; }
+.pcard { padding:0; overflow:hidden; } .pcard > .filters { padding:0 24px 22px; }
+.pcover { height:120px; position:relative; } .pcover::after { content:''; position:absolute; inset:0; background:radial-gradient(120% 90% at 85% -20%, rgba(255,255,255,.28), transparent 60%); }
+.pwho { display:flex; align-items:flex-end; gap:18px; padding:0 24px; margin-top:-56px; position:relative; flex-wrap:wrap; }
+.pwho .pic { box-shadow:0 0 0 4px #fff, 0 12px 28px -10px rgba(15,31,77,.45); }
+.pavatar { position:relative; width:112px; height:112px; } .pname h2 { margin:0 0 2px; font-size:24px; } .pname { padding-bottom:6px; min-width:0; }
+.pcam { position:absolute; right:-2px; bottom:2px; width:36px; height:36px; border-radius:50%; display:grid; place-items:center; background:var(--ink); color:#fff; border:3px solid #fff; cursor:pointer; padding:0; transition:transform .2s var(--ease); } .pcam:hover { transform:scale(1.1); }
+.pspin { position:absolute; inset:0; border-radius:50%; background:rgba(255,255,255,.6); display:grid; place-items:center; } .pspin::after { content:''; width:28px; height:28px; border-radius:50%; border:3px solid var(--blue); border-top-color:transparent; animation:spin .8s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.pgrid { display:grid; grid-template-columns:1fr 1fr; gap:14px; } .pgrid label, label > input + textarea { display:block; } .pgrid label { font-weight:550; color:var(--ink); } .pgrid input { display:block; width:100%; margin-top:6px; font-weight:400; }
+.swatches { display:flex; gap:12px; flex-wrap:wrap; } .sw { cursor:pointer; } .sw i { display:block; width:38px; height:38px; border-radius:50%; box-shadow:0 0 0 2px #fff, 0 0 0 3px var(--line); transition:transform .2s var(--ease), box-shadow .2s; } .sw:hover i { transform:scale(1.08); } .sw.on i { box-shadow:0 0 0 2px #fff, 0 0 0 4px var(--ink); transform:scale(1.08); }
+.tcard { display:flex; align-items:center; gap:14px; }
+.tmember { text-align:center; padding:0 20px 20px; overflow:hidden; display:flex; flex-direction:column; align-items:center; }
+.tcover { height:78px; margin:0 -20px; align-self:stretch; position:relative; } .tcover::after { content:''; position:absolute; inset:0; background:radial-gradient(120% 100% at 90% -30%, rgba(255,255,255,.28), transparent 60%); }
+.tface { position:relative; margin-top:-36px; } .tface .pic { box-shadow:0 0 0 4px #fff; }
+.live { position:absolute; right:2px; bottom:4px; width:14px; height:14px; border-radius:50%; background:#22c55e; border:3px solid #fff; }
+.tmember h3 { margin:10px 0 2px; } .tbio { margin:10px 0 0; font-size:13.5px; color:var(--text); }
+.tlinks { margin-top:12px; display:grid; gap:6px; font-size:13px; max-width:100%; } .tlinks a { display:inline-flex; gap:6px; align-items:center; justify-content:center; color:var(--muted); overflow-wrap:anywhere; text-align:left; } .tlinks a:hover { color:var(--ink); }
+@media (max-width:640px){ .pgrid { grid-template-columns:1fr; } .pwho { padding:0 18px; } .pcard > .filters { padding:0 18px 18px; } }

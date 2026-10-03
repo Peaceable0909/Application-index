@@ -11,7 +11,7 @@ import { ago, AWAITING, describeActivity, IN_PROGRESS, initials, shortDate } fro
 import CommandCentre, { CommandCentreSkeleton } from '@/components/CommandCentre';
 import Icon from '@/components/Icon';
 import Btn from '@/components/Btn';
-import { niceName } from '@/components/UserMenu';
+import { firstWord } from '@/lib/profile';
 import { syncNow } from './actions';
 
 export const maxDuration = 60;
@@ -54,7 +54,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     <>
       <div className="head" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
-          <div className="eyebrow">Welcome back, {niceName(staff.email)}</div>
+          <div className="eyebrow">Welcome back, {firstWord(staff)}</div>
           <h1>Here’s what’s happening today</h1>
           <p className="sub" style={{ marginBottom: 20 }}>Manage applications, review documents and keep track of your students — all in one place.</p>
         </div>
