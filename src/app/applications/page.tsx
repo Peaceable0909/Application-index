@@ -96,29 +96,29 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         </div>
         <div className="card tablecard">
           <div className="scroll">
-            <table>
+            <table className="mcards">
               <thead><tr><th style={{ width: 28 }}><SelectAll /></th><th>Student</th><th>University / Programme</th><th>Counselor</th><th>Status</th><th>Regent</th><th>Documents</th><th>Attention</th><th>Submitted</th></tr></thead>
               <tbody>
                 {filtered.map(({ a, missing, reasons, judged, have, submissions }, i) => (
                   <tr key={a.application_id} className="row" style={{ '--i': Math.min(i, 14) } as React.CSSProperties}>
-                    <td><input type="checkbox" name="ids" value={a.application_id} aria-label={`Select ${a.name}`} /></td>
-                    <td><Link href={`/applications/${a.application_id}`}><b>{a.name}</b></Link><div className="muted">{[a.email, a.phone].filter(Boolean).join(' · ')}</div>
+                    <td className="mc-sel"><input type="checkbox" name="ids" value={a.application_id} aria-label={`Select ${a.name}`} /></td>
+                    <td className="mc-name"><Link href={`/applications/${a.application_id}`}><b>{a.name}</b></Link><div className="muted">{[a.email, a.phone].filter(Boolean).join(' · ')}</div>
                       {submissions > 1 && <span className="badge plain">{submissions} submissions</span>}</td>
-                    <td>{a.school}<div className="muted">{a.programme}</div></td>
-                    <td>{a.counselor || <span className="muted">—</span>}</td>
-                    <td>{a.status ? <span className={`badge plain tone-${statusTone(a.status)}`}>{a.status}</span> : <span className="muted">—</span>}
+                    <td data-l="University">{a.school}<div className="muted">{a.programme}</div></td>
+                    <td data-l="Counselor">{a.counselor || <span className="muted">—</span>}</td>
+                    <td data-l="Status">{a.status ? <span className={`badge plain tone-${statusTone(a.status)}`}>{a.status}</span> : <span className="muted">—</span>}
                       {a.progress != null && <div className="bar" title={`${a.progress}%`}><i style={{ width: `${a.progress}%` }} /></div>}</td>
-                    <td>{a.in_regent ? <div className="chips">{a.opp_id && <span className="badge plain" title="OPP ID">{a.opp_id.replace(/^OPP ID-/i, '')}</span>}
+                    <td data-l="Regent">{a.in_regent ? <div className="chips">{a.opp_id && <span className="badge plain" title="OPP ID">{a.opp_id.replace(/^OPP ID-/i, '')}</span>}
                       {a.payment ? <span className={`badge ${/^paid/i.test(a.payment) ? 'green' : 'amber'}`}>{a.payment}</span> : <span className="badge amber">Unpaid</span>}
                       {a.interview && <span className="badge plain">{a.interview}</span>}</div> : <span className="muted">—</span>}</td>
-                    <td>{judged ? (
+                    <td data-l="Documents">{judged ? (
                       <Link href={`/applications/${a.application_id}?tab=documents`} style={{ textDecoration: 'none' }} title={missing.length ? `Missing: ${missing.join(', ')}` : 'All required documents present'}>
                         <div className="dots">{REQUIRED_DOCS.map((d) => <i key={d} className={have.has(d) ? 'on' : ''} title={d} />)}</div>
                         <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{REQUIRED_DOCS.length - missing.length}/{REQUIRED_DOCS.length} documents{missing.length ? ` · needs ${missing.slice(0, 2).join(', ')}${missing.length > 2 ? '…' : ''}` : ''}</div>
                       </Link>
                     ) : <Link href={`/applications/${a.application_id}?tab=documents`} className="muted" style={{ fontSize: 12.5 }}>No Drive folder · link one →</Link>}</td>
-                    <td><div className="chips">{reasons.map((r) => <span key={r} className="badge red">{r}</span>)}</div></td>
-                    <td className="muted">{a.submitted_at ? new Date(a.submitted_at).toLocaleDateString('en-GB') : ''}</td>
+                    <td data-l="Needs"><div className="chips">{reasons.map((r) => <span key={r} className="badge red">{r}</span>)}</div></td>
+                    <td data-l="Submitted">{a.submitted_at ? new Date(a.submitted_at).toLocaleDateString('en-GB') : ''}</td>
                   </tr>
                 ))}
                 {!filtered.length && <tr><td colSpan={9} className="muted" style={{ padding: 40, textAlign: 'center' }}>No applications match. If this is a new install, press “Sync now”.</td></tr>}

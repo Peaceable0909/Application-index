@@ -94,17 +94,17 @@ export default async function CounselorBoard({ staff, ckey, mode, basePath, sp }
             <div className="search"><input name="q" placeholder="Search your students…" defaultValue={sp.q} /></div><Btn>Search</Btn>
             {sp.q && <Link href={tabHref(sp.view || '')} className="muted">Clear</Link>}
           </form>
-          <div className="card tablecard"><div className="scroll"><table>
+          <div className="card tablecard"><div className="scroll"><table className="mcards">
             <thead><tr><th>Student</th><th>Programme</th><th>Status</th><th>Documents</th><th>Needs</th><th>Updated</th></tr></thead>
             <tbody>
               {list.map(({ a, have, missing: miss, judged, reasons }, i) => (
                 <tr key={a.application_id} className="row" style={{ '--i': Math.min(i, 14) } as React.CSSProperties}>
-                  <td><Link href={`/applications/${a.application_id}`}><div className="who-c"><span className="avatar sm">{initials(a.name)}</span><div><b>{a.name}</b><div className="muted" style={{ fontSize: 12.5 }}>{a.email || a.phone || ''}</div></div></div></Link></td>
-                  <td>{a.programme && a.programme.toUpperCase() !== 'N/A' ? a.programme : <span className="muted">—</span>}<div className="muted" style={{ fontSize: 12.5 }}>{schoolShort(a.school)}</div></td>
-                  <td>{a.status ? <span className={`badge plain tone-${statusTone(a.status)}`}>{a.status}</span> : <span className="muted">—</span>}{a.progress != null && <div className="bar"><i style={{ width: `${a.progress}%` }} /></div>}</td>
-                  <td>{judged ? <div title={miss.length ? `Missing: ${miss.join(', ')}` : 'Complete'}><div className="dots">{REQUIRED_DOCS.map((d) => <i key={d} className={have.has(d) ? 'on' : ''} title={d} />)}</div><div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{REQUIRED_DOCS.length - miss.length}/{REQUIRED_DOCS.length}{miss.length ? ` · needs ${miss.slice(0, 2).join(', ')}${miss.length > 2 ? '…' : ''}` : ''}</div></div> : <span className="muted" style={{ fontSize: 12.5 }}>Not checked</span>}</td>
-                  <td><div className="chips">{reasons.filter((r) => !/Not in master|No counselor/.test(r)).slice(0, 3).map((r) => <span key={r} className="badge plain red">{r}</span>)}</div></td>
-                  <td className="muted" style={{ whiteSpace: 'nowrap' }}>{ago(a.last_activity_at)}</td>
+                  <td className="mc-name"><Link href={`/applications/${a.application_id}`}><div className="who-c"><span className="avatar sm">{initials(a.name)}</span><div><b>{a.name}</b><div className="muted" style={{ fontSize: 12.5 }}>{a.email || a.phone || ''}</div></div></div></Link></td>
+                  <td data-l="Programme">{a.programme && a.programme.toUpperCase() !== 'N/A' ? a.programme : <span className="muted">—</span>}<div className="muted" style={{ fontSize: 12.5 }}>{schoolShort(a.school)}</div></td>
+                  <td data-l="Status">{a.status ? <span className={`badge plain tone-${statusTone(a.status)}`}>{a.status}</span> : <span className="muted">—</span>}{a.progress != null && <div className="bar"><i style={{ width: `${a.progress}%` }} /></div>}</td>
+                  <td data-l="Documents">{judged ? <div title={miss.length ? `Missing: ${miss.join(', ')}` : 'Complete'}><div className="dots">{REQUIRED_DOCS.map((d) => <i key={d} className={have.has(d) ? 'on' : ''} title={d} />)}</div><div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{REQUIRED_DOCS.length - miss.length}/{REQUIRED_DOCS.length}{miss.length ? ` · needs ${miss.slice(0, 2).join(', ')}${miss.length > 2 ? '…' : ''}` : ''}</div></div> : <span className="muted" style={{ fontSize: 12.5 }}>Not checked</span>}</td>
+                  <td data-l="Needs"><div className="chips">{reasons.filter((r) => !/Not in master|No counselor/.test(r)).slice(0, 3).map((r) => <span key={r} className="badge plain red">{r}</span>)}</div></td>
+                  <td data-l="Updated" className="muted" style={{ whiteSpace: 'nowrap' }}>{ago(a.last_activity_at)}</td>
                 </tr>
               ))}
               {!list.length && <tr><td colSpan={6} className="muted" style={{ textAlign: 'center', padding: 36 }}>{mine.length ? 'No students match.' : 'No students are assigned yet.'}</td></tr>}
