@@ -299,3 +299,9 @@ html, body { max-width:100%; overflow-x:clip; }
   .fold-body { display:none; margin-top:10px; } .fold.open .fold-body { display:block; animation:rise .25s var(--ease) both; }
   .fold-body > .card, .fold-body > form.card { margin-bottom:0; }
 }
+
+/* tasks: to-do first on phones; document cards */
+@media (max-width:860px){ .g2 > #tasks { order:-1; } }
+@media (max-width:760px){
+  table.mcards td.mc-act { grid-column:1 / -1; display:flex; gap:12px; padding-top:10px; border-top:1px dashed var(--line); }
+}

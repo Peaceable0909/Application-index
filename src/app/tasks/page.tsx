@@ -4,6 +4,7 @@ import { requireTeam } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
 import Btn from '@/components/Btn';
 import { aiOverview, computeFacts, FACT_LABELS, loadStudents, refreshTasks } from '@/lib/overview';
+import Fold from '@/components/Fold';
 import { completeReminder, completeTask, dismissTask, markSeen, refreshOverview, snoozeTask } from '../actions';
 
 export const maxDuration = 60;
@@ -64,6 +65,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       {sp.err && <div className="card err">{sp.err}</div>}
 
       {(reminders || []).length > 0 && (
+        <Fold label="Reminders" icon="clock" badge={(reminders || []).length}>
         <div className="card">
           <h2>Reminders</h2>
           {(reminders || []).map((r) => {
@@ -78,6 +80,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             );
           })}
         </div>
+        </Fold>
       )}
 
       <div className="grid g5" style={{ marginBottom: 16 }}>
@@ -89,6 +92,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       </div>
 
       <div className="grid g2" style={{ alignItems: 'start' }}>
+        <Fold label="AI overview & summary" icon="spark">
         <div className="grid">
           <div className="card">
             <div className="filters" style={{ justifyContent: 'space-between', marginBottom: 10 }}>
@@ -119,6 +123,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             <p className="muted" style={{ margin: 0 }}>Interview recordings, reviews and pass/fail results live in your separate interview app (Uk-interview-prep), which isn’t connected to this portal yet. Once it is, they’ll appear here.</p>
           </div>
         </div>
+        </Fold>
 
         <div className="grid" id="tasks">
           <div className="card">
