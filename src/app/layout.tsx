@@ -11,6 +11,7 @@ import Bell from '@/components/Bell';
 import UserMenu from '@/components/UserMenu';
 import NavProgress from '@/components/NavProgress';
 import MobileMenu from '@/components/MobileMenu';
+import { unreadTotal } from '@/lib/chat';
 
 const ui = Inter({ subsets: ['latin'], variable: '--font-ui', display: 'swap' });
 const display = Instrument_Serif({ subsets: ['latin'], weight: '400', style: ['normal', 'italic'], variable: '--font-display', display: 'swap' });
@@ -22,7 +23,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   let taskCount = 0, chatCount = 0;
   if (staff) {
     const q = admin().from('portal_tasks').select('id', { count: 'exact', head: true }).eq('status', 'open');
-    chatCount = (await admin().from('portal_chat').select('id', { count: 'exact', head: true }).eq('to_email', staff.email).is('read_at', null)).count || 0;
+    chatCount = await unreadTotal(staff.email).catch(() => 0);
     taskCount = (staff.role === 'counselor' ? await q.in('application_id', await appIdsFor(staff.counselor_key)) : await q).count || 0;
   }
   return (
