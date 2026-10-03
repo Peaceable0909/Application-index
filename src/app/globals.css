@@ -234,7 +234,7 @@ textarea, input, select { max-width:100%; }
 @media (max-width:400px){ .g2,.g3,.g4,.g5 { grid-template-columns:1fr; } }
 
 /* stop min-content from stretching the page wider than the screen */
-html, body { max-width:100%; overflow-x:hidden; }
+html, body { max-width:100%; overflow-x:clip; }
 .shell, .maincol, main { min-width:0; max-width:100%; }
 .grid > *, .split > *, .head > *, .filters > * { min-width:0; }
 @media (max-width:640px){
@@ -270,3 +270,6 @@ html, body { max-width:100%; overflow-x:hidden; }
   table.mcards tr:last-child td[colspan] { grid-column:1 / -1; }
   table.mcards td[colspan] { display:block; grid-column:1 / -1; }
 }
+
+/* sidebar stays pinned while the page scrolls */
+.side { align-self:start; position:sticky; top:0; height:100vh; height:100dvh; }
