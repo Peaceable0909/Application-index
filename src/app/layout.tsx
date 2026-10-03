@@ -10,6 +10,7 @@ import TopSearch from '@/components/TopSearch';
 import Bell from '@/components/Bell';
 import UserMenu from '@/components/UserMenu';
 import NavProgress from '@/components/NavProgress';
+import MobileMenu from '@/components/MobileMenu';
 
 const ui = Inter({ subsets: ['latin'], variable: '--font-ui', display: 'swap' });
 const display = Instrument_Serif({ subsets: ['latin'], weight: '400', style: ['normal', 'italic'], variable: '--font-display', display: 'swap' });
@@ -38,8 +39,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <div className="tag">More opportunities.<br />Brighter futures.</div>
             </aside>
             <div className="maincol">
-              <Nav mobile role={staff.role} />
-              <header className="topbar"><TopSearch /><div className="topright"><Bell staff={staff} /><UserMenu staff={staff} /></div></header>
+              <header className="topbar"><MobileMenu /><TopSearch /><div className="topright"><Bell staff={staff} /><UserMenu staff={staff} /></div></header>
               <main>{children}</main>
             </div>
           </div>

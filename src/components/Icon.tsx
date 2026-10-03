@@ -18,6 +18,7 @@ const P: Record<string, string> = {
   more: 'M5 12h.01M12 12h.01M19 12h.01',
   right: 'M9 6l6 6-6 6',
   down: 'M6 9l6 6 6-6',
+  filter: 'M4 5h16l-6 8v6l-4-2v-4z',
   upload: 'M12 21V9M7 13l5-5 5 5M5 3h14',
   send: 'M22 2L11 13M22 2l-7 20-4-9-9-4z',
   'user-plus': 'M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM19 8v6M22 11h-6',

@@ -273,3 +273,29 @@ html, body { max-width:100%; overflow-x:clip; }
 
 /* sidebar stays pinned while the page scrolls */
 .side { align-self:start; position:sticky; top:0; height:100vh; height:100dvh; }
+
+/* ---- collapsible filters (phones) + sidebar drawer ---- */
+.burger { display:none; flex:none; flex-direction:column; justify-content:center; align-items:center; gap:4px; cursor:pointer; padding:0; }
+.burger span { display:block; width:18px; height:2px; border-radius:2px; background:var(--ink); transition:transform .25s var(--ease), opacity .2s; }
+.menu-open .burger span:nth-child(1) { transform:translateY(6px) rotate(45deg); } .menu-open .burger span:nth-child(2) { opacity:0; } .menu-open .burger span:nth-child(3) { transform:translateY(-6px) rotate(-45deg); }
+.scrim { display:none; }
+.fold { display:contents; } .fold-btn { display:none; }
+.bulkbar { position:sticky; top:74px; z-index:5; }
+@media (max-width:980px){
+  .burger { display:flex; }
+  .mnav { display:none !important; }
+  .side { display:flex !important; position:fixed; top:0; left:0; bottom:0; height:100dvh; width:min(290px,84vw); z-index:90; transform:translateX(-102%); transition:transform .32s var(--ease); box-shadow:none; overflow-y:auto; }
+  .menu-open .side { transform:none; box-shadow:0 0 60px rgba(8,16,40,.55); }
+  .scrim { display:block; position:fixed; inset:0; z-index:80; background:rgba(8,16,40,.5); backdrop-filter:blur(2px); opacity:0; pointer-events:none; transition:opacity .3s; }
+  .menu-open .scrim { opacity:1; pointer-events:auto; }
+  .menu-open body { overflow:hidden; }
+  .topsearch { min-width:0; }
+  .bulkbar { position:static; }
+  .fold { display:block; margin-bottom:12px; }
+  .fold-btn { display:flex; align-items:center; gap:10px; width:100%; height:46px; padding:0 16px; background:#fff; border:1px solid var(--line); border-radius:var(--r); box-shadow:var(--shadow); font-weight:650; color:var(--ink); cursor:pointer; }
+  .fold-btn > span:not(.n) { flex:1; text-align:left; } .fold-btn svg:last-child { transition:transform .25s var(--ease); }
+  .fold-btn .n { background:var(--blue); color:#fff; border-radius:99px; font-size:11px; padding:2px 8px; }
+  .fold.open .fold-btn svg:last-child { transform:rotate(180deg); }
+  .fold-body { display:none; margin-top:10px; } .fold.open .fold-body { display:block; animation:rise .25s var(--ease) both; }
+  .fold-body > .card, .fold-body > form.card { margin-bottom:0; }
+}

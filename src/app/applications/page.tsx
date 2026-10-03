@@ -8,6 +8,7 @@ import { REQUIRED_DOCS, STATUSES } from '@/lib/constants';
 import { bulkAddToMaster, bulkAssign, bulkEmailCounselors, bulkSetStatus, syncNow } from '../actions';
 import Btn from '@/components/Btn';
 import Icon from '@/components/Icon';
+import Fold from '@/components/Fold';
 import { SelectAll, SelectedCount } from '@/components/BulkSelect';
 import { statusTone } from '@/lib/ui';
 
@@ -51,6 +52,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         ))}
       </div>
 
+      <Fold label="Search & filters" badge={hasFilters ? 'on' : undefined}>
       <form className="card toolbar filters" method="get">
         {sp.view && <input type="hidden" name="view" value={sp.view} />}
         <div className="search"><input name="q" placeholder="Search students, email, school…" defaultValue={sp.q} /></div>
@@ -76,10 +78,12 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         <Btn>Apply</Btn>
         {hasFilters && <Link href="/applications" className="muted">Clear</Link>}
       </form>
+      </Fold>
 
       <form>
         <input type="hidden" name="returnTo" value={here} />
-        <div className="card filters" style={{ padding: '12px 16px', position: 'sticky', top: 74, zIndex: 5 }}>
+        <Fold label="Bulk actions" icon="tasks">
+        <div className="card filters bulkbar" style={{ padding: '12px 16px' }}>
           <SelectedCount />
           <select name="setStatus" defaultValue=""><option value="" disabled>Set status…</option>{STATUSES.map((o) => <option key={o}>{o}</option>)}</select>
           <Btn className="sm" formAction={bulkSetStatus}>Apply</Btn>
@@ -94,6 +98,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
             <a className="btn ghost sm" href={`/api/export?${exportQs}`}><Icon n="download" size={14} /> Export all {filtered.length}</a>
           </span>
         </div>
+        </Fold>
         <div className="card tablecard">
           <div className="scroll">
             <table className="mcards">
