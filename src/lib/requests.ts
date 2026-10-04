@@ -102,7 +102,7 @@ export async function sendWeeklyDigests() {
     if (done?.length) continue;
     const { subject, body, html } = digestEmail(c.name, mine);
     try {
-      await sendMail({ to: c.email, subject: `Weekly: ${subject}`, body, sign: await signFor(null, 'Peaceable Portal'), ...html });
+      await sendMail({ to: c.email, subject: `Weekly: ${subject}`, body, sign: await signFor(null, 'WhiteRock Admissions'), ...html });
       await db.from('portal_messages').insert({ application_id: null, counselor_name: c.name, to_email: c.email, to_kind: 'counselor', subject: `Weekly: ${subject}`, body, sent_by: 'weekly digest' });
       sent++;
     } catch { /* one failure shouldn't stop the rest */ }

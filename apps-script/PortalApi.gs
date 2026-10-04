@@ -516,7 +516,7 @@ function lockDownExistingFolders() {
 // p = { to, cc?, subject, body, htmlBody?, replyTo? }
 function portalSendEmail_(p) {
   if (!p.to || !p.subject || !p.body) throw new Error('to, subject and body are required');
-  const opts = { name: 'Peaceable Admissions' };
+  const opts = { name: 'WhiteRock Admissions' };
   if (p.cc) opts.cc = p.cc;
   if (p.replyTo) opts.replyTo = p.replyTo;
   if (p.htmlBody) opts.htmlBody = p.htmlBody;   // designed version; the plain body stays as the fallback
