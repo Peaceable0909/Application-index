@@ -9,7 +9,8 @@ import { counselorKey, docTypeFromName, dobForMaster, schoolShort } from '@/lib/
 import { ALL_DOC_TYPES } from '@/lib/constants';
 import { syncAll, syncFolders } from '@/lib/sync';
 import { STATUSES } from '@/lib/constants';
-import { requestDocs, summarise } from '@/lib/requests';
+import { requestDocs, summarise, digestEmail } from '@/lib/requests';
+import { sendMail } from '@/lib/mail';
 import { canAccessApp } from '@/lib/auth';
 import { docScanEnabled, scanOne } from '@/lib/docscan';
 import { draftEmail, PURPOSES, PurposeKey, TONES, ToneKey } from '@/lib/draft';
@@ -189,11 +190,9 @@ export async function bulkEmailCounselors(f: FormData) {
   for (const [k, list] of byCounselor) {
     const c = (counselors || []).find((x) => x.name_key === k);
     if (!c?.email) { noEmail.push(c?.name || list[0].a.counselor || k); continue; }
-    const lines = list.map((r) => `• ${r.a.name} (${[schoolShort(r.a.school), r.a.status || 'no status'].filter(Boolean).join(', ')})${r.reasons.length ? `: ${r.reasons.join('; ')}` : ''}${r.missing.length ? ` — missing ${r.missing.join(', ')}` : ''}`);
-    const subject = `${list.length} of your student${list.length === 1 ? '' : 's'} — update from admissions`;
-    const body = `Hi ${c.name.replace(/^(mr|mrs|ms|miss|dr)\.?\s+/i, '')},\n\nA quick update on these students:\n\n${lines.join('\n')}\n\nPlease follow up where you can.\n\nThanks,\n${staff.email.split('@')[0]}`;
+    const { subject, body, html } = digestEmail(c.name, list, 'A quick update from admissions on these students.');
     try {
-      await callScript('sendEmail', { to: c.email, subject, body, replyTo: staff.email });
+      await sendMail({ to: c.email, subject, body, replyTo: staff.email, from: staff.email, ...html, eyebrow: 'Update from admissions' });
       await db.from('portal_messages').insert({ application_id: null, counselor_name: c.name, to_email: c.email, to_kind: 'counselor', subject, body, sent_by: staff.email });
       sent++; students += list.length;
     } catch { noEmail.push(`${c.name} (send failed)`); }
@@ -297,7 +296,7 @@ export async function sendCounselorEmail(f: FormData) {
     if (![a0?.email, staff.email].filter(Boolean).map((x) => String(x).toLowerCase()).includes(to.toLowerCase())) return back(id, 'You can email the student from here.', true, ret);
   }
   if (!subject || !body) return back(id, 'Subject and message are required', true, ret);
-  try { await callScript('sendEmail', { to, subject, body, replyTo: staff.email }); }
+  try { await sendMail({ to, subject, body, replyTo: staff.email, from: staff.email }); }
   catch (e) { rethrow(e); return back(id, `Email failed: ${(e as Error).message}`, true, ret); }
   const db = admin();
   const { data: a } = await db.from('portal_applications').select('email, counselor').eq('application_id', id).maybeSingle();
@@ -642,10 +641,8 @@ export async function sendDigest(f: FormData) {
   const { rows } = await loadStudents();
   const mine = rows.filter((r) => counselorKey(r.a.counselor) === c.name_key && r.reasons.length && !(r.a.status && ['Enrolled', 'Rejected', 'Withdrawn'].includes(r.a.status)));
   if (!mine.length) redirect(`/counselors?msg=${encodeURIComponent(`${c.name} has no students needing attention — nothing sent.`)}`);
-  const lines = mine.slice(0, 40).map((r) => `• ${r.a.name} (${[schoolShort(r.a.school), r.a.status || 'no status'].filter(Boolean).join(', ')}): ${r.reasons.join('; ')}${r.missing.length ? ` — missing ${r.missing.join(', ')}` : ''}`);
-  const subject = `${mine.length} student${mine.length === 1 ? '' : 's'} need attention`;
-  const body = `Hi ${c.name.replace(/^(mr|mrs|ms|miss|dr)\.?\s+/i, '')},\n\nHere are your students who need attention right now:\n\n${lines.join('\n')}${mine.length > 40 ? `\n…and ${mine.length - 40} more.` : ''}\n\nPlease follow up where you can.\n\nThanks,\n${staff.email.split('@')[0]}`;
-  try { await callScript('sendEmail', { to: c.email, subject, body, replyTo: staff.email }); }
+  const { subject, body, html } = digestEmail(c.name, mine);
+  try { await sendMail({ to: c.email, subject, body, replyTo: staff.email, from: staff.email, ...html, eyebrow: 'Students needing attention' }); }
   catch (e) { redirect(`/counselors?err=${encodeURIComponent(`Email failed: ${(e as Error).message}`)}`); }
   await db.from('portal_messages').insert({ application_id: null, counselor_name: c.name, to_email: c.email, to_kind: 'counselor', subject, body, sent_by: staff.email });
   revalidatePath('/messages');
@@ -657,7 +654,7 @@ export async function sendMessage(f: FormData) {
   const staff = await requireTeam();
   const to = s(f, 'custom') || s(f, 'to'), subject = s(f, 'subject'), body = s(f, 'body'), appId = s(f, 'applicationId') || null;
   if (!EMAIL_RE.test(to) || !subject || !body) redirect('/messages?compose=1&err=' + encodeURIComponent('Recipient, subject and message are required'));
-  try { await callScript('sendEmail', { to, subject, body, replyTo: staff.email }); }
+  try { await sendMail({ to, subject, body, replyTo: staff.email, from: staff.email, eyebrow: 'Message' }); }
   catch (e) { redirect('/messages?compose=1&err=' + encodeURIComponent(`Email failed: ${(e as Error).message}`)); }
   const db = admin();
   const { data: c } = await db.from('portal_counselors').select('name').eq('email', to).maybeSingle();
@@ -777,4 +774,17 @@ export async function removeAvatar() {
   await db.from('portal_staff').update({ avatar_url: null, updated_at: new Date().toISOString() }).eq('email', staff.email);
   revalidatePath('/', 'layout');
   redirect('/profile?msg=' + encodeURIComponent('Photo removed.'));
+}
+
+// Sends the three sample emails to the signed-in person so they can see the real thing in their inbox.
+export async function sendTestEmails() {
+  const staff = await requireTeam();
+  const { sampleSpec } = await import('@/lib/emailSamples');
+  try {
+    for (const kind of ['student', 'digest', 'custom']) {
+      const { subject, body, ...spec } = sampleSpec(kind);
+      await sendMail({ to: staff.email, subject, body, replyTo: staff.email, from: staff.email, ...spec });
+    }
+  } catch (e) { rethrow(e); redirect('/settings?err=' + encodeURIComponent(`Test email failed: ${(e as Error).message}`)); }
+  redirect('/settings?msg=' + encodeURIComponent(`Three sample emails sent to ${staff.email}. Check your inbox (and spam).`));
 }

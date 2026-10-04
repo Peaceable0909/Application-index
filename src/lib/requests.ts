@@ -1,7 +1,8 @@
 import { admin } from './supabase';
-import { callScript } from './appsScript';
+import { sendMail, signFor } from './mail';
+import { site } from './emailTemplate';
 import { counselorKey, schoolShort } from './docs';
-import { FINAL_STATUSES } from './constants';
+import { FINAL_STATUSES, REQUIRED_DOCS } from './constants';
 import { loadStudents } from './overview';
 import type { SRow } from './overview';
 
@@ -11,13 +12,24 @@ const firstName = (n: string) => (n.split(',').length > 1 ? n.split(',')[1] : n)
 const plain = (n: string) => n.replace(/^(mr|mrs|ms|miss|dr)\.?\s+/i, '');
 const tidy = (v: string | null) => (v && v.toUpperCase() !== 'N/A' ? v : '');
 
-/** Plain, fixed-wording request: only lists what the portal has verified is missing. No AI, no invention. */
-export function docRequestEmail(r: SRow, sender: string) {
+/** Fixed-wording request: only lists what the portal has verified is missing. No AI, no invention. */
+export function docRequestEmail(r: SRow, replyTo: string) {
   const a = r.a;
   const uni = [schoolShort(a.school), tidy(a.programme)].filter(Boolean).join(' · ');
+  const n = r.missing.length, total = REQUIRED_DOCS.length;
   const subject = `Documents needed for your application${a.school ? ` — ${schoolShort(a.school)}` : ''}`;
-  const body = `Hi ${firstName(a.name)},\n\nWe're preparing your application${uni ? ` (${uni})` : ''} and still need the following ${r.missing.length === 1 ? 'document' : 'documents'}:\n\n${r.missing.map((d) => `• ${d}`).join('\n')}\n\nPlease reply to this email with clear scans or photos attached (PDF preferred) and we'll add ${r.missing.length === 1 ? 'it' : 'them'} to your file.\n\nIf you've already sent any of these, just let us know and we'll check.\n\nBest regards,\n${plain(sender)}\nPeaceable Admissions`;
-  return { subject, body };
+  const body = `Hi ${firstName(a.name)},\n\nWe're preparing your application${uni ? ` (${uni})` : ''} and still need the following ${n === 1 ? 'document' : 'documents'}:\n\n${r.missing.map((d) => `• ${d}`).join('\n')}\n\nPlease reply to this email with clear scans or photos attached (PDF preferred) and we'll add ${n === 1 ? 'it' : 'them'} to your file.\n\nIf you've already sent any of these, just let us know and we'll check.`;
+  const html = {
+    eyebrow: 'Documents needed', title: n === 1 ? 'One document to go' : `${n} documents to go`, greeting: `Hi ${firstName(a.name)},`, preheader: `We still need ${r.missing.join(', ')} to move your application forward.`,
+    blocks: [
+      { type: 'p' as const, text: `Thank you for applying${uni ? ` to ${uni}` : ''}. We’re preparing your application and need ${n === 1 ? 'one more document' : 'a few more documents'} from you before we can submit it.` },
+      { type: 'checklist' as const, title: n === 1 ? 'Still needed' : 'Still needed', items: r.missing, received: total - n, total },
+      { type: 'p' as const, text: 'Please reply to this email with clear scans or photos attached (PDF preferred), and we’ll add them to your file straight away.' },
+      { type: 'note' as const, text: 'Already sent one of these? Just reply and tell us. We’ll check right away.' },
+    ],
+    cta: replyTo ? { label: 'Reply with my documents', href: `mailto:${replyTo}?subject=${encodeURIComponent('My documents — ' + a.name)}` } : undefined,
+  };
+  return { subject, body, html };
 }
 
 type Result = { sent: number; skipped: { name: string; why: string }[] };
@@ -39,9 +51,10 @@ export async function requestDocs(rows: SRow[], actor: string): Promise<Result> 
     if (!a.email || !EMAIL_RE.test(a.email)) { skip('no email address'); continue; }
     if (asked.has(a.application_id)) { skip(`asked in the last ${COOLDOWN_DAYS} days`); continue; }
     const c = (counselors || []).find((x) => x.name_key === counselorKey(a.counselor));
-    const { subject, body } = docRequestEmail(r, c?.name || actor.split('@')[0]);
+    const reply = c?.email || actor;
+    const { subject, body, html } = docRequestEmail(r, reply);
     try {
-      await callScript('sendEmail', { to: a.email, subject, body, replyTo: c?.email || actor });
+      await sendMail({ to: a.email, subject, body, replyTo: reply, from: reply, ...html });
       await db.from('portal_messages').insert({ application_id: a.application_id, counselor_name: c?.name || null, to_email: a.email, to_kind: 'student', subject, body, sent_by: actor });
       await db.from('portal_activity').insert({ application_id: a.application_id, actor, kind: 'email_sent', detail: { to: a.email, subject } });
       out.sent++;
@@ -57,12 +70,21 @@ export const summarise = (r: Result) => {
   return r.sent ? `Asked ${r.sent} student${r.sent === 1 ? '' : 's'} for their missing documents.${parts.length ? ` Skipped: ${parts.join('; ')}.` : ''}` : `No requests sent.${parts.length ? ` Skipped: ${parts.join('; ')}.` : ''}`;
 };
 
-export function digestEmail(name: string, mine: SRow[], signOff: string) {
+export function digestEmail(name: string, mine: SRow[], intro = 'Here are your students who need attention right now.') {
+  const subject = `${mine.length} student${mine.length === 1 ? '' : 's'} need attention`;
   const lines = mine.slice(0, 40).map((r) => `• ${r.a.name} (${[schoolShort(r.a.school), r.a.status || 'no status'].filter(Boolean).join(', ')}): ${r.reasons.join('; ')}${r.missing.length ? ` — missing ${r.missing.join(', ')}` : ''}`);
-  return {
-    subject: `${mine.length} student${mine.length === 1 ? '' : 's'} need attention`,
-    body: `Hi ${plain(name)},\n\nHere are your students who need attention right now:\n\n${lines.join('\n')}${mine.length > 40 ? `\n…and ${mine.length - 40} more.` : ''}\n\nPlease follow up where you can.\n\nThanks,\n${signOff}`,
+  const body = `Hi ${plain(name)},\n\n${intro}\n\n${lines.join('\n')}${mine.length > 40 ? `\n…and ${mine.length - 40} more.` : ''}\n\nPlease follow up where you can.\n\nOpen your students: ${site()}/my`;
+  const html = {
+    eyebrow: 'Weekly digest', title: `${mine.length} student${mine.length === 1 ? '' : 's'} need${mine.length === 1 ? 's' : ''} your attention`, greeting: `Hi ${plain(name)},`, preheader: `${mine.slice(0, 3).map((r) => r.a.name).join(', ')}${mine.length > 3 ? ` and ${mine.length - 3} more` : ''}`,
+    blocks: [
+      { type: 'p' as const, text: intro },
+      { type: 'students' as const, title: `Needs attention · ${mine.length}`, rows: mine.slice(0, 25).map((r) => ({ name: r.a.name, meta: [schoolShort(r.a.school), tidy(r.a.programme)].filter(Boolean).join(' · '), status: r.a.status || undefined, needs: [...r.reasons.filter((x) => !/Not in master|No counselor/.test(x)), ...(r.missing.length ? [`Missing: ${r.missing.join(', ')}`] : [])].join(' · ') || undefined })) },
+      ...(mine.length > 25 ? [{ type: 'note' as const, text: `…and ${mine.length - 25} more in the portal.` }] : []),
+      { type: 'p' as const, text: 'Please follow up where you can. Everything is one tap away in the portal.' },
+    ],
+    cta: { label: 'Open my students', href: `${site()}/my` },
   };
+  return { subject, body, html };
 }
 
 /** Monday-morning digest to every counselor with an address and something to act on (opt-in: WEEKLY_DIGEST=on). */
@@ -78,9 +100,9 @@ export async function sendWeeklyDigests() {
     if (!mine.length) continue;
     const { data: done } = await db.from('portal_messages').select('id').eq('to_email', c.email).eq('sent_by', 'weekly digest').gte('created_at', since).limit(1);
     if (done?.length) continue;
-    const { subject, body } = digestEmail(c.name, mine, 'Peaceable Portal');
+    const { subject, body, html } = digestEmail(c.name, mine);
     try {
-      await callScript('sendEmail', { to: c.email, subject: `Weekly: ${subject}`, body, replyTo: '' });
+      await sendMail({ to: c.email, subject: `Weekly: ${subject}`, body, sign: await signFor(null, 'Peaceable Portal'), ...html });
       await db.from('portal_messages').insert({ application_id: null, counselor_name: c.name, to_email: c.email, to_kind: 'counselor', subject: `Weekly: ${subject}`, body, sent_by: 'weekly digest' });
       sent++;
     } catch { /* one failure shouldn't stop the rest */ }

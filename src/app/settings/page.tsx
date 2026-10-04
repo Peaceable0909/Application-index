@@ -2,7 +2,8 @@ import { requireTeam } from '@/lib/auth';
 import Btn from '@/components/Btn';
 import { admin } from '@/lib/supabase';
 import Link from 'next/link';
-import { addStaff, removeStaff, testConnection } from '../actions';
+import { addStaff, removeStaff, sendTestEmails, testConnection } from '../actions';
+import Icon from '@/components/Icon';
 
 export default async function Settings({ searchParams }: { searchParams: Promise<{ msg?: string; err?: string }> }) {
   const me = await requireTeam();
@@ -39,6 +40,16 @@ export default async function Settings({ searchParams }: { searchParams: Promise
         <p className="muted" style={{ marginBottom: 0 }}>After that: new applications and sheet edits show up within about a minute, and any new student folder is made team-only within ten minutes.</p>
       </div>
 
+      <div className="card">
+        <h2><Icon n="mail" size={17} /> Email design</h2>
+        <p className="muted">Every email the portal sends (document requests, digests, messages to students and counselors) uses the same branded layout, signed with your name, title and photo from <Link href="/profile">My profile</Link>.</p>
+        <div className="filters">
+          <a className="btn ghost sm" href="/api/email/preview?kind=student" target="_blank">Preview: document request</a>
+          <a className="btn ghost sm" href="/api/email/preview?kind=digest" target="_blank">Preview: counselor digest</a>
+          <a className="btn ghost sm" href="/api/email/preview?kind=custom" target="_blank">Preview: a message</a>
+        </div>
+        <form action={sendTestEmails} style={{ marginTop: 14 }}><Btn data-busy="Sending…">Send me the 3 sample emails</Btn></form>
+      </div>
       <div className="card">
         <h2>Weekly counselor digest <span className={`badge plain ${process.env.WEEKLY_DIGEST === 'on' ? 'green' : ''}`} style={{ marginLeft: 6 }}>{process.env.WEEKLY_DIGEST === 'on' ? 'on' : 'off'}</span></h2>
         <p className="muted">Every Monday morning each counselor with an email saved gets one email listing their students who need attention. Nothing is sent when they have none. It is off until you turn it on:</p>

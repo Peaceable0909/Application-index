@@ -513,12 +513,13 @@ function lockDownExistingFolders() {
   Logger.log('Locked down ' + n + ' folders');
 }
 
-// p = { to, cc?, subject, body, replyTo? }
+// p = { to, cc?, subject, body, htmlBody?, replyTo? }
 function portalSendEmail_(p) {
   if (!p.to || !p.subject || !p.body) throw new Error('to, subject and body are required');
-  const opts = { name: 'WhiteRock Admissions' };
+  const opts = { name: 'Peaceable Admissions' };
   if (p.cc) opts.cc = p.cc;
   if (p.replyTo) opts.replyTo = p.replyTo;
+  if (p.htmlBody) opts.htmlBody = p.htmlBody;   // designed version; the plain body stays as the fallback
   GmailApp.sendEmail(p.to, p.subject, p.body, opts);
   return { sent: true };
 }
