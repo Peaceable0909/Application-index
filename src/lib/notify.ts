@@ -3,7 +3,8 @@ import { sendMail } from './mail';
 import { site } from './emailTemplate';
 import { shownName } from './profile';
 
-const DAILY_CAP = 40;   // keeps us well inside Gmail's daily sending limit
+const DAILY_CAP = 3;       // never more than 3 automatic emails a day per person
+const CHAT_GAP_MIN = 180;  // and at most one per chat every 3 hours
 
 /** True when this (person, kind, ref) was already emailed within `minutes`, or the person's daily cap is used up. */
 async function recently(email: string, kind: string, ref: string, minutes: number) {
@@ -17,7 +18,7 @@ async function recently(email: string, kind: string, ref: string, minutes: numbe
 }
 const mark = (email: string, kind: string, ref: string) => admin().from('portal_notify_log').insert({ email, kind, ref });
 
-/** Emails someone about new chat messages if they are not in the portal right now (once per chat per 30 min). */
+/** Emails someone about new chat messages, only if they opted in and are away from the portal (once per chat per 3 hours). */
 export async function notifyChat(roomId: string, senderEmail: string, preview: string, hasFile: boolean) {
   const db = admin();
   const [{ data: members }, { data: room }, { data: sender }] = await Promise.all([
@@ -29,15 +30,15 @@ export async function notifyChat(roomId: string, senderEmail: string, preview: s
   for (const m of members || []) {
     if (m.email === senderEmail || m.muted) continue;
     const { data: p } = await db.from('portal_staff').select('email, display_name, notify_email, last_active_at').eq('email', m.email).maybeSingle();
-    if (!p || p.notify_email === false) continue;
+    if (!p || p.notify_email !== true) continue;   // opt-in only
     if (p.last_active_at && Date.now() - new Date(p.last_active_at).getTime() < 3 * 60_000) continue;   // they're here
-    if (await recently(m.email, 'chat', roomId, 30)) continue;
+    if (await recently(m.email, 'chat', roomId, CHAT_GAP_MIN)) continue;
     const where = room?.kind === 'group' ? ` in ${room.name}` : '';
     try {
       await sendMail({
         to: m.email, subject: `New message from ${from}${where}`, body: `${from}${where}: ${preview || (hasFile ? 'sent an attachment' : '')}`,
         eyebrow: 'New message', title: `${from} messaged you`, greeting: `Hi ${shownName(p).split(' ')[0]},`, preheader: preview || 'Open the portal to read it.',
-        blocks: [{ type: 'p', text: `${from} sent a message${where}.` }, { type: 'students', rows: [{ name: from, meta: preview ? `“${preview.slice(0, 160)}”` : '📎 Sent an attachment' }] }, { type: 'note', text: 'You get this at most once every 30 minutes per chat, and only when you are away from the portal. You can turn these emails off in My profile.' }],
+        blocks: [{ type: 'p', text: `${from} sent a message${where}.` }, { type: 'students', rows: [{ name: from, meta: preview ? `“${preview.slice(0, 160)}”` : '📎 Sent an attachment' }] }, { type: 'note', text: 'You get this at most once every 3 hours per chat, and only when you are away from the portal. Turn these emails off any time in My profile.' }],
         cta: { label: 'Open the chat', href: `${site()}/chat?room=${roomId}` }, footerNote: 'This is an automatic notification from the Admissions Portal.',
         sign: { name: 'Admissions Portal', title: 'Notification' },
       });
@@ -53,7 +54,7 @@ export async function notifyAssigned(counselorName: string, students: { id: stri
   const { data: c } = await db.from('portal_counselors').select('name, email').ilike('name', counselorName).maybeSingle();
   if (!c?.email) return;
   const { data: p } = await db.from('portal_staff').select('notify_email').eq('email', c.email.toLowerCase()).maybeSingle();
-  if (p && p.notify_email === false) return;
+  if (!p || p.notify_email !== true) return;   // opt-in only
   const ref = students.map((s) => s.id).sort().join(',').slice(0, 200);
   if (await recently(c.email.toLowerCase(), 'assign', ref, 10)) return;
   const first = c.name.replace(/^(mr|mrs|ms|miss|dr)\.?\s+/i, '');

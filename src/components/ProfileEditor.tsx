@@ -82,7 +82,7 @@ export default function ProfileEditor({ init, save, upload, remove, roleName }: 
               ))}
             </div>
           </div>
-          <label className="switch-row" style={{ marginTop: 18 }}><span>Email me about new chat messages and assigned students<small className="muted">Only when you’re away from the portal, at most once every 30 minutes per chat.</small></span><input type="checkbox" name="notify_email" defaultChecked={init.notify_email} /></label>
+          <label className="switch-row" style={{ marginTop: 18 }}><span>Email me about new chat messages and assigned students<small className="muted">Off by default. If you turn it on: only when you’re away from the portal, at most once per chat every 3 hours, and never more than 3 a day.</small></span><input type="checkbox" name="notify_email" defaultChecked={init.notify_email} /></label>
           <div className="filters" style={{ marginTop: 18 }}><button className="btn">Save profile</button></div>
         </form>
       </div>
