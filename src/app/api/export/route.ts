@@ -3,7 +3,7 @@ import { currentStaff } from '@/lib/auth';
 import { loadStudents } from '@/lib/overview';
 import { filterRows, toCsv } from '@/lib/filters';
 
-const csv = (body: string) => new NextResponse(body, { headers: { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="peaceable-students-${new Date().toISOString().slice(0, 10)}.csv"`, 'Cache-Control': 'no-store' } });
+const csv = (body: string) => new NextResponse(body, { headers: { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="admissions-students-${new Date().toISOString().slice(0, 10)}.csv"`, 'Cache-Control': 'no-store' } });
 
 // GET = everything matching the current filters.
 export async function GET(req: Request) {

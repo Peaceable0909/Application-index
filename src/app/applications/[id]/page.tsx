@@ -17,7 +17,7 @@ import { studentFacts, AppFull, StudentSummary } from '@/lib/overview';
 import Btn from '@/components/Btn';
 import Icon from '@/components/Icon';
 import { niceName } from '@/components/UserMenu';
-import { addNote, addReminder, addToMaster, completeReminder, createDraft, scanDocs, setDocType, dismissSuggestion, generateSummary, linkFolder, refreshDocuments, scanStudent, sendCounselorEmail, unlinkFolder, updateCounselor, updateRegent, updateStatus, uploadDocument } from '../../actions';
+import { sendStudentReminder, saveDates, addNote, addReminder, addToMaster, completeReminder, createDraft, scanDocs, setDocType, dismissSuggestion, generateSummary, linkFolder, refreshDocuments, scanStudent, sendCounselorEmail, unlinkFolder, updateCounselor, updateRegent, updateStatus, uploadDocument } from '../../actions';
 
 type SP = { msg?: string; err?: string; preview?: string; tab?: string; compose?: string; draft?: string };
 const TABS = ['overview', 'documents', 'notes', 'activity', 'messages', 'regent', 'sources'] as const;
@@ -222,6 +222,16 @@ export default async function ApplicationPage({ params, searchParams }: { params
                     <dt>Phone</dt><dd>{app.phone || '—'}</dd>
                     <dt>Application Status</dt><dd>{app.status ? <span className={`badge plain tone-${statusTone(app.status)}`}>{app.status}</span> : '—'}{judged && missing.length > 0 && <> <span className="badge plain red">Missing Docs</span></>}</dd>
                   </dl>
+                  <div style={{ borderTop: '1px solid var(--line)', marginTop: 16, paddingTop: 14 }}>
+                    <div className="stat-l" style={{ marginBottom: 10 }}><Icon n="clock" size={14} /> Intake &amp; deadline</div>
+                    <form action={saveDates} className="filters" style={{ alignItems: 'flex-end' }}>
+                      <input type="hidden" name="id" value={id} />
+                      <label style={{ flex: '1 1 130px' }}><span className="muted" style={{ fontSize: 12.5 }}>Intake</span><input type="month" name="intake" defaultValue={app.intake || ''} style={{ width: '100%' }} /></label>
+                      <label style={{ flex: '1 1 150px' }}><span className="muted" style={{ fontSize: 12.5 }}>Application deadline</span><input type="date" name="deadline" defaultValue={app.deadline || ''} style={{ width: '100%' }} /></label>
+                      <Btn className="ghost sm">Save</Btn>
+                    </form>
+                    {app.deadline && (() => { const left = Math.ceil((new Date(app.deadline + 'T23:59:59').getTime() - Date.now()) / 864e5); return <div className={`muted`} style={{ marginTop: 8, fontSize: 13 }}>{left < 0 ? `Deadline passed ${-left} day${left === -1 ? '' : 's'} ago` : left === 0 ? 'Deadline is today' : `${left} day${left === 1 ? '' : 's'} until the deadline`}</div>; })()}
+                  </div>
                   <div style={{ borderTop: '1px solid var(--line)', marginTop: 16, paddingTop: 14 }}>
                     <div className="stat-l" style={{ marginBottom: 10 }}><Icon n="users" size={14} /> Counselor</div>
                     <div className="filters" style={{ justifyContent: 'space-between' }}>
@@ -461,13 +471,30 @@ export default async function ApplicationPage({ params, searchParams }: { params
             </div>
             </div>
             <div className="card">
-              <h2>Sent messages</h2>
-              {(messages || []).map((m) => (
-                <details key={m.id} className="note" style={{ display: 'block' }}>
-                  <summary style={{ cursor: 'pointer' }}><b>{m.subject}</b> <span className={`badge plain ${m.to_kind === 'student' ? 'blue' : 'purple'}`}>{m.to_kind}</span><small>{m.to_email} · {dateTime(m.created_at)} · <Who people={people} email={m.sent_by} size={18} bare /></small></summary>
-                  <p style={{ whiteSpace: 'pre-wrap' }}>{m.body}</p>
-                </details>
-              ))}
+              <h2><Icon n="mail" size={17} /> Email history</h2>
+              {(() => {
+                const needDocs = judged && missing.length > 0, needPay = app.in_regent && !/^paid/i.test(app.payment || '');
+                const lastOf = (prefix: string) => (messages || []).find((m) => m.to_kind === 'student' && m.subject.startsWith(prefix));
+                const lastDocs = lastOf('Documents needed'), lastPay = lastOf('Payment reminder');
+                if (!needDocs && !needPay) return null;
+                return (
+                  <div className="qa">
+                    {needDocs && <form action={sendStudentReminder}><input type="hidden" name="id" value={id} /><input type="hidden" name="kind" value="docs" /><Btn className="ghost sm" data-busy="Sending…"><Icon n="send" size={14} /> {lastDocs ? 'Send document request again' : 'Request missing documents'}</Btn><small className="muted">{lastDocs ? `Last sent ${dateTime(lastDocs.created_at)}` : `Needs ${missing.slice(0, 3).join(', ')}${missing.length > 3 ? '…' : ''}`}</small></form>}
+                    {needPay && <form action={sendStudentReminder}><input type="hidden" name="id" value={id} /><input type="hidden" name="kind" value="payment" /><Btn className="ghost sm" data-busy="Sending…"><Icon n="send" size={14} /> {lastPay ? 'Send payment reminder again' : 'Send payment reminder'}</Btn><small className="muted">{lastPay ? `Last sent ${dateTime(lastPay.created_at)}` : 'Payment not received'}</small></form>}
+                  </div>
+                );
+              })()}
+              <ul className="mhist">
+                {(messages || []).map((m) => (
+                  <li key={m.id}>
+                    <span className={`mh-dot ${m.to_kind}`} />
+                    <details>
+                      <summary><b>{m.subject}</b><small>{dateTime(m.created_at)} · to {m.to_email} · <Who people={people} email={m.sent_by} size={16} bare /></small></summary>
+                      <p style={{ whiteSpace: 'pre-wrap' }}>{m.body}</p>
+                    </details>
+                  </li>
+                ))}
+              </ul>
               {!(messages || []).length && <p className="muted" style={{ margin: 0 }}>Nothing sent from the portal yet.</p>}
             </div>
           </div>

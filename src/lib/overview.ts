@@ -4,10 +4,10 @@ import { effType, missingDocs } from './docs';
 import { FINAL_STATUSES, REQUIRED_DOCS, STALE_DAYS } from './constants';
 import { askAi, hashOf, numbersWithin } from './ai';
 
-export type AppFull = AppRow & { created_at: string; dob: string | null; age: string | null };
+export type AppFull = AppRow & { created_at: string; dob: string | null; age: string | null; intake: string | null; deadline: string | null };
 export type SRow = { a: AppFull; have: Set<string>; docCount: number; judged: boolean; missing: string[]; reasons: string[]; submissions: number };
 
-const COLS = 'application_id,name,email,phone,school,programme,country,city,counselor,status,submitted_at,created_at,last_activity_at,student_key,in_master,has_raw,progress,in_regent,payment,interview,opp_id,drive_folder_id,dob,age';
+const COLS = 'application_id,name,email,phone,school,programme,country,city,counselor,status,submitted_at,created_at,last_activity_at,student_key,in_master,has_raw,progress,in_regent,payment,interview,opp_id,drive_folder_id,dob,age,intake,deadline';
 const DAY = 864e5;
 
 /** One row per student (newest submission), with documents pooled across their submissions. */
@@ -57,6 +57,7 @@ export function desiredTasks(rows: SRow[], now = Date.now()): TaskDraft[] {
     if (judged && docCount > 0 && !missing.length && (!a.status || ['New Lead', 'Submitted', 'Documents Requested'].includes(a.status))) add('ready_next', `Ready for next stage: ${who}`, 'All required documents are present.', 2);
     if (a.has_raw && !a.in_master) add('add_to_sheet1', `Add ${who} to Sheet1`, sub, 3);
     if (!a.counselor) add('no_counselor', `Assign a counselor to ${who}`, sub, 2);
+    if (a.deadline && !isFinal(a.status)) { const left = Math.ceil((new Date(a.deadline + 'T23:59:59').getTime() - now) / DAY); if (left <= 14 && (missing.length || a.in_regent && !/^paid/i.test(a.payment || ''))) add('deadline_risk', `${left < 0 ? 'Deadline passed' : left === 0 ? 'Deadline today' : `Deadline in ${left} day${left === 1 ? '' : 's'}`}: ${who}`, [missing.length ? `Missing ${missing.join(', ')}` : '', a.in_regent && !/^paid/i.test(a.payment || '') ? 'payment not received' : ''].filter(Boolean).join(' · '), 1); }
     if (a.interview && /to be booked/i.test(a.interview)) add('interview_book', `Book interview for ${who}`, sub, 2);
     if (a.in_master && now - new Date(a.last_activity_at).getTime() > STALE_DAYS * DAY) add('stale', `Follow up with ${who}`, `No update for ${ageDays(a.last_activity_at)} days · ${a.status || 'no status'}`, 3);
     const gaps = [!a.programme || a.programme.toUpperCase() === 'N/A' ? 'programme' : '', !a.phone ? 'phone' : '', !a.email ? 'email' : ''].filter(Boolean);

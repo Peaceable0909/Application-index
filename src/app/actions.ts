@@ -9,8 +9,12 @@ import { counselorKey, docTypeFromName, dobForMaster, schoolShort } from '@/lib/
 import { ALL_DOC_TYPES } from '@/lib/constants';
 import { syncAll, syncFolders } from '@/lib/sync';
 import { STATUSES } from '@/lib/constants';
-import { requestDocs, summarise, digestEmail } from '@/lib/requests';
+import { requestDocs, summarise, digestEmail, sendPaymentReminders, summariseReminders } from '@/lib/requests';
 import { sendMail } from '@/lib/mail';
+import { audit } from '@/lib/audit';
+import { runBackup } from '@/lib/backup';
+import { notifyAssigned } from '@/lib/notify';
+import { after } from 'next/server';
 import { canAccessApp } from '@/lib/auth';
 import { docScanEnabled, scanOne } from '@/lib/docscan';
 import { draftEmail, PURPOSES, PurposeKey, TONES, ToneKey } from '@/lib/draft';
@@ -162,14 +166,17 @@ export async function bulkAssign(f: FormData) {
   const { ids, left } = pickIds(f);
   const db = admin();
   let ok = 0, sheetFail = 0;
+  const assigned: { id: string; name: string; school: string | null; programme: string | null }[] = [];
   for (const id of ids) {
-    const { data: cur } = await db.from('portal_applications').select('counselor').eq('application_id', id).single();
+    const { data: cur } = await db.from('portal_applications').select('counselor, name, school, programme').eq('application_id', id).single();
     await db.from('portal_applications').update({ counselor: counselor || null }).eq('application_id', id);
     await log(id, staff.email, 'counselor_change', { from: cur?.counselor ?? null, to: counselor });
+    if (counselor && cur && cur.counselor !== counselor) assigned.push({ id, name: cur.name, school: cur.school, programme: cur.programme });
     try { await writeBack(id, { counselor }); } catch { sheetFail++; }
     ok++;
   }
   revalidatePath('/applications'); revalidatePath('/counselors');
+  if (counselor && assigned.length) after(() => notifyAssigned(counselor, assigned, staff.email));
   bulkBack(f, `${counselor ? `Assigned to ${counselor}` : 'Unassigned'}: ${ok} student${ok === 1 ? '' : 's'}${sheetFail ? ` (${sheetFail} could not be written to the sheet)` : ''}.${leftNote(left)}`, sheetFail > 0);
 }
 
@@ -241,6 +248,7 @@ export async function updateCounselor(f: FormData) {
   const { data: cur } = await db.from('portal_applications').select('counselor').eq('application_id', id).single();
   await db.from('portal_applications').update({ counselor: counselor || null }).eq('application_id', id);
   await log(id, staff.email, 'counselor_change', { from: cur?.counselor ?? null, to: counselor });
+  if (counselor && counselor !== cur?.counselor) { const { data: st } = await db.from('portal_applications').select('name, school, programme').eq('application_id', id).single(); if (st) after(() => notifyAssigned(counselor, [{ id, ...st }], staff.email)); }
   const ret = s(f, 'returnTo');
   try { await writeBack(id, { counselor }); }
   catch (e) { rethrow(e); return back(id, `Saved in portal but sheet write-back failed: ${(e as Error).message}`, true, ret); }
@@ -601,7 +609,7 @@ export async function addCounselor(f: FormData) {
 
 // Lets a counselor sign in (with Google, using their saved email) and see only their own students.
 export async function grantCounselorAccess(f: FormData) {
-  await requireTeam();
+  const me0 = await requireTeam();
   const db = admin();
   const { data: c } = await db.from('portal_counselors').select('*').eq('id', s(f, 'id')).single();
   if (!c?.email) redirect('/counselors?err=' + encodeURIComponent('Save the counselor’s email first.'));
@@ -609,25 +617,26 @@ export async function grantCounselorAccess(f: FormData) {
   const { data: ex } = await db.from('portal_staff').select('role').eq('email', email).maybeSingle();
   if (ex && ex.role !== 'counselor') redirect('/counselors?err=' + encodeURIComponent(`${email} already has team access.`));
   await db.from('portal_staff').upsert({ email, role: 'counselor', counselor_key: c.name_key });
+  await audit(me0.email, 'counselor_access_granted', email, { counselor: c.name });
   revalidatePath('/counselors');
   redirect(`/counselors?msg=${encodeURIComponent(`${c.name} can now sign in with ${email} and will see only their own students.`)}`);
 }
 export async function grantAllCounselorAccess() {
-  await requireTeam();
+  const me0 = await requireTeam();
   const db = admin();
   const [{ data: cs }, { data: staff }] = await Promise.all([db.from('portal_counselors').select('name, name_key, email, active').not('email', 'is', null), db.from('portal_staff').select('email, role')]);
   const have = new Map((staff || []).map((r) => [r.email.toLowerCase(), r.role]));
   const add = (cs || []).filter((c) => c.email && c.active !== false && !have.has(c.email.toLowerCase())).map((c) => ({ email: c.email!.toLowerCase(), role: 'counselor', counselor_key: c.name_key }));
-  if (add.length) await db.from('portal_staff').upsert(add);
+  if (add.length) { await db.from('portal_staff').upsert(add); await audit(me0.email, 'counselor_access_granted', add.map((a) => a.email).join(', '), { count: add.length }); }
   const skipped = (cs || []).filter((c) => c.email && have.has(c.email.toLowerCase())).length;
   revalidatePath('/counselors');
   redirect(`/counselors?msg=${encodeURIComponent(add.length ? `Access given to ${add.length} counselor${add.length === 1 ? '' : 's'}: ${add.map((a) => a.email).join(', ')}.${skipped ? ` ${skipped} already had access.` : ''}` : 'Everyone with an email already has access.')}`);
 }
 export async function revokeCounselorAccess(f: FormData) {
-  await requireTeam();
+  const me1 = await requireTeam();
   const db = admin();
   const { data: c } = await db.from('portal_counselors').select('email').eq('id', s(f, 'id')).single();
-  if (c?.email) await db.from('portal_staff').delete().eq('email', c.email.toLowerCase()).eq('role', 'counselor');
+  if (c?.email) { await db.from('portal_staff').delete().eq('email', c.email.toLowerCase()).eq('role', 'counselor'); await audit(me1.email, 'counselor_access_removed', c.email); }
   revalidatePath('/counselors');
   redirect('/counselors?msg=Access+removed');
 }
@@ -693,7 +702,9 @@ export async function addStaff(f: FormData) {
   if (me.role !== 'admin') redirect('/settings?err=Admins+only');
   const email = s(f, 'email').toLowerCase();
   if (!EMAIL_RE.test(email)) redirect('/settings?err=Invalid+email');
-  await admin().from('portal_staff').upsert({ email, role: s(f, 'role') === 'admin' ? 'admin' : 'staff' });
+  const role = s(f, 'role') === 'admin' ? 'admin' : 'staff';
+  await admin().from('portal_staff').upsert({ email, role });
+  await audit(me.email, 'staff_added', email, { role });
   redirect('/settings?msg=Staff+added');
 }
 export async function removeStaff(f: FormData) {
@@ -701,6 +712,7 @@ export async function removeStaff(f: FormData) {
   const email = s(f, 'email');
   if (me.role !== 'admin' || email === me.email) redirect('/settings?err=Not+allowed');
   await admin().from('portal_staff').delete().eq('email', email);
+  await audit(me.email, 'staff_removed', email);
   redirect('/settings?msg=Removed');
 }
 
@@ -741,6 +753,7 @@ export async function saveProfile(f: FormData) {
     phone: phone || null,
     bio: s(f, 'bio').trim().slice(0, 400) || null,
     color: COLORS[color] ? color : 'navy',
+    notify_email: f.get('notify_email') === 'on',
     updated_at: new Date().toISOString(),
   }).eq('email', staff.email);
   if (error) redirect('/profile?err=' + encodeURIComponent(`Could not save: ${error.message}`));
@@ -787,4 +800,70 @@ export async function sendTestEmails() {
     }
   } catch (e) { rethrow(e); redirect('/settings?err=' + encodeURIComponent(`Test email failed: ${(e as Error).message}`)); }
   redirect('/settings?msg=' + encodeURIComponent(`Three sample emails sent to ${staff.email}. Check your inbox (and spam).`));
+}
+
+// Pipeline board: move one student to a new stage (no redirect, so the board can update in place).
+export async function moveStatus(id: string, status: string): Promise<{ ok: boolean; error?: string; sheet?: boolean }> {
+  const staff = await requireStaff();
+  if (!(await canAccessApp(staff, id))) return { ok: false, error: 'That student isn’t assigned to you.' };
+  if (!(STATUSES as readonly string[]).includes(status)) return { ok: false, error: 'Unknown stage.' };
+  const db = admin();
+  const { data: cur } = await db.from('portal_applications').select('status').eq('application_id', id).single();
+  if (cur?.status === status) return { ok: true };
+  await db.from('portal_applications').update({ status }).eq('application_id', id);
+  await log(id, staff.email, 'status_change', { from: cur?.status ?? null, to: status });
+  let sheet = true;
+  try { await writeBack(id, { status }); } catch { sheet = false; }
+  revalidatePath('/'); revalidatePath('/applications');
+  return { ok: true, sheet };
+}
+
+// Intake month + application deadline (kept in the portal; the Google Sheet has no column for them).
+export async function saveDates(f: FormData) {
+  const staff = await requireStaff();
+  const id = s(f, 'id'), ret = s(f, 'returnTo');
+  await guardApp(staff, id);
+  const intake = s(f, 'intake'), deadline = s(f, 'deadline');
+  if (intake && !/^\d{4}-\d{2}$/.test(intake)) return back(id, 'Intake should be a month.', true, ret);
+  if (deadline && !/^\d{4}-\d{2}-\d{2}$/.test(deadline)) return back(id, 'Deadline should be a date.', true, ret);
+  await admin().from('portal_applications').update({ intake: intake || null, deadline: deadline || null }).eq('application_id', id);
+  await log(id, staff.email, 'dates_updated', { intake, deadline });
+  revalidatePath('/calendar'); revalidatePath('/');
+  back(id, 'Dates saved', false, ret);
+}
+
+// Payments page: remind selected unpaid students.
+export async function bulkPaymentReminders(f: FormData) {
+  const staff = await requireTeam();
+  const ids = f.getAll('ids').map(String).filter(Boolean).slice(0, BULK_MAX);
+  if (!ids.length) redirect('/payments?err=' + encodeURIComponent('Tick at least one student first.'));
+  const chosen = new Set(ids);
+  const { rows } = await loadStudents();
+  let res;
+  try { res = await sendPaymentReminders(rows.filter((r) => chosen.has(r.a.application_id)), staff.email); }
+  catch (e) { rethrow(e); redirect('/payments?err=' + encodeURIComponent(`Could not send: ${(e as Error).message}`)); }
+  revalidatePath('/messages');
+  redirect(`/payments?${res.sent ? 'msg' : 'err'}=${encodeURIComponent(summariseReminders(res))}`);
+}
+
+// Student page: send one student a document request or payment reminder again (ignores the "asked recently" pause).
+export async function sendStudentReminder(f: FormData) {
+  const staff = await requireStaff();
+  const id = s(f, 'id'), kind = s(f, 'kind'), ret = s(f, 'returnTo') || `/applications/${encodeURIComponent(id)}?tab=messages`;
+  await guardApp(staff, id);
+  const { rows } = await loadStudents();
+  const row = rows.find((r) => r.a.application_id === id);
+  if (!row) return back(id, 'Student not found', true, ret);
+  let res;
+  try { res = kind === 'payment' ? await sendPaymentReminders([row], staff.email, true) : await requestDocs([row], staff.email, true); }
+  catch (e) { rethrow(e); return back(id, `Could not send: ${(e as Error).message}`, true, ret); }
+  revalidatePath('/messages');
+  back(id, res.sent ? (kind === 'payment' ? 'Payment reminder sent.' : 'Document request sent.') : `Not sent: ${res.skipped.map((x) => x.why).join('; ') || 'nothing to send'}.`, !res.sent, ret);
+}
+
+export async function backupNow() {
+  const me = await requireTeam();
+  if (me.role !== 'admin') redirect('/settings?err=Admins+only');
+  try { const r = await runBackup(me.email); redirect('/settings?msg=' + encodeURIComponent(`Backup saved: ${r.name}${r.failed.length ? ` (some tables failed: ${r.failed.join('; ')})` : ''}.`)); }
+  catch (e) { rethrow(e); redirect('/settings?err=' + encodeURIComponent(`Backup failed: ${(e as Error).message}`)); }
 }

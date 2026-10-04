@@ -1,4 +1,5 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
+import { notifyChat } from '@/lib/notify';
 import { admin } from '@/lib/supabase';
 import { currentStaff } from '@/lib/auth';
 import { ATT_MAX, cleanRefs, COLORS_OK, membership, MSG_COLS, previewOf, shapeMessages } from '@/lib/chat';
@@ -70,6 +71,7 @@ export async function POST(req: Request, { params }: Ctx) {
     db.from('portal_rooms').update({ last_message_at: data.created_at, last_preview: previewOf(body, (att.att_name as string) || (refs.length ? '👤 Shared a student' : null)), last_sender: me.email }).eq('id', id),
     db.from('portal_room_members').update({ typing_at: null, last_read_at: data.created_at }).eq('room_id', id).eq('email', me.email),
   ]);
+  after(() => notifyChat(id, me.email, body.slice(0, 200), !!file).catch(() => {}));
   return NextResponse.json({ message: (await shapeMessages([data as never], me))[0] });
 }
 

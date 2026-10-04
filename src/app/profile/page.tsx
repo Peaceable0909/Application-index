@@ -13,7 +13,7 @@ export default async function Profile({ searchParams }: { searchParams: Promise<
       {sp.msg && <div className="card ok">{sp.msg}</div>}
       {sp.err && <div className="card err">{sp.err}</div>}
       <ProfileEditor
-        init={{ email: staff.email, role: staff.role, display_name: staff.display_name || '', title: staff.title || '', phone: staff.phone || '', bio: staff.bio || '', color: staff.color || 'navy', avatar_url: staff.avatar_url }}
+        init={{ email: staff.email, role: staff.role, display_name: staff.display_name || '', title: staff.title || '', phone: staff.phone || '', bio: staff.bio || '', color: staff.color || 'navy', avatar_url: staff.avatar_url, notify_email: staff.notify_email !== false }}
         roleName={roleLabel(staff.role)} save={saveProfile} upload={uploadAvatar} remove={removeAvatar} />
     </>
   );

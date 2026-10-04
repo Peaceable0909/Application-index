@@ -11,6 +11,7 @@ import Bell from '@/components/Bell';
 import UserMenu from '@/components/UserMenu';
 import NavProgress from '@/components/NavProgress';
 import MobileMenu from '@/components/MobileMenu';
+import Presence from '@/components/Presence';
 import { unreadTotal } from '@/lib/chat';
 
 const ui = Inter({ subsets: ['latin'], variable: '--font-ui', display: 'swap' });
@@ -33,6 +34,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <div className="splash-in"><Mark draw /><div className="splash-word">Admissions <em>Portal</em></div><div className="splash-line" /></div>
         </div>
         <NavProgress />
+        {staff && <Presence />}
         {staff ? (
           <div className="shell">
             <aside className="side">

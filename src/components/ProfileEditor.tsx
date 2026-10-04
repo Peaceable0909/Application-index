@@ -4,7 +4,7 @@ import Icon from './Icon';
 import Avatar from './Avatar';
 import { COLORS, gradient, shownName } from '@/lib/profile';
 
-type Init = { email: string; role: string; display_name: string; title: string; phone: string; bio: string; color: string; avatar_url: string | null };
+type Init = { email: string; role: string; display_name: string; title: string; phone: string; bio: string; color: string; avatar_url: string | null; notify_email: boolean };
 
 /** Squares + shrinks the chosen photo in the browser (400×400 JPEG, ~40 KB) before it is uploaded. */
 async function squash(file: File): Promise<File> {
@@ -82,6 +82,7 @@ export default function ProfileEditor({ init, save, upload, remove, roleName }: 
               ))}
             </div>
           </div>
+          <label className="switch-row" style={{ marginTop: 18 }}><span>Email me about new chat messages and assigned students<small className="muted">Only when you’re away from the portal, at most once every 30 minutes per chat.</small></span><input type="checkbox" name="notify_email" defaultChecked={init.notify_email} /></label>
           <div className="filters" style={{ marginTop: 18 }}><button className="btn">Save profile</button></div>
         </form>
       </div>

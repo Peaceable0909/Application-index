@@ -2,7 +2,8 @@ import { requireTeam } from '@/lib/auth';
 import Btn from '@/components/Btn';
 import { admin } from '@/lib/supabase';
 import Link from 'next/link';
-import { addStaff, removeStaff, sendTestEmails, testConnection } from '../actions';
+import { addStaff, backupNow, removeStaff, sendTestEmails, testConnection } from '../actions';
+import { listBackups } from '@/lib/backup';
 import Icon from '@/components/Icon';
 
 export default async function Settings({ searchParams }: { searchParams: Promise<{ msg?: string; err?: string }> }) {
@@ -40,6 +41,18 @@ export default async function Settings({ searchParams }: { searchParams: Promise
         <p className="muted" style={{ marginBottom: 0 }}>After that: new applications and sheet edits show up within about a minute, and any new student folder is made team-only within ten minutes.</p>
       </div>
 
+      <div className="card">
+        <h2><Icon n="download" size={17} /> Backups</h2>
+        <p className="muted">Every night the portal saves a private, compressed copy of its own data (students, notes, activity, messages, chat, staff). The newest 14 are kept. Your Google Sheet and Drive files are not copied; they keep their own version history.</p>
+        {me.role === 'admin' ? (
+          <>
+            <form action={backupNow}><Btn data-busy="Backing up…">Back up now</Btn></form>
+            <table style={{ marginTop: 12 }}><tbody>
+              {(await listBackups().catch(() => [])).map((b) => <tr key={b.name}><td>{b.name}</td><td className="muted">{b.size ? `${Math.round(b.size / 1024)} KB` : ''}</td><td><a href={`/api/backup?file=${b.name}`}>Download</a></td></tr>)}
+            </tbody></table>
+          </>
+        ) : <p className="muted">Admins can create and download backups.</p>}
+      </div>
       <div className="card">
         <h2><Icon n="mail" size={17} /> Email design</h2>
         <p className="muted">Every email the portal sends (document requests, digests, messages to students and counselors) uses the same branded layout, signed with your name, title and photo from <Link href="/profile">My profile</Link>.</p>

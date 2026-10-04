@@ -35,12 +35,12 @@ export function docRequestEmail(r: SRow, replyTo: string) {
 type Result = { sent: number; skipped: { name: string; why: string }[] };
 
 /** Emails students their own missing-document list. Skips anyone with no address, nothing missing, or asked recently. */
-export async function requestDocs(rows: SRow[], actor: string): Promise<Result> {
+export async function requestDocs(rows: SRow[], actor: string, force = false): Promise<Result> {
   const db = admin();
   const { data: counselors } = await db.from('portal_counselors').select('name,name_key,email');
   const since = new Date(Date.now() - COOLDOWN_DAYS * 864e5).toISOString();
   const ids = rows.map((r) => r.a.application_id);
-  const { data: recent } = ids.length ? await db.from('portal_messages').select('application_id').eq('to_kind', 'student').like('subject', 'Documents needed%').gte('created_at', since).in('application_id', ids) : { data: [] };
+  const { data: recent } = ids.length && !force ? await db.from('portal_messages').select('application_id').eq('to_kind', 'student').like('subject', 'Documents needed%').gte('created_at', since).in('application_id', ids) : { data: [] };
   const asked = new Set((recent || []).map((m) => m.application_id));
   const out: Result = { sent: 0, skipped: [] };
   for (const r of rows) {
@@ -109,3 +109,53 @@ export async function sendWeeklyDigests() {
   }
   return { sent };
 }
+
+// ---- payment reminders (Regent) ----
+const PAY_COOLDOWN_DAYS = 5;
+export const isPaid = (p: string | null) => /^paid/i.test((p || '').trim());
+
+export function paymentReminderEmail(r: SRow, replyTo: string) {
+  const a = r.a, uni = [schoolShort(a.school), tidy(a.programme)].filter(Boolean).join(' · ');
+  const ref = a.opp_id ? a.opp_id.replace(/^OPP ID-/i, '') : '';
+  const subject = `Payment reminder${a.school ? ` — ${schoolShort(a.school)}` : ''}`;
+  const body = `Hi ${firstName(a.name)},\n\nOur records show the payment for your application${uni ? ` (${uni})` : ''} has not been received yet.${ref ? `\n\nReference: ${ref}` : ''}\n\nOnce you have paid, please reply to this email with your proof of payment so we can move your application forward. If you have already paid, just let us know and we'll check straight away.`;
+  const html = {
+    eyebrow: 'Payment reminder', title: 'Payment still pending', greeting: `Hi ${firstName(a.name)},`, preheader: 'We have not received the payment for your application yet.',
+    blocks: [
+      { type: 'p' as const, text: `Our records show the payment for your application${uni ? ` to ${uni}` : ''} has not been received yet.` },
+      ...(ref ? [{ type: 'students' as const, rows: [{ name: uni || 'Your application', meta: `Reference: ${ref}`, status: 'Payment pending' }] }] : []),
+      { type: 'p' as const, text: 'Once you have paid, please reply to this email with your proof of payment so we can move your application forward.' },
+      { type: 'note' as const, text: 'Already paid? Just reply and tell us. We’ll check straight away.' },
+    ],
+    cta: replyTo ? { label: 'Send proof of payment', href: `mailto:${replyTo}?subject=${encodeURIComponent('Proof of payment — ' + a.name)}` } : undefined,
+  };
+  return { subject, body, html };
+}
+
+export async function sendPaymentReminders(rows: SRow[], actor: string, force = false): Promise<Result> {
+  const db = admin();
+  const { data: counselors } = await db.from('portal_counselors').select('name,name_key,email');
+  const since = new Date(Date.now() - PAY_COOLDOWN_DAYS * 864e5).toISOString();
+  const ids = rows.map((r) => r.a.application_id);
+  const { data: recent } = ids.length && !force ? await db.from('portal_messages').select('application_id').eq('to_kind', 'student').like('subject', 'Payment reminder%').gte('created_at', since).in('application_id', ids) : { data: [] };
+  const asked = new Set((recent || []).map((m) => m.application_id));
+  const out: Result = { sent: 0, skipped: [] };
+  for (const r of rows) {
+    const a = r.a, skip = (why: string) => out.skipped.push({ name: a.name, why });
+    if (!a.in_regent) { skip('not in Regent Only'); continue; }
+    if (isPaid(a.payment)) { skip('already paid'); continue; }
+    if (a.status && FINAL_STATUSES.includes(a.status)) { skip('already finished'); continue; }
+    if (!a.email || !EMAIL_RE.test(a.email)) { skip('no email address'); continue; }
+    if (asked.has(a.application_id)) { skip(`reminded in the last ${PAY_COOLDOWN_DAYS} days`); continue; }
+    const c = (counselors || []).find((x) => x.name_key === counselorKey(a.counselor));
+    const reply = c?.email || actor, { subject, body, html } = paymentReminderEmail(r, reply);
+    try {
+      await sendMail({ to: a.email, subject, body, replyTo: reply, from: reply, ...html });
+      await db.from('portal_messages').insert({ application_id: a.application_id, counselor_name: c?.name || null, to_email: a.email, to_kind: 'student', subject, body, sent_by: actor });
+      await db.from('portal_activity').insert({ application_id: a.application_id, actor, kind: 'email_sent', detail: { to: a.email, subject } });
+      out.sent++;
+    } catch { skip('send failed'); }
+  }
+  return out;
+}
+export const summariseReminders = (r: Result) => summarise(r).replace('for their missing documents', 'a payment reminder').replace('Asked', 'Reminded');
