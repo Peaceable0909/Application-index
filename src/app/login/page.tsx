@@ -13,7 +13,7 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
   return (
     <div className="auth">
       <div style={{ display: 'grid', placeItems: 'center', marginBottom: 14 }}><Mark size={46} /></div>
-      <h1>Peaceable <em>Portal</em></h1>
+      <h1>Admissions <em>Portal</em></h1>
       <p className="muted" style={{ margin: 0 }}>Sign in to manage applications.</p>
       <div className="card">
         {blocked && (

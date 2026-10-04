@@ -16,7 +16,7 @@ import { unreadTotal } from '@/lib/chat';
 const ui = Inter({ subsets: ['latin'], variable: '--font-ui', display: 'swap' });
 const display = Instrument_Serif({ subsets: ['latin'], weight: '400', style: ['normal', 'italic'], variable: '--font-display', display: 'swap' });
 
-export const metadata = { title: 'Peaceable Portal', description: 'Applications, documents and counselors in one place.' };
+export const metadata = { title: 'Admissions Portal', description: 'Applications, documents and counselors in one place.' };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const staff = await currentStaff();
@@ -30,13 +30,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang="en" className={`${ui.variable} ${display.variable}`}>
       <body>
         <div className="splash" aria-hidden>
-          <div className="splash-in"><Mark draw /><div className="splash-word">Peaceable <em>Portal</em></div><div className="splash-line" /></div>
+          <div className="splash-in"><Mark draw /><div className="splash-word">Admissions <em>Portal</em></div><div className="splash-line" /></div>
         </div>
         <NavProgress />
         {staff ? (
           <div className="shell">
             <aside className="side">
-              <Link href="/" className="brand"><Mark size={36} inverse /><span><b>Peaceable <em>Portal</em></b><small>Application Portal</small></span></Link>
+              <Link href="/" className="brand"><Mark size={36} inverse /><span><b>Admissions <em>Portal</em></b><small>WhiteRock Admissions</small></span></Link>
               <Nav taskCount={taskCount} chatCount={chatCount} role={staff.role} />
               <div className="tag">More opportunities.<br />Brighter futures.</div>
             </aside>

@@ -1,4 +1,4 @@
-// The Peaceable mark: a ringed monogram. `draw` animates it (splash screen).
+// The Portal mark: a ringed monogram. `draw` animates it (splash screen).
 export default function Mark({ size = 28, draw = false, inverse = false }: { size?: number; draw?: boolean; inverse?: boolean }) {
   if (draw) {
     return (
