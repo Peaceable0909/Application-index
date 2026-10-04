@@ -4,13 +4,15 @@ import Link from 'next/link';
 import Avatar from './Avatar';
 import Icon from './Icon';
 import { COLORS, gradient } from '@/lib/profile';
-import type { ChatMsg, RoomRow } from '@/lib/chat';
+import type { Card, ChatMsg, Ref, RoomRow } from '@/lib/chat';
 
 export type Person = { email: string; name: string; avatar_url: string | null; color: string | null; title: string | null };
 type Member = { email: string; role: string; last_read_at: string; typing: boolean; muted: boolean };
 const EMOJI = ['👍', '❤️', '😂', '😮', '🙏', '✅'];
 const PICKER = ['😀', '😊', '😂', '🥹', '😍', '🤔', '😅', '😭', '🙌', '👏', '👍', '👎', '🙏', '💪', '🔥', '🎉', '✅', '❌', '⚠️', '📌', '📎', '📞', '⏰', '❤️'];
 
+type Pending = Ref & { label: string };
+type Seed = { id: string; name: string } | null;
 const same = (a: Date, b: Date) => a.toDateString() === b.toDateString();
 const dayLabel = (d: string) => { const t = new Date(d), n = new Date(); return same(t, n) ? 'Today' : same(t, new Date(n.getTime() - 864e5)) ? 'Yesterday' : t.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' }); };
 const hm = (d: string) => new Date(d).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
@@ -36,7 +38,74 @@ function Rich({ text, mine }: { text: string; mine: boolean }) {
   return <>{parts.map((p, i) => /^https?:\/\//.test(p) ? <a key={i} href={p} target="_blank" rel="noreferrer noopener" className="lnk">{p}</a> : /^@[\w.]+$/.test(p) ? <span key={i} className={`mention ${mine ? 'on' : ''}`}>{p}</span> : p)}</>;
 }
 
-export default function ChatApp({ me, people, initialRooms, initialActive }: { me: string; people: Record<string, Person>; initialRooms: RoomRow[]; initialActive: string | null }) {
+
+const initials2 = (n: string) => n.split(/[\s,]+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+function Cards({ cards, mine }: { cards: Card[]; mine: boolean }) {
+  return (
+    <div className="cards">
+      {cards.map((c, i) => c.t === 'student' ? (
+        <div key={i} className={`scard ${c.open ? '' : 'locked'} ${mine ? 'm' : ''}`} onClick={(e) => e.stopPropagation()}>
+          <div className="stop"><span className="sinit">{initials2(c.name)}</span><div><b>{c.name}</b><small>{[c.school, c.programme && c.programme.toUpperCase() !== 'N/A' ? c.programme : ''].filter(Boolean).join(' · ') || 'Student'}</small></div></div>
+          <div className="smeta">{c.status && <span className="sbadge">{c.status}</span>}{c.open && c.counselor && <span>👤 {c.counselor}</span>}</div>
+          {c.docs && <div className={`sdocs ${c.docs.missing.length ? 'warn' : 'ok'}`}>{c.docs.missing.length ? `📄 ${c.docs.have}/${c.docs.total} documents · needs ${c.docs.missing.slice(0, 3).join(', ')}` : `✅ All ${c.docs.total} documents in`}</div>}
+          {c.open ? <Link href={`/applications/${encodeURIComponent(c.id)}`} className="sopen">Open student <Icon n="right" size={14} /></Link> : <span className="sopen off">🔒 Not assigned to you</span>}
+        </div>
+      ) : (
+        <div key={i} className={`dcard ${c.open ? '' : 'locked'} ${mine ? 'm' : ''}`} onClick={(e) => e.stopPropagation()}>
+          <span className="ico"><Icon n="file" size={18} /></span>
+          <div><b>{c.name}</b><small>{c.type} · {c.student}</small></div>
+          {c.open ? <span className="dact"><Link href={`/applications/${encodeURIComponent(c.id)}/documents?file=${encodeURIComponent(c.f)}`} title="View"><Icon n="eye" size={17} /></Link><a href={`/api/files/${encodeURIComponent(c.f)}?download=1`} title="Download"><Icon n="download" size={17} /></a></span> : <span className="dact">🔒</span>}
+        </div>
+      ))}
+    </div>
+  );
+}
+function LinkCard({ body }: { body: string }) {
+  const m = body.match(/https?:\/\/[^\s<]+/); if (!m) return null;
+  let u: URL; try { u = new URL(m[0]); } catch { return null; }
+  if (u.pathname.startsWith('/applications/')) return null;
+  return <a href={u.href} target="_blank" rel="noreferrer noopener" className="lcard" onClick={(e) => e.stopPropagation()}><span className="ico"><Icon n="link" size={16} /></span><div><b>{u.hostname.replace(/^www\./, '')}</b><small>{(u.pathname + u.search).slice(0, 60) || '/'}</small></div><Icon n="right" size={15} /></a>;
+}
+
+/** Search students (and their documents) to quote in a message. */
+function SharePicker({ onAdd, onClose }: { onAdd: (refs: Pending[]) => void; onClose: () => void }) {
+  const [q, setQ] = useState(''); const [list, setList] = useState<{ id: string; name: string; school: string | null; programme: string | null; status: string | null }[] | null>(null);
+  const [cur, setCur] = useState<{ id: string; name: string } | null>(null); const [docs, setDocs] = useState<{ f: string; name: string; type: string }[] | null>(null); const [chosen, setChosen] = useState<string[]>([]);
+  useEffect(() => { const t = setTimeout(() => fetch(`/api/chat/students?q=${encodeURIComponent(q)}`).then((r) => r.json()).then((j) => setList(j.students || [])).catch(() => setList([])), 150); return () => clearTimeout(t); }, [q]);
+  const choose = (s: { id: string; name: string }) => { setCur(s); setDocs(null); setChosen([]); fetch(`/api/chat/students/${encodeURIComponent(s.id)}`).then((r) => r.json()).then((j) => setDocs(j.docs || [])).catch(() => setDocs([])); };
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-h"><b>{cur ? cur.name : 'Quote a student'}</b><button className="iconbtn" onClick={onClose} aria-label="Close">×</button></div>
+        {!cur ? (
+          <>
+            <div className="search" style={{ marginBottom: 10 }}><input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by student name or university…" /></div>
+            <div className="pick-list">
+              {(list || []).map((s) => <button key={s.id} className="pick" onClick={() => choose(s)}><span className="sinit">{initials2(s.name)}</span><div><b>{s.name}</b><small>{[s.school, s.programme, s.status].filter(Boolean).join(' · ')}</small></div><Icon n="right" size={15} /></button>)}
+              {list && !list.length && <p className="muted" style={{ padding: 14, margin: 0 }}>No students found.</p>}
+              {!list && <p className="muted" style={{ padding: 14, margin: 0 }}>Loading…</p>}
+            </div>
+          </>
+        ) : (
+          <>
+            <button className="linkish" onClick={() => setCur(null)}>‹ Back to search</button>
+            <button className="btn" style={{ width: '100%', margin: '12px 0' }} onClick={() => { onAdd([{ t: 'student', id: cur.id, label: cur.name }]); onClose(); }}>Quote {cur.name.split(' ')[0]}’s student card</button>
+            <div className="stat-l" style={{ marginBottom: 6 }}>Or share documents</div>
+            <div className="pick-list" style={{ maxHeight: 220 }}>
+              {docs === null && <p className="muted" style={{ padding: 14, margin: 0 }}>Loading documents…</p>}
+              {docs && !docs.length && <p className="muted" style={{ padding: 14, margin: 0 }}>No documents on file yet.</p>}
+              {(docs || []).map((d) => { const on = chosen.includes(d.f); return <button key={d.f} className={`pick ${on ? 'on' : ''}`} onClick={() => setChosen((c) => (on ? c.filter((x) => x !== d.f) : [...c, d.f]))}><span className="ico" style={{ margin: 0, width: 34, height: 34 }}><Icon n="file" size={16} /></span><div><b>{d.name}</b><small>{d.type}</small></div><span className="tick">{on && <Icon n="check" size={15} />}</span></button>; })}
+            </div>
+            <button className="btn ghost" style={{ marginTop: 10 }} disabled={!chosen.length} onClick={() => { onAdd((docs || []).filter((d) => chosen.includes(d.f)).map((d) => ({ t: 'doc' as const, id: cur.id, f: d.f, label: d.name }))); onClose(); }}>Share {chosen.length || ''} document{chosen.length === 1 ? '' : 's'}</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function ChatApp({ me, people, initialRooms, initialActive, about }: { me: string; people: Record<string, Person>; initialRooms: RoomRow[]; initialActive: string | null; about: Seed }) {
+  const [pending, setPending] = useState<Seed>(about);
   const [rooms, setRooms] = useState(initialRooms);
   const [online, setOnline] = useState<string[]>([]);
   const [active, setActive] = useState<string | null>(initialActive);
@@ -68,6 +137,7 @@ export default function ChatApp({ me, people, initialRooms, initialActive }: { m
           <div className="search"><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search chats…" /></div>
           <button className="btn sm" onClick={() => setCreating(true)}><Icon n="user-plus" size={14} /> New</button>
         </div>
+        {pending && <div className="ctx" style={{ margin: 10 }}><div><b>Discuss {pending.name}</b><span>Pick who to send the student card to</span></div><button className="iconbtn" aria-label="Cancel" onClick={() => { setPending(null); history.replaceState(null, '', active ? `/chat?room=${active}` : '/chat'); }}>×</button></div>}
         <div className="chat-scroll">
           {list.map((r) => (
             <button key={r.id} className={`chat-item ${active === r.id ? 'on' : ''}`} onClick={() => open(r.id)}>
@@ -81,7 +151,7 @@ export default function ChatApp({ me, people, initialRooms, initialActive }: { m
       </aside>
       <section className="chat-pane card">
         {room
-          ? <Thread key={room.id} room={room} me={me} who={who} people={people} online={online} title={title(room)} icon={roomIcon(room, 42)} onBack={() => open(null)} onChanged={refresh} onLeft={() => { open(null); refresh(); }} />
+          ? <Thread key={room.id} seed={pending} onSeedUsed={() => setPending(null)} room={room} me={me} who={who} people={people} online={online} title={title(room)} icon={roomIcon(room, 42)} onBack={() => open(null)} onChanged={refresh} onLeft={() => { open(null); refresh(); }} />
           : <div className="chat-empty"><span className="ico"><Icon n="chat" size={26} /></span><b>Your messages</b><span className="muted">Pick a conversation, or start a new one.</span><button className="btn" onClick={() => setCreating(true)}>New chat</button></div>}
       </section>
       {creating && <NewChat me={me} people={people} online={online} onClose={() => setCreating(false)} onOpen={(id) => { setCreating(false); refresh(); open(id); }} />}
@@ -127,8 +197,8 @@ function NewChat({ me, people, online, onClose, onOpen }: { me: string; people: 
   );
 }
 
-function Thread({ room, me, who, people, online: onlineSeed, title, icon, onBack, onChanged, onLeft }: {
-  room: RoomRow; me: string; who: (e: string) => Person; people: Record<string, Person>; online: string[]; title: string; icon: React.ReactNode; onBack: () => void; onChanged: () => void; onLeft: () => void;
+function Thread({ seed, onSeedUsed, room, me, who, people, online: onlineSeed, title, icon, onBack, onChanged, onLeft }: {
+  seed: Seed; onSeedUsed: () => void; room: RoomRow; me: string; who: (e: string) => Person; people: Record<string, Person>; online: string[]; title: string; icon: React.ReactNode; onBack: () => void; onChanged: () => void; onLeft: () => void;
 }) {
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
@@ -144,10 +214,17 @@ function Thread({ room, me, who, people, online: onlineSeed, title, icon, onBack
   const [info, setInfo] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
-  const [tag, setTag] = useState(''); const [students, setStudents] = useState<{ id: string; name: string }[] | null>(null);
+  const [refs, setRefs] = useState<Pending[]>(seed ? [{ t: 'student', id: seed.id, label: seed.name }] : []);
+  const [picker, setPicker] = useState(false);
+  const [sugg, setSugg] = useState<{ id: string; name: string; school: string | null; programme: string | null }[]>([]);
   const body = useRef<HTMLDivElement>(null); const stick = useRef(true); const since = useRef<string | null>(null);
   const typed = useRef(0); const fileIn = useRef<HTMLInputElement>(null); const ta = useRef<HTMLTextAreaElement>(null);
 
+  useEffect(() => { if (seed) { onSeedUsed(); history.replaceState(null, '', `/chat?room=${room.id}`); } }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const hash = text.match(/(?:^|\s)#([^\n#]{0,30})$/);
+  const hq = hash ? hash[1] : null;
+  useEffect(() => { if (hq === null) { setSugg([]); return; } const t = setTimeout(() => fetch(`/api/chat/students?q=${encodeURIComponent(hq)}`).then((r) => r.json()).then((j) => setSugg((j.students || []).slice(0, 6))).catch(() => setSugg([])), 150); return () => clearTimeout(t); }, [hq]);
+  const addRefs = (add: Pending[]) => setRefs((cur) => { const key = (r: Pending) => (r.t === 'doc' ? `d${r.f}` : `s${r.id}`); const have = new Set(cur.map(key)); return [...cur, ...add.filter((r) => !have.has(key(r)))].slice(0, 5); });
   const merge = useCallback((add: ChatMsg[]) => {
     if (!add.length) return;
     setMsgs((cur) => {
@@ -179,17 +256,17 @@ function Thread({ room, me, who, people, online: onlineSeed, title, icon, onBack
   }
 
   async function send() {
-    const t = text.trim(); if ((!t && !file) || busy) return;
+    const t = text.trim(); if ((!t && !file && !refs.length) || busy) return;
     setBusy(true); setErr('');
     try {
       if (editing) { const j = await api(`/api/chat/messages/${editing.id}`, json('PATCH', { body: t })); merge([j.message]); setEditing(null); }
       else {
         let init: RequestInit;
-        if (file) { const f = new FormData(); f.set('body', t); f.set('file', await shrink(file)); if (reply) f.set('replyTo', reply.id); if (tag) f.set('applicationId', tag); init = { method: 'POST', body: f }; }
-        else init = json('POST', { body: t, replyTo: reply?.id, applicationId: tag || null });
+        if (file) { const f = new FormData(); f.set('body', t); f.set('file', await shrink(file)); if (reply) f.set('replyTo', reply.id); f.set('refs', JSON.stringify(refs.map(({ label: _l, ...r }) => r))); init = { method: 'POST', body: f }; }
+        else init = json('POST', { body: t, replyTo: reply?.id, refs: refs.map(({ label: _l, ...r }) => r) });
         const j = await api(`/api/chat/rooms/${room.id}`, init); stick.current = true; merge([j.message]);
       }
-      setText(''); setFile(null); setReply(null); setTag(''); setEmoji(false); if (ta.current) ta.current.style.height = 'auto'; onChanged();
+      setText(''); setFile(null); setReply(null); setRefs([]); setEmoji(false); if (ta.current) ta.current.style.height = 'auto'; onChanged();
     } catch (e) { setErr((e as Error).message); }
     setBusy(false);
   }
@@ -198,7 +275,6 @@ function Thread({ room, me, who, people, online: onlineSeed, title, icon, onBack
   const del = async (m: ChatMsg) => { setSel(null); if (!confirm('Delete this message for everyone?')) return; try { merge([(await api(`/api/chat/messages/${m.id}`, { method: 'DELETE' })).message]); onChanged(); } catch (x) { setErr((x as Error).message); } };
   const startEdit = (m: ChatMsg) => { setSel(null); setEditing(m); setReply(null); setText(m.body); setFile(null); setTimeout(() => ta.current?.focus(), 0); };
   const startReply = (m: ChatMsg) => { setSel(null); setReply(m); setEditing(null); setTimeout(() => ta.current?.focus(), 0); };
-  async function pickStudent() { if (students === null) setStudents(await fetch('/api/chat/students').then((r) => r.json()).then((j) => j.students || []).catch(() => [])); }
 
   const group = room.kind === 'group', otherEmail = room.members.find((m) => m !== me) || me;
   const otherMem = members.find((m) => m.email === otherEmail);
@@ -236,11 +312,12 @@ function Thread({ room, me, who, people, online: onlineSeed, title, icon, onBack
                   <div className={`bub ${gone ? 'gone' : ''} ${sel === m.id ? 'sel' : ''}`} onClick={(e) => { e.stopPropagation(); if (!gone && !(e.target as HTMLElement).closest('a')) setSel(sel === m.id ? null : m.id); }}>
                     {m.reply && <div className="quote"><b>{who(m.reply.sender).name.split(' ')[0]}</b><span>{m.reply.text}</span></div>}
                     {gone ? <p><em>🚫 This message was deleted</em></p> : <>
-                      {m.student && <Link href={`/applications/${m.application_id}`} className="stu-chip" onClick={(e) => e.stopPropagation()}><Icon n="file" size={13} /> {m.student}</Link>}
+                      {m.cards.length > 0 && <Cards cards={m.cards} mine={mine} />}
                       {m.att && (m.att.mime.startsWith('image/')
                         ? <a href={m.att.url} target="_blank" rel="noreferrer" className="att-img" onClick={(e) => e.stopPropagation()}>{/* eslint-disable-next-line @next/next/no-img-element */}<img src={m.att.url} alt={m.att.name} loading="lazy" /></a>
                         : <a href={m.att.url} target="_blank" rel="noreferrer" className="att-file" onClick={(e) => e.stopPropagation()}><span className="ico"><Icon n="file" size={18} /></span><div><b>{m.att.name}</b><small>{size(m.att.size)}</small></div><Icon n="download" size={16} /></a>)}
                       {m.body && <p><Rich text={m.body} mine={mine} /></p>}
+                      {m.body && <LinkCard body={m.body} />}
                     </>}
                     <small>{hm(m.created_at)}{m.edited_at && !gone ? ' · edited' : ''}{seen ? ' · Seen' : ''}</small>
                   </div>
@@ -264,21 +341,26 @@ function Thread({ room, me, who, people, online: onlineSeed, title, icon, onBack
         {err && <div className="err-line">{err} <button className="linkish" onClick={() => setErr('')}>dismiss</button></div>}
         {(reply || editing) && <div className="ctx"><div><b>{editing ? 'Editing message' : `Replying to ${who(reply!.sender).name.split(' ')[0]}`}</b><span>{(editing || reply)!.body || (reply?.att ? `📎 ${reply.att.name}` : '')}</span></div><button className="iconbtn" aria-label="Cancel" onClick={() => { setReply(null); setEditing(null); if (editing) setText(''); }}>×</button></div>}
         {file && <div className="ctx"><div><b>📎 {file.name}</b><span>{size(file.size)}{file.type.startsWith('image/') ? ' · photo will be resized' : ''}</span></div><button className="iconbtn" aria-label="Remove file" onClick={() => setFile(null)}>×</button></div>}
-        {tag !== '' || students ? (
-          <div className="chat-tag"><select value={tag} onChange={(e) => setTag(e.target.value)}><option value="">About which student? (optional)</option>{(students || []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select><button className="iconbtn" aria-label="Remove tag" onClick={() => { setStudents(null); setTag(''); }}>×</button></div>
-        ) : null}
+        {refs.length > 0 && <div className="refchips">{refs.map((r, i) => <span key={i} className="refchip">{r.t === 'doc' ? '📄' : '👤'} {r.label}<button aria-label="Remove" onClick={() => setRefs((c) => c.filter((_, j) => j !== i))}>×</button></span>)}</div>}
+        {sugg.length > 0 && hq !== null && (
+          <div className="sugg">
+            <div className="sugg-h">Quote a student</div>
+            {sugg.map((u) => <button key={u.id} onClick={() => { addRefs([{ t: 'student', id: u.id, label: u.name }]); setText((t) => t.replace(/(^|\s)#[^\n#]{0,30}$/, '$1')); ta.current?.focus(); }}><span className="sinit">{initials2(u.name)}</span><div><b>{u.name}</b><small>{[u.school, u.programme].filter(Boolean).join(' · ')}</small></div></button>)}
+          </div>
+        )}
         {emoji && <div className="picker">{PICKER.map((e) => <button key={e} onClick={() => { setText((t) => t + e); ta.current?.focus(); }}>{e}</button>)}</div>}
         <div className="chat-row">
           <input ref={fileIn} type="file" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) { setFile(f); setEditing(null); } e.target.value = ''; }} />
           <button className="iconbtn" title="Attach a file or photo" onClick={() => fileIn.current?.click()} disabled={!!editing}><Icon n="upload" size={18} /></button>
           <button className="iconbtn" title="Emoji" onClick={(e) => { e.stopPropagation(); setEmoji((v) => !v); }}>🙂</button>
-          <button className="iconbtn" title="Mention a student" onClick={pickStudent} disabled={!!editing}><Icon n="file" size={18} /></button>
-          <textarea ref={ta} value={text} rows={1} placeholder={editing ? 'Edit your message…' : `Message ${group ? title : title.split(' ')[0]}…`} maxLength={2000}
+          <button className="iconbtn" title="Quote a student or share their documents  (or type #)" onClick={() => setPicker(true)} disabled={!!editing}><span style={{ fontWeight: 700, fontSize: 17 }}>#</span></button>
+          <textarea ref={ta} value={text} rows={1} placeholder={editing ? 'Edit your message…' : `Message ${group ? title : title.split(' ')[0]}…  (type # to quote a student)`} maxLength={2000}
             onChange={(e) => { setText(e.target.value); typing(); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 140) + 'px'; }}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } if (e.key === 'Escape') { setReply(null); setEditing(null); } }} />
-          <button className="btn chat-send" onClick={send} disabled={busy || (!text.trim() && !file)} aria-label={editing ? 'Save' : 'Send'}><Icon n={editing ? 'check' : 'send'} size={17} /></button>
+          <button className="btn chat-send" onClick={send} disabled={busy || (!text.trim() && !file && !refs.length)} aria-label={editing ? 'Save' : 'Send'}><Icon n={editing ? 'check' : 'send'} size={17} /></button>
         </div>
       </footer>
+      {picker && <SharePicker onAdd={addRefs} onClose={() => setPicker(false)} />}
       {info && <InfoPanel room={room} me={me} who={who} people={people} online={online} members={members} title={title} onClose={() => setInfo(false)} onChanged={() => { poll(); onChanged(); }} onLeft={onLeft} />}
     </div>
   );

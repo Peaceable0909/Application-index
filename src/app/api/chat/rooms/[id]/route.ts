@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { admin } from '@/lib/supabase';
 import { currentStaff } from '@/lib/auth';
-import { ATT_MAX, canTag, COLORS_OK, membership, MSG_COLS, previewOf, shapeMessages } from '@/lib/chat';
+import { ATT_MAX, cleanRefs, COLORS_OK, membership, MSG_COLS, previewOf, shapeMessages } from '@/lib/chat';
 
 export const dynamic = 'force-dynamic';
 type Ctx = { params: Promise<{ id: string }> };
@@ -20,7 +20,7 @@ export async function GET(req: Request, { params }: Ctx) {
   else q = q.order('created_at', { ascending: false }).limit(60);
   const { data } = await q;
   const rows = (data || []) as never[];
-  const messages = (await shapeMessages(rows)).sort((a, b) => a.created_at.localeCompare(b.created_at));
+  const messages = (await shapeMessages(rows, me)).sort((a, b) => a.created_at.localeCompare(b.created_at));
   const now = new Date().toISOString();
   await Promise.all([
     db.from('portal_room_members').update({ last_read_at: now }).eq('room_id', id).eq('email', me.email),
@@ -43,14 +43,16 @@ export async function POST(req: Request, { params }: Ctx) {
   const me = await currentStaff(); if (!me) return bad('unauthorized', 401);
   const { id } = await params;
   if (!(await membership(id, me.email))) return bad('Not found', 404);
-  let body = '', replyTo: string | null = null, appId: string | null = null, file: File | null = null;
+  let body = '', replyTo: string | null = null, rawRefs: unknown = [], file: File | null = null;
   if ((req.headers.get('content-type') || '').includes('multipart/form-data')) {
     const f = await req.formData();
-    body = String(f.get('body') || ''); replyTo = String(f.get('replyTo') || '') || null; appId = String(f.get('applicationId') || '') || null;
+    body = String(f.get('body') || ''); replyTo = String(f.get('replyTo') || '') || null; try { rawRefs = JSON.parse(String(f.get('refs') || '[]')); } catch { rawRefs = []; }
     const x = f.get('file'); if (x instanceof File && x.size) file = x;
-  } else { const j = (await req.json().catch(() => ({}))) as { body?: string; replyTo?: string; applicationId?: string }; body = j.body || ''; replyTo = j.replyTo || null; appId = j.applicationId || null; }
+  } else { const j = (await req.json().catch(() => ({}))) as { body?: string; replyTo?: string; refs?: unknown }; body = j.body || ''; replyTo = j.replyTo || null; rawRefs = j.refs || []; }
   body = body.trim().slice(0, 2000);
-  if (!body && !file) return bad('Write a message or attach a file.');
+  const hosts = [req.headers.get('host') || '', process.env.NEXT_PUBLIC_SITE_URL ? new URL(process.env.NEXT_PUBLIC_SITE_URL).host : ''].filter(Boolean);
+  const refs = await cleanRefs(me, rawRefs, body, hosts);
+  if (!body && !file && !refs.length) return bad('Write a message or attach something.');
   const db = admin();
   let att: Record<string, unknown> = {};
   if (file) {
@@ -62,13 +64,13 @@ export async function POST(req: Request, { params }: Ctx) {
     att = { att_path: path, att_name: file.name.slice(0, 120), att_size: file.size, att_mime: file.type || 'application/octet-stream' };
   }
   if (replyTo) { const { data: r } = await db.from('portal_chat_msgs').select('id').eq('id', replyTo).eq('room_id', id).maybeSingle(); if (!r) replyTo = null; }
-  const { data, error } = await db.from('portal_chat_msgs').insert({ room_id: id, sender: me.email, body, reply_to: replyTo, application_id: await canTag(me, appId), ...att }).select(MSG_COLS).single();
+  const { data, error } = await db.from('portal_chat_msgs').insert({ room_id: id, sender: me.email, body, reply_to: replyTo, refs, ...att }).select(MSG_COLS).single();
   if (error || !data) return bad(error?.message || 'Could not send', 500);
   await Promise.all([
-    db.from('portal_rooms').update({ last_message_at: data.created_at, last_preview: previewOf(body, att.att_name as string), last_sender: me.email }).eq('id', id),
+    db.from('portal_rooms').update({ last_message_at: data.created_at, last_preview: previewOf(body, (att.att_name as string) || (refs.length ? '👤 Shared a student' : null)), last_sender: me.email }).eq('id', id),
     db.from('portal_room_members').update({ typing_at: null, last_read_at: data.created_at }).eq('room_id', id).eq('email', me.email),
   ]);
-  return NextResponse.json({ message: (await shapeMessages([data as never]))[0] });
+  return NextResponse.json({ message: (await shapeMessages([data as never], me))[0] });
 }
 
 // Room settings: typing ping, mute, rename/recolour (owner), add/remove people (owner), leave.

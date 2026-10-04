@@ -132,6 +132,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
           {judged && missing.length > 0 && <span className="badge plain red">Missing Docs</span>}
           {app.status && <span className={`badge plain tone-${statusTone(app.status)}`}>{app.status}</span>}
           {app.counselor && <span className="badge plain purple"><Icon n="users" size={13} /> Assigned: {app.counselor}</span>}
+          <Link href={`/chat?about=${encodeURIComponent(id)}`} className="badge plain blue" title="Send this student to a teammate in chat"><Icon n="chat" size={13} /> Discuss in chat</Link>
           {app.in_regent && app.payment && <span className={`badge plain ${/^paid/i.test(app.payment) ? 'green' : 'amber'}`}>{app.payment}</span>}
           <details className="dd">
             <summary className="iconbtn" style={{ width: 36, height: 36 }} aria-label="More"><Icon n="more" size={18} /></summary>
