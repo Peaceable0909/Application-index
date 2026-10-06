@@ -4,10 +4,10 @@ import { effType, missingDocs } from './docs';
 import { FINAL_STATUSES, REQUIRED_DOCS, STALE_DAYS } from './constants';
 import { askAi, hashOf, numbersWithin } from './ai';
 
-export type AppFull = AppRow & { created_at: string; dob: string | null; age: string | null; intake: string | null; deadline: string | null };
+export type AppFull = AppRow & { created_at: string; dob: string | null; age: string | null; intake: string | null; deadline: string | null; preferred_name: string | null };
 export type SRow = { a: AppFull; have: Set<string>; docCount: number; judged: boolean; missing: string[]; reasons: string[]; submissions: number };
 
-const COLS = 'application_id,name,email,phone,school,programme,country,city,counselor,status,submitted_at,created_at,last_activity_at,student_key,in_master,has_raw,progress,in_regent,payment,interview,opp_id,drive_folder_id,dob,age,intake,deadline';
+const COLS = 'application_id,name,email,phone,school,programme,country,city,counselor,status,submitted_at,created_at,last_activity_at,student_key,in_master,has_raw,progress,in_regent,payment,interview,opp_id,drive_folder_id,dob,age,intake,deadline,preferred_name';
 const DAY = 864e5;
 
 /** One row per student (newest submission), with documents pooled across their submissions. */

@@ -191,9 +191,9 @@ function portalUpdateRow_(p) {
     const H = portalHeaders_(sheet);
     const row = portalFindRow_(sheet, H, p.applicationId);
     if (!row) throw new Error('Application not found in sheet');
-    const map = { status: 'Application Status', counselor: 'Counselor', notes: 'Notes' };
+    const map = { status: 'Application Status', counselor: 'Counselor', notes: 'Notes', phone: 'Phone', city: 'City' };
     Object.keys(p.fields || {}).forEach(function (k) {
-      if (map[k] && H[map[k]]) sheet.getRange(row, H[map[k]]).setValue(p.fields[k]);
+      if (map[k] && H[map[k]]) { const cell = sheet.getRange(row, H[map[k]]); if (k === 'phone') cell.setNumberFormat('@'); cell.setValue(p.fields[k]); }
     });
     if (p.notesAppend && H['Notes']) portalAppendNote_(sheet.getRange(row, H['Notes']), p.notesAppend, p.by);
     return { row: row };
@@ -319,6 +319,8 @@ function portalUpdateMaster_(p) {
     const f = p.fields || {};
     if (f.status !== undefined) sheet.getRange(row, 13).setValue(f.status);
     if (f.counselor !== undefined) sheet.getRange(row, 12).setValue(f.counselor);
+    if (f.phone !== undefined) { const c = sheet.getRange(row, 4); c.setNumberFormat('@'); c.setValue(f.phone); }   // keeps +234… as text
+    if (f.city !== undefined) sheet.getRange(row, 8).setValue(f.city);
     if (p.notesAppend) portalAppendNote_(sheet.getRange(row, 14), p.notesAppend, p.by);
     return { row: row };
   } finally { lock.releaseLock(); }

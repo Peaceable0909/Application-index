@@ -12,6 +12,7 @@ export function describeActivity(kind: string, d: Record<string, string>): { tit
     case 'payment_change': return { title: `Payment · ${d.to || '—'}`, icon: 'check-circle', tone: 'green' };
     case 'interview_change': return { title: `Interview · ${d.to || '—'}`, icon: 'clock', tone: 'purple' };
     case 'doc_uploaded': return { title: `Document uploaded${d.name ? ` · ${d.name.split(' - ').pop()}` : ''}`, icon: 'upload', tone: 'green' };
+    case 'details_updated': return { title: 'Student updated their details', icon: 'user', tone: '' };
     case 'doc_retyped': return { title: `Document re-labelled · ${d.type || ''}`, icon: 'file', tone: '' };
     case 'email_sent': return { title: `Email sent${d.subject ? ` · ${d.subject}` : ''}`, icon: 'mail', tone: '' };
     case 'moved_to_master': return { title: 'Added to Sheet1', icon: 'check-circle', tone: 'green' };

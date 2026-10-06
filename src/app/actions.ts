@@ -1044,3 +1044,27 @@ export async function inviteOneStudent(f: FormData) {
   revalidatePath('/messages');
   back(id, res.sent ? 'Invitation sent.' : `Not sent: ${res.skipped.map((x) => x.why).join('; ')}.`, !res.sent, ret);
 }
+
+/** A student updates the few details they own: phone, city and what they like to be called. Written to the portal and to your Google Sheet. */
+export async function studentSaveDetails(f: FormData): Promise<{ ok: boolean; error?: string; sheet?: boolean }> {
+  const me = await currentStudent();
+  if (!me) return { ok: false, error: 'Please sign in again.' };
+  const clean = (v: string, n: number) => v.replace(/\s+/g, ' ').trim().slice(0, n);
+  const phone = clean(s(f, 'phone'), 30), city = clean(s(f, 'city'), 60), preferred = clean(s(f, 'preferred'), 40);
+  if (phone && !/^[+\d][\d\s().-]{6,}$/.test(phone)) return { ok: false, error: 'That phone number doesn’t look right. Include your country code, like +234…' };
+  if (city && !/^[\p{L}\p{M}][\p{L}\p{M}\s'.,-]*$/u.test(city)) return { ok: false, error: 'City should only contain letters.' };
+  if (preferred && !/^[\p{L}\p{M}][\p{L}\p{M}\s'.-]*$/u.test(preferred)) return { ok: false, error: 'Preferred name should only contain letters.' };
+  const db = admin();
+  let sheet = true;
+  for (const a of me.apps) {
+    const { data: cur } = await db.from('portal_applications').select('phone, city').eq('application_id', a.application_id).single();
+    await db.from('portal_applications').update({ phone: phone || null, city: city || null, preferred_name: preferred || null }).eq('application_id', a.application_id);
+    const fields: Record<string, string> = {};
+    if ((cur?.phone || '') !== phone) fields.phone = phone;
+    if ((cur?.city || '') !== city) fields.city = city;
+    if (Object.keys(fields).length) { try { await writeBack(a.application_id, fields); } catch { sheet = false; } }
+  }
+  await log(me.apps[0].application_id, me.email, 'details_updated', { fields: 'contact details', by: 'student' });
+  revalidatePath('/student'); revalidatePath('/applications');
+  return { ok: true, sheet };
+}

@@ -18,9 +18,9 @@ export function docRequestEmail(r: SRow, replyTo: string) {
   const uni = [schoolShort(a.school), tidy(a.programme)].filter(Boolean).join(' · ');
   const n = r.missing.length, total = REQUIRED_DOCS.length;
   const subject = `Documents needed for your application${a.school ? ` — ${schoolShort(a.school)}` : ''}`;
-  const body = `Hi ${firstName(a.name)},\n\nWe're preparing your application${uni ? ` (${uni})` : ''} and still need the following ${n === 1 ? 'document' : 'documents'}:\n\n${r.missing.map((d) => `• ${d}`).join('\n')}\n\nYou can upload ${n === 1 ? 'it' : 'them'} in your student portal (${site()}/student/login, sign in with this email address) or reply to this email with clear scans or photos attached.\n\nIf you've already sent any of these, just let us know and we'll check.`;
+  const body = `Hi ${firstName(a.preferred_name || a.name)},\n\nWe're preparing your application${uni ? ` (${uni})` : ''} and still need the following ${n === 1 ? 'document' : 'documents'}:\n\n${r.missing.map((d) => `• ${d}`).join('\n')}\n\nYou can upload ${n === 1 ? 'it' : 'them'} in your student portal (${site()}/student/login, sign in with this email address) or reply to this email with clear scans or photos attached.\n\nIf you've already sent any of these, just let us know and we'll check.`;
   const html = {
-    eyebrow: 'Documents needed', title: n === 1 ? 'One document to go' : `${n} documents to go`, greeting: `Hi ${firstName(a.name)},`, preheader: `We still need ${r.missing.join(', ')} to move your application forward.`,
+    eyebrow: 'Documents needed', title: n === 1 ? 'One document to go' : `${n} documents to go`, greeting: `Hi ${firstName(a.preferred_name || a.name)},`, preheader: `We still need ${r.missing.join(', ')} to move your application forward.`,
     blocks: [
       { type: 'p' as const, text: `Thank you for applying${uni ? ` to ${uni}` : ''}. We’re preparing your application and need ${n === 1 ? 'one more document' : 'a few more documents'} from you before we can submit it.` },
       { type: 'checklist' as const, title: n === 1 ? 'Still needed' : 'Still needed', items: r.missing, received: total - n, total },
@@ -118,9 +118,9 @@ export function paymentReminderEmail(r: SRow, replyTo: string) {
   const a = r.a, uni = [schoolShort(a.school), tidy(a.programme)].filter(Boolean).join(' · ');
   const ref = a.opp_id ? a.opp_id.replace(/^OPP ID-/i, '') : '';
   const subject = `Payment reminder${a.school ? ` — ${schoolShort(a.school)}` : ''}`;
-  const body = `Hi ${firstName(a.name)},\n\nOur records show the payment for your application${uni ? ` (${uni})` : ''} has not been received yet.${ref ? `\n\nReference: ${ref}` : ''}\n\nOnce you have paid, please reply to this email with your proof of payment so we can move your application forward. If you have already paid, just let us know and we'll check straight away.`;
+  const body = `Hi ${firstName(a.preferred_name || a.name)},\n\nOur records show the payment for your application${uni ? ` (${uni})` : ''} has not been received yet.${ref ? `\n\nReference: ${ref}` : ''}\n\nOnce you have paid, please reply to this email with your proof of payment so we can move your application forward. If you have already paid, just let us know and we'll check straight away.`;
   const html = {
-    eyebrow: 'Payment reminder', title: 'Payment still pending', greeting: `Hi ${firstName(a.name)},`, preheader: 'We have not received the payment for your application yet.',
+    eyebrow: 'Payment reminder', title: 'Payment still pending', greeting: `Hi ${firstName(a.preferred_name || a.name)},`, preheader: 'We have not received the payment for your application yet.',
     blocks: [
       { type: 'p' as const, text: `Our records show the payment for your application${uni ? ` to ${uni}` : ''} has not been received yet.` },
       ...(ref ? [{ type: 'students' as const, rows: [{ name: uni || 'Your application', meta: `Reference: ${ref}`, status: 'Payment pending' }] }] : []),

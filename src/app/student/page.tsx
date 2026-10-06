@@ -11,6 +11,7 @@ import Avatar from '@/components/Avatar';
 import Icon from '@/components/Icon';
 import StudentUploader from '@/components/StudentUploader';
 import StudentMessage from '@/components/StudentMessage';
+import StudentDetails from '@/components/StudentDetails';
 
 export const maxDuration = 60;
 const OTHER_TYPES = ALL_DOC_TYPES.filter((t) => !(REQUIRED_DOCS as readonly string[]).includes(t));
@@ -36,8 +37,11 @@ export default async function StudentHome() {
     const missing = REQUIRED_DOCS.filter((t) => !docs.some((d) => d.type === t));
     return { a, ids, docs, folderApp, c, prof, missing, canUpload: !!folderApp.drive_folder_id };
   });
-  const first = me.name.split(/[\s,]+/).filter(Boolean)[0] || 'there';
+  const first = me.apps[0].preferred_name || me.name.split(/[\s,]+/).filter(Boolean)[0] || 'there';
 
+  const a0 = me.apps[0];
+  const refId = a0.opp_id || a0.student_ref || `PP-${a0.application_id.replace(/[^a-z0-9]/gi, '').slice(0, 8).toUpperCase()}`;
+  const locked: [string, string][] = [['Name', a0.name], ['Email', me.email], ['Country', a0.country || ''], ['Reference', refId], ['Applied', a0.submitted_at ? new Date(a0.submitted_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '']];
   return (
     <>
       <div className="head"><h1>Hi {first} 👋</h1></div>
@@ -108,6 +112,7 @@ export default async function StudentHome() {
           </div>
         );
       })}
+      <StudentDetails locked={locked} phone={a0.phone || ''} city={a0.city || ''} preferred={a0.preferred_name || ''} />
       <p className="muted" style={{ fontSize: 13, textAlign: 'center', marginTop: 24 }}>Questions? Use the message box above. Your documents are stored privately and only your counselors can see them.</p>
     </>
   );

@@ -5,11 +5,12 @@ export type StudentApp = {
   application_id: string; name: string; email: string | null; school: string | null; programme: string | null; status: string | null; progress: number | null;
   counselor: string | null; intake: string | null; deadline: string | null; drive_folder_id: string | null; student_key: string; in_regent: boolean; payment: string | null;
   submitted_at: string | null; last_activity_at: string;
+  phone: string | null; city: string | null; country: string | null; opp_id: string | null; student_ref: string | null; preferred_name: string | null;
 };
 export type StudentDoc = { id: string; application_id: string; name: string; type: string; added: string; size: number; mime: string };
 export type StudentView = { email: string; name: string; apps: StudentApp[]; docs: StudentDoc[]; ids: string[] };
 
-const COLS = 'application_id, name, email, school, programme, status, progress, counselor, intake, deadline, drive_folder_id, student_key, in_regent, payment, submitted_at, last_activity_at';
+const COLS = 'application_id, name, email, school, programme, status, progress, counselor, intake, deadline, drive_folder_id, student_key, in_regent, payment, submitted_at, last_activity_at, phone, city, country, opp_id, student_ref, preferred_name';
 const likeEscape = (s: string) => s.replace(/[\\%_]/g, (m) => `\\${m}`);
 
 /** Applications that belong to this email address (a student can have one per university). Test rows never count. */
