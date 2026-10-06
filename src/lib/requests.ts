@@ -18,16 +18,16 @@ export function docRequestEmail(r: SRow, replyTo: string) {
   const uni = [schoolShort(a.school), tidy(a.programme)].filter(Boolean).join(' · ');
   const n = r.missing.length, total = REQUIRED_DOCS.length;
   const subject = `Documents needed for your application${a.school ? ` — ${schoolShort(a.school)}` : ''}`;
-  const body = `Hi ${firstName(a.name)},\n\nWe're preparing your application${uni ? ` (${uni})` : ''} and still need the following ${n === 1 ? 'document' : 'documents'}:\n\n${r.missing.map((d) => `• ${d}`).join('\n')}\n\nPlease reply to this email with clear scans or photos attached (PDF preferred) and we'll add ${n === 1 ? 'it' : 'them'} to your file.\n\nIf you've already sent any of these, just let us know and we'll check.`;
+  const body = `Hi ${firstName(a.name)},\n\nWe're preparing your application${uni ? ` (${uni})` : ''} and still need the following ${n === 1 ? 'document' : 'documents'}:\n\n${r.missing.map((d) => `• ${d}`).join('\n')}\n\nYou can upload ${n === 1 ? 'it' : 'them'} in your student portal (${site()}/student/login, sign in with this email address) or reply to this email with clear scans or photos attached.\n\nIf you've already sent any of these, just let us know and we'll check.`;
   const html = {
     eyebrow: 'Documents needed', title: n === 1 ? 'One document to go' : `${n} documents to go`, greeting: `Hi ${firstName(a.name)},`, preheader: `We still need ${r.missing.join(', ')} to move your application forward.`,
     blocks: [
       { type: 'p' as const, text: `Thank you for applying${uni ? ` to ${uni}` : ''}. We’re preparing your application and need ${n === 1 ? 'one more document' : 'a few more documents'} from you before we can submit it.` },
       { type: 'checklist' as const, title: n === 1 ? 'Still needed' : 'Still needed', items: r.missing, received: total - n, total },
-      { type: 'p' as const, text: 'Please reply to this email with clear scans or photos attached (PDF preferred), and we’ll add them to your file straight away.' },
+      { type: 'p' as const, text: 'The quickest way is to upload them in your student portal. Sign in with this email address (we’ll send you a code, there is no password). You can also reply to this email with clear scans or photos attached.' },
       { type: 'note' as const, text: 'Already sent one of these? Just reply and tell us. We’ll check right away.' },
     ],
-    cta: replyTo ? { label: 'Reply with my documents', href: `mailto:${replyTo}?subject=${encodeURIComponent('My documents — ' + a.name)}` } : undefined,
+    cta: { label: 'Upload my documents', href: `${site()}/student/login` },
   };
   return { subject, body, html };
 }

@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { currentStaff } from '@/lib/auth';
 import { sessionClient } from '@/lib/supabase';
+import { currentStudent } from '@/lib/student';
 import { signIn, signInWithGoogle, signOut } from '../actions';
 import Mark from '@/components/Mark';
 import Btn from '@/components/Btn';
@@ -8,6 +9,7 @@ import Btn from '@/components/Btn';
 export default async function Login({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const { error } = await searchParams;
   if (await currentStaff()) redirect('/');
+  if (await currentStudent()) redirect('/student');
   const { data } = await (await sessionClient()).auth.getUser();
   const blocked = data.user?.email;
   return (
@@ -35,6 +37,7 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
           <Btn className="ghost wide-btn">Sign in with password</Btn>
           {error && <div className="err">{error}</div>}
         </form>
+        <p className="muted" style={{ fontSize: 12.5, margin: '14px 0 0', textAlign: 'center' }}>Applying as a student? <a href="/student/login">Student portal sign-in</a></p>
       </div>
     </div>
   );

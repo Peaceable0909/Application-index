@@ -12,7 +12,10 @@ export type Block =
   | { type: 'list'; items: string[] }
   | { type: 'checklist'; title: string; items: string[]; received?: number; total?: number; tone?: 'warn' | 'ok' }
   | { type: 'students'; title?: string; rows: { name: string; meta?: string; status?: string; needs?: string }[] }
-  | { type: 'note'; text: string };
+  | { type: 'note'; text: string }
+  | { type: 'code'; code: string; note?: string }
+  | { type: 'quote'; from: string; text: string }
+  | { type: 'steps'; title?: string; items: string[] };
 export type Sign = { name: string; title?: string | null; phone?: string | null; email?: string | null; avatar?: string | null };
 export type EmailSpec = { preheader?: string; eyebrow?: string; title?: string; greeting?: string; blocks: Block[]; cta?: { label: string; href: string }; sign?: Sign; footerNote?: string };
 
@@ -31,6 +34,9 @@ function block(b: Block): string {
         <div style="font:700 11.5px ${SANS};letter-spacing:.12em;text-transform:uppercase;color:${accent};margin:0 0 12px">${esc(b.title)}</div>${bar}
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">${b.items.map((i) => `<tr><td valign="middle" style="width:30px;padding:5px 0"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="20" height="20" align="center" style="width:20px;height:20px;border-radius:50%;background:#fff;border:2px solid ${accent};font:700 11px/16px ${SANS};color:${accent}">${warn ? '!' : '✓'}</td></tr></table></td><td valign="middle" style="padding:5px 0;font:600 15.5px/1.5 ${SANS};color:${NAVY}">${esc(i)}</td></tr>`).join('')}</table></td></tr></table>`;
     }
+    case 'code': return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:6px 0 22px"><tr><td align="center" style="background:${PAPER};border:1px solid ${LINE};border-radius:14px;padding:26px 16px"><div style="font:700 11.5px ${SANS};letter-spacing:.14em;text-transform:uppercase;color:${MUTED};margin-bottom:10px">Your sign-in code</div><div style="font:700 38px/1.1 'SFMono-Regular',Menlo,Consolas,monospace;letter-spacing:10px;color:${NAVY};padding-left:10px">${esc(b.code)}</div>${b.note ? `<div style="font:400 13px ${SANS};color:${MUTED};margin-top:12px">${esc(b.note)}</div>` : ''}</td></tr></table>`;
+    case 'quote': return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:6px 0 20px"><tr><td style="background:#f3f7ff;border-left:4px solid ${BLUE};border-radius:10px;padding:16px 18px"><div style="font:700 12px ${SANS};color:${BLUE};margin-bottom:6px">${esc(b.from)}</div><div style="font:400 15.5px/1.7 ${SANS};color:${NAVY}">${nl2br(b.text)}</div></td></tr></table>`;
+    case 'steps': return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:6px 0 20px">${b.title ? `<tr><td colspan="2" style="padding:0 0 8px;font:700 11.5px ${SANS};letter-spacing:.12em;text-transform:uppercase;color:${MUTED}">${esc(b.title)}</td></tr>` : ''}${b.items.map((i, n) => `<tr><td valign="top" style="width:34px;padding:6px 0"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="24" height="24" align="center" style="width:24px;height:24px;border-radius:50%;background:${NAVY};color:${GOLD_L};font:700 12px/24px ${SANS}">${n + 1}</td></tr></table></td><td valign="middle" style="padding:6px 0;font:400 15.5px/1.55 ${SANS};color:${TEXT}">${esc(i)}</td></tr>`).join('')}</table>`;
     case 'students': return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:6px 0 20px;border:1px solid ${LINE};border-radius:12px;overflow:hidden">
       ${b.title ? `<tr><td colspan="2" style="background:${PAPER};padding:11px 16px;border-bottom:1px solid ${LINE};font:700 11.5px ${SANS};letter-spacing:.12em;text-transform:uppercase;color:${MUTED}">${esc(b.title)}</td></tr>` : ''}
       ${b.rows.map((r, i) => `<tr><td valign="top" style="padding:13px 16px;${i ? `border-top:1px solid ${LINE};` : ''}">

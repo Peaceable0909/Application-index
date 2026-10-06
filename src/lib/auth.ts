@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { admin, sessionClient } from './supabase';
 import { counselorKey } from './docs';
+import { currentStudent } from './student';
 
 export type Staff = {
   email: string; role: 'admin' | 'staff' | 'counselor'; last_seen_at: string | null; counselor_key: string | null;
@@ -19,7 +20,7 @@ export async function currentStaff(): Promise<Staff | null> {
 /** Any signed-in person on the allowlist (team member or counselor). */
 export async function requireStaff(): Promise<Staff> {
   const s = await currentStaff();
-  if (!s) redirect('/login');
+  if (!s) { if (await currentStudent()) redirect('/student'); redirect('/login'); }
   return s;
 }
 

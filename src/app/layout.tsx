@@ -13,6 +13,8 @@ import NavProgress from '@/components/NavProgress';
 import MobileMenu from '@/components/MobileMenu';
 import Presence from '@/components/Presence';
 import { unreadTotal } from '@/lib/chat';
+import { currentStudent } from '@/lib/student';
+import StudentShell from '@/components/StudentShell';
 
 const ui = Inter({ subsets: ['latin'], variable: '--font-ui', display: 'swap' });
 const display = Instrument_Serif({ subsets: ['latin'], weight: '400', style: ['normal', 'italic'], variable: '--font-display', display: 'swap' });
@@ -21,6 +23,7 @@ export const metadata = { title: 'Admissions Portal', description: 'Applications
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const staff = await currentStaff();
+  const student = staff ? null : await currentStudent();
   let taskCount = 0, chatCount = 0;
   if (staff) {
     const q = admin().from('portal_tasks').select('id', { count: 'exact', head: true }).eq('status', 'open');
@@ -47,7 +50,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <main>{children}</main>
             </div>
           </div>
-        ) : <main style={{ maxWidth: 'none' }}>{children}</main>}
+        ) : student ? <StudentShell me={student}>{children}</StudentShell> : <main style={{ maxWidth: 'none' }}>{children}</main>}
       </body>
     </html>
   );

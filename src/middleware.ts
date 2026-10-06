@@ -17,8 +17,9 @@ export async function middleware(req: NextRequest) {
   });
   const { data } = await sb.auth.getUser();
   const { pathname } = req.nextUrl;
-  if (!data.user && pathname !== '/login' && !pathname.startsWith('/auth/') && !pathname.startsWith('/api/sync') && pathname !== '/api/email/logo') {
-    return NextResponse.redirect(new URL('/login', req.url));
+  const isStudentArea = pathname === '/student' || pathname.startsWith('/student/');
+  if (!data.user && pathname !== '/login' && pathname !== '/student/login' && !pathname.startsWith('/auth/') && !pathname.startsWith('/api/sync') && pathname !== '/api/email/logo') {
+    return NextResponse.redirect(new URL(isStudentArea ? '/student/login' : '/login', req.url));
   }
   return res;
 }

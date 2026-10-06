@@ -2,16 +2,18 @@ import { NextResponse } from 'next/server';
 import { canAccessApp, currentStaff } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
 import { callScript } from '@/lib/appsScript';
+import { currentStudent } from '@/lib/student';
 
 // Streams a document from Drive to signed-in staff only. Only files that
 // belong to a known application can be fetched, so the Apps Script token can
 // never be used to read arbitrary Drive files through this route.
 export async function GET(req: Request, { params }: { params: Promise<{ fileId: string }> }) {
   const staff = await currentStaff();
-  if (!staff) return new NextResponse('Unauthorized', { status: 401 });
+  const student = staff ? null : await currentStudent();
+  if (!staff && !student) return new NextResponse('Unauthorized', { status: 401 });
   const { fileId } = await params;
   const { data: doc } = await admin().from('portal_documents').select('drive_file_id, size_bytes, application_id').eq('drive_file_id', fileId).maybeSingle();
-  if (!doc || !(await canAccessApp(staff, doc.application_id))) return new NextResponse('Not found', { status: 404 });
+  if (!doc || !(staff ? await canAccessApp(staff, doc.application_id) : student!.ids.includes(doc.application_id))) return new NextResponse('Not found', { status: 404 });
   if ((doc.size_bytes || 0) > 4 * 1024 * 1024) return new NextResponse('Too large to stream here; open it in Drive', { status: 413 });
   try {
     const f = await callScript<{ name: string; mimeType: string; base64: string }>('getFile', { fileId });

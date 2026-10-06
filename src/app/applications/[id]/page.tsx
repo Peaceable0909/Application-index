@@ -17,7 +17,7 @@ import { studentFacts, AppFull, StudentSummary } from '@/lib/overview';
 import Btn from '@/components/Btn';
 import Icon from '@/components/Icon';
 import { niceName } from '@/components/UserMenu';
-import { sendStudentReminder, saveDates, addNote, addReminder, addToMaster, completeReminder, createDraft, scanDocs, setDocType, dismissSuggestion, generateSummary, linkFolder, refreshDocuments, scanStudent, sendCounselorEmail, unlinkFolder, updateCounselor, updateRegent, updateStatus, uploadDocument } from '../../actions';
+import { inviteOneStudent, sendStudentReminder, saveDates, addNote, addReminder, addToMaster, completeReminder, createDraft, scanDocs, setDocType, dismissSuggestion, generateSummary, linkFolder, refreshDocuments, scanStudent, sendCounselorEmail, unlinkFolder, updateCounselor, updateRegent, updateStatus, uploadDocument } from '../../actions';
 
 type SP = { msg?: string; err?: string; preview?: string; tab?: string; compose?: string; draft?: string };
 const TABS = ['overview', 'documents', 'notes', 'activity', 'messages', 'regent', 'sources'] as const;
@@ -476,9 +476,11 @@ export default async function ApplicationPage({ params, searchParams }: { params
                 const needDocs = judged && missing.length > 0, needPay = app.in_regent && !/^paid/i.test(app.payment || '');
                 const lastOf = (prefix: string) => (messages || []).find((m) => m.to_kind === 'student' && m.subject.startsWith(prefix));
                 const lastDocs = lastOf('Documents needed'), lastPay = lastOf('Payment reminder');
-                if (!needDocs && !needPay) return null;
+                const lastInvite = lastOf('Your student portal');
+                if (!app.email && !needDocs && !needPay) return null;
                 return (
                   <div className="qa">
+                    {app.email && <form action={inviteOneStudent}><input type="hidden" name="id" value={id} /><Btn className="ghost sm" data-busy="Sending…"><Icon n="user-plus" size={14} /> {lastInvite ? 'Send the student-portal invitation again' : 'Invite to the student portal'}</Btn><small className="muted">{lastInvite ? `Last sent ${dateTime(lastInvite.created_at)}` : 'Lets them upload documents and see progress'}</small></form>}
                     {needDocs && <form action={sendStudentReminder}><input type="hidden" name="id" value={id} /><input type="hidden" name="kind" value="docs" /><Btn className="ghost sm" data-busy="Sending…"><Icon n="send" size={14} /> {lastDocs ? 'Send document request again' : 'Request missing documents'}</Btn><small className="muted">{lastDocs ? `Last sent ${dateTime(lastDocs.created_at)}` : `Needs ${missing.slice(0, 3).join(', ')}${missing.length > 3 ? '…' : ''}`}</small></form>}
                     {needPay && <form action={sendStudentReminder}><input type="hidden" name="id" value={id} /><input type="hidden" name="kind" value="payment" /><Btn className="ghost sm" data-busy="Sending…"><Icon n="send" size={14} /> {lastPay ? 'Send payment reminder again' : 'Send payment reminder'}</Btn><small className="muted">{lastPay ? `Last sent ${dateTime(lastPay.created_at)}` : 'Payment not received'}</small></form>}
                   </div>

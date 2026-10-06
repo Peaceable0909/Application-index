@@ -11,7 +11,9 @@ import { syncAll, syncFolders } from '@/lib/sync';
 import { STATUSES } from '@/lib/constants';
 import { requestDocs, summarise, digestEmail, sendPaymentReminders, summariseReminders } from '@/lib/requests';
 import { sendMail } from '@/lib/mail';
+import { site } from '@/lib/emailTemplate';
 import { audit } from '@/lib/audit';
+import { appsForEmail, currentStudent, isStudentEmail } from '@/lib/student';
 import { runBackup } from '@/lib/backup';
 import { notifyAssigned } from '@/lib/notify';
 import { after } from 'next/server';
@@ -884,4 +886,161 @@ export async function extractFile(fileId: string): Promise<{ ok: boolean; chars?
     await db.from('portal_doc_text').upsert({ ...row, text: '', chars: 0, truncated: false, method: null, error: /unknown action/i.test(msg) ? 'Your Apps Script needs the newest PortalApi.gs (it is missing “extractFull”).' : msg });
     return { ok: false, error: msg };
   }
+}
+
+// ================= Student portal =================
+const STUDENT_CODE_LIMIT = 5;   // sign-in codes per email per hour
+
+/** Step 1: email a 6-digit code. Same reply whether or not the address is on file, so nobody can probe who has applied. */
+export async function requestStudentCode(f: FormData) {
+  const email = s(f, 'email').toLowerCase();
+  if (!EMAIL_RE.test(email)) redirect('/student/login?error=' + encodeURIComponent('Enter a valid email address.'));
+  const db = admin();
+  const known = await isStudentEmail(email);
+  if (known) {
+    const since = new Date(Date.now() - 3600_000).toISOString();
+    const { count } = await db.from('portal_notify_log').select('id', { count: 'exact', head: true }).eq('email', email).eq('kind', 'student_code').gte('created_at', since);
+    if ((count || 0) >= STUDENT_CODE_LIMIT) redirect('/student/login?error=' + encodeURIComponent('Too many codes requested. Please wait a little and try again.'));
+    await db.auth.admin.createUser({ email, email_confirm: true }).catch(() => null);   // no-op if they already exist
+    const { data, error } = await db.auth.admin.generateLink({ type: 'magiclink', email });
+    const code = data?.properties?.email_otp;
+    if (error || !code) redirect('/student/login?error=' + encodeURIComponent('Could not create a code. Please try again in a minute.'));
+    try {
+      const apps = await appsForEmail(email);
+      await sendMail({
+        to: email, subject: `${code} is your sign-in code`, body: `Your sign-in code is ${code}. It expires in 60 minutes.`, eyebrow: 'Student portal', title: 'Your sign-in code', greeting: `Hi ${apps[0].name.split(/[\s,]+/)[0]},`, preheader: `Your code is ${code}`,
+        blocks: [{ type: 'p', text: 'Use this code to sign in to your student portal.' }, { type: 'code', code: code!, note: 'It expires in 60 minutes and works once.' }, { type: 'note', text: 'If you didn’t ask for this, you can ignore this email. Nobody can sign in without the code.' }],
+        sign: { name: 'WhiteRock Admissions', title: 'Student portal' }, footerNote: 'This is an automatic message about your student portal sign-in.',
+      });
+      await db.from('portal_notify_log').insert({ email, kind: 'student_code', ref: null });
+    } catch { redirect('/student/login?error=' + encodeURIComponent('We couldn’t send the email right now. Please try again shortly.')); }
+  }
+  redirect(`/student/login?step=code&email=${encodeURIComponent(email)}`);
+}
+
+/** Step 2: check the code and sign them in. */
+export async function verifyStudentCode(f: FormData) {
+  const email = s(f, 'email').toLowerCase(), code = s(f, 'code').replace(/\D/g, '');
+  const back2 = (m: string): never => redirect(`/student/login?step=code&email=${encodeURIComponent(email)}&error=${encodeURIComponent(m)}`);
+  if (code.length !== 6) back2('Enter the 6-digit code from your email.');
+  if (!(await isStudentEmail(email))) back2('That code didn’t work. Request a new one.');
+  const { error } = await (await sessionClient()).auth.verifyOtp({ email, token: code, type: 'email' });
+  if (error) back2('That code didn’t work or has expired. Request a new one.');
+  redirect('/student');
+}
+
+export async function studentSignOut() {
+  await (await sessionClient()).auth.signOut();
+  redirect('/student/login');
+}
+
+const ALLOWED_EXT = /\.(pdf|jpe?g|png|webp|docx?)$/i;
+const sniff = (b: Buffer) => (b.subarray(0, 4).toString() === '%PDF' ? 'pdf' : b[0] === 0xff && b[1] === 0xd8 ? 'jpg' : b.subarray(1, 4).toString() === 'PNG' ? 'png' : b.subarray(8, 12).toString() === 'WEBP' ? 'webp' : b.subarray(0, 2).toString() === 'PK' ? 'docx' : b[0] === 0xd0 && b[1] === 0xcf ? 'doc' : null);
+
+/** A student uploads one document into their own Drive folder. Returns a result instead of redirecting so the page can update in place. */
+export async function studentUpload(f: FormData): Promise<{ ok: boolean; error?: string }> {
+  const me = await currentStudent();
+  if (!me) return { ok: false, error: 'Please sign in again.' };
+  const appId = s(f, 'appId'), docType = s(f, 'docType'), file = f.get('file');
+  if (!me.ids.includes(appId)) return { ok: false, error: 'That application isn’t yours.' };
+  if (!(ALL_DOC_TYPES as readonly string[]).includes(docType)) return { ok: false, error: 'Choose what kind of document this is.' };
+  if (!(file instanceof File) || !file.size) return { ok: false, error: 'Choose a file first.' };
+  if (!ALLOWED_EXT.test(file.name)) return { ok: false, error: 'Please upload a PDF, photo (JPG/PNG) or Word file.' };
+  if (file.size > 4 * 1024 * 1024) return { ok: false, error: 'That file is over 4 MB. Please send a smaller or compressed copy.' };
+  const buf = Buffer.from(await file.arrayBuffer());
+  if (!sniff(buf)) return { ok: false, error: 'That doesn’t look like a PDF, photo or Word file.' };
+  const db = admin();
+  const { data: app } = await db.from('portal_applications').select('name, drive_folder_id, student_key').eq('application_id', appId).single();
+  let folder = app?.drive_folder_id || null;
+  if (!folder && app) { const { data: sib } = await db.from('portal_applications').select('drive_folder_id').eq('student_key', app.student_key).not('drive_folder_id', 'is', null).limit(1); folder = sib?.[0]?.drive_folder_id || null; }
+  if (!folder || !app) return { ok: false, error: 'Uploads aren’t switched on for your application yet. Please message your counselor.' };
+  const day = new Date(Date.now() - 864e5).toISOString();
+  const { count } = await db.from('portal_documents').select('drive_file_id', { count: 'exact', head: true }).eq('uploaded_by', me.email).gte('created_at', day);
+  if ((count || 0) >= 25) return { ok: false, error: 'You’ve reached today’s upload limit. Please try again tomorrow.' };
+  const ext = (file.name.match(/\.[^.]+$/) || ['.pdf'])[0].toLowerCase();
+  const name = docType === 'Other' ? file.name.replace(/[^\w.\- ()]+/g, '_').slice(-90) : `${app.name} - ${docType}${ext}`;
+  try {
+    const up = await callScript<DriveFile>('uploadFile', { applicationId: appId, folderId: folder, name, mimeType: file.type || 'application/octet-stream', base64: buf.toString('base64') });
+    await db.from('portal_documents').upsert({ drive_file_id: up.id, application_id: appId, name: up.name, doc_type: docType === 'Other' ? docTypeFromName(up.name) : docType, mime_type: up.mimeType, size_bytes: up.size, drive_url: up.url, source: 'portal', uploaded_by: me.email });
+    await log(appId, me.email, 'doc_uploaded', { name: up.name, by: 'student' });
+  } catch (e) { return { ok: false, error: `Upload failed. Please try again. (${(e as Error).message.slice(0, 120)})` }; }
+  revalidatePath('/student'); revalidatePath('/');
+  return { ok: true };
+}
+
+/** A student writes to their counselor. Delivered as an email to the counselor (replies go straight to the student) and kept in the message history. */
+export async function studentMessage(f: FormData): Promise<{ ok: boolean; error?: string }> {
+  const me = await currentStudent();
+  if (!me) return { ok: false, error: 'Please sign in again.' };
+  const appId = s(f, 'appId'), body = s(f, 'body').slice(0, 1500);
+  if (!me.ids.includes(appId)) return { ok: false, error: 'That application isn’t yours.' };
+  if (body.length < 3) return { ok: false, error: 'Write your message first.' };
+  const db = admin();
+  const since = new Date(Date.now() - 864e5).toISOString();
+  const { count } = await db.from('portal_messages').select('id', { count: 'exact', head: true }).eq('sent_by', me.email).gte('created_at', since);
+  if ((count || 0) >= 5) return { ok: false, error: 'You’ve sent a few messages today already. Your counselor will reply soon.' };
+  const { data: app } = await db.from('portal_applications').select('name, school, programme, counselor').eq('application_id', appId).single();
+  const { data: c } = app?.counselor ? await db.from('portal_counselors').select('name, email').eq('name_key', counselorKey(app.counselor)).maybeSingle() : { data: null };
+  let to = c?.email || null;
+  if (!to) { const { data: a } = await db.from('portal_staff').select('email').eq('role', 'admin').limit(1); to = a?.[0]?.email || null; }
+  if (!to) return { ok: false, error: 'We couldn’t find who to send this to. Please try again later.' };
+  const subject = `Message from ${app!.name}${app!.school ? ` (${schoolShort(app!.school)})` : ''}`;
+  try {
+    await sendMail({ to, subject, body: `${app!.name} wrote:\n\n${body}`, eyebrow: 'Student message', title: `${app!.name.split(/[\s,]+/)[0]} sent you a message`, greeting: c ? `Hi ${c.name.replace(/^(mr|mrs|ms|miss|dr)\.?\s+/i, '')},` : 'Hello,', preheader: body.slice(0, 100), replyTo: me.email, sign: { name: app!.name, title: [schoolShort(app!.school), app!.programme].filter(Boolean).join(' · ') || 'Student', email: me.email },
+      blocks: [{ type: 'p', text: `A student wrote to you through the student portal. Replying to this email goes straight to them.` }, { type: 'quote', from: `${app!.name} · ${me.email}`, text: body }], cta: { label: 'Open their file', href: `${site()}/applications/${encodeURIComponent(appId)}?tab=messages` } });
+  } catch { return { ok: false, error: 'We couldn’t send that just now. Please try again.' }; }
+  await db.from('portal_messages').insert({ application_id: appId, counselor_name: c?.name || null, to_email: to, to_kind: 'counselor', subject, body, sent_by: me.email });
+  await log(appId, me.email, 'email_sent', { to, subject });
+  return { ok: true };
+}
+
+/** Team: invite students to the student portal (one branded email each; paused for a week after an invite). */
+async function inviteStudentsCore(rowsIn: { id: string }[], actor: string, force = false) {
+  const db = admin(), out = { sent: 0, skipped: [] as { name: string; why: string }[] };
+  const since = new Date(Date.now() - 7 * 864e5).toISOString();
+  const ids = rowsIn.map((r) => r.id);
+  const { data: apps } = await db.from('portal_applications').select('application_id, name, email, school, counselor').in('application_id', ids);
+  const { data: recent } = force ? { data: [] } : await db.from('portal_messages').select('application_id').like('subject', 'Your student portal%').gte('created_at', since).in('application_id', ids);
+  const asked = new Set((recent || []).map((m) => m.application_id));
+  const done = new Set<string>();
+  for (const a of apps || []) {
+    const skip = (why: string) => out.skipped.push({ name: a.name, why });
+    if (!a.email || !EMAIL_RE.test(a.email)) { skip('no email address'); continue; }
+    if (done.has(a.email.toLowerCase())) { skip('same email already invited'); continue; }
+    if (asked.has(a.application_id)) { skip('invited in the last 7 days'); continue; }
+    const { data: c } = a.counselor ? await db.from('portal_counselors').select('name, email').eq('name_key', counselorKey(a.counselor)).maybeSingle() : { data: null };
+    const subject = 'Your student portal is ready';
+    const body = `Hi ${a.name.split(/[\s,]+/)[0]},\n\nYour student portal is ready. Sign in with ${a.email} to see where your application is, upload your documents and message your counselor.\n\n${site()}/student/login`;
+    try {
+      await sendMail({ to: a.email, subject, body, eyebrow: 'Student portal', title: 'Your student portal is ready', greeting: `Hi ${a.name.split(/[\s,]+/)[0]},`, preheader: 'See your application progress and upload your documents.', replyTo: c?.email || actor, from: c?.email || actor,
+        blocks: [{ type: 'p', text: 'You can now follow your application online. In your portal you can:' }, { type: 'steps', items: ['See exactly where your application is', 'Upload any documents we still need', 'Message your counselor directly'] }, { type: 'note', text: `Sign in with this email address: ${a.email}. We’ll send you a 6-digit code, so there is no password to remember.` }], cta: { label: 'Open my student portal', href: `${site()}/student/login` } });
+      await db.from('portal_messages').insert({ application_id: a.application_id, counselor_name: c?.name || null, to_email: a.email, to_kind: 'student', subject, body, sent_by: actor });
+      await log(a.application_id, actor, 'email_sent', { to: a.email, subject });
+      done.add(a.email.toLowerCase()); out.sent++;
+    } catch { skip('send failed'); }
+  }
+  return out;
+}
+
+export async function bulkInviteStudents(f: FormData) {
+  const staff = await requireTeam();
+  const { ids, left } = pickIds(f);
+  let res;
+  try { res = await inviteStudentsCore(ids.map((id) => ({ id })), staff.email); }
+  catch (e) { rethrow(e); bulkBack(f, `Could not send: ${(e as Error).message}`, true); }
+  revalidatePath('/messages');
+  const why = new Map<string, string[]>(); res.skipped.forEach((x) => why.set(x.why, [...(why.get(x.why) || []), x.name]));
+  const parts = [...why].map(([w, n]) => `${n.length} ${w}${n.length <= 3 ? ` (${n.join(', ')})` : ''}`);
+  bulkBack(f, `${res.sent ? `Invited ${res.sent} student${res.sent === 1 ? '' : 's'} to the student portal.` : 'No invitations sent.'}${parts.length ? ` Skipped: ${parts.join('; ')}.` : ''}${leftNote(left)}`, !res.sent);
+}
+
+export async function inviteOneStudent(f: FormData) {
+  const staff = await requireStaff();
+  const id = s(f, 'id'), ret = s(f, 'returnTo') || `/applications/${encodeURIComponent(id)}?tab=messages`;
+  await guardApp(staff, id);
+  let res;
+  try { res = await inviteStudentsCore([{ id }], staff.email, true); }
+  catch (e) { rethrow(e); return back(id, `Could not send: ${(e as Error).message}`, true, ret); }
+  revalidatePath('/messages');
+  back(id, res.sent ? 'Invitation sent.' : `Not sent: ${res.skipped.map((x) => x.why).join('; ')}.`, !res.sent, ret);
 }
