@@ -3,6 +3,8 @@ const NAVY = '#0d1f4d', BLUE = '#2458d6', GOLD = '#b8952a', GOLD_L = '#e2c566', 
 const SERIF = "Georgia,'Times New Roman',serif", SANS = "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif";
 
 export const site = () => (process.env.NEXT_PUBLIC_SITE_URL || 'https://applications-2026-kohl.vercel.app').replace(/\/$/, '');
+/** Where students are sent. Set STUDENT_SITE_URL (e.g. https://student.yourdomain.com) to give them their own address. */
+export const studentSite = () => (process.env.STUDENT_SITE_URL || site()).replace(/\/$/, '');
 export const esc = (s: unknown) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const nl2br = (s: string) => esc(s).replace(/\n/g, '<br>');
 const linkify = (html: string) => html.replace(/(https?:\/\/[^\s<]+)/g, (u) => `<a href="${u}" style="color:${BLUE};text-decoration:underline">${u}</a>`);

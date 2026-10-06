@@ -6,6 +6,8 @@ import { signIn, signInWithGoogle, signOut } from '../actions';
 import Mark from '@/components/Mark';
 import Btn from '@/components/Btn';
 
+export const metadata = { title: 'Team sign-in', robots: { index: false, follow: false } };
+
 export default async function Login({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const { error } = await searchParams;
   if (await currentStaff()) redirect('/');
@@ -16,7 +18,7 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
     <div className="auth">
       <div style={{ display: 'grid', placeItems: 'center', marginBottom: 14 }}><Mark size={46} /></div>
       <h1>Admissions <em>Portal</em></h1>
-      <p className="muted" style={{ margin: 0 }}>Sign in to manage applications.</p>
+      <p className="muted" style={{ margin: 0 }}>Team sign-in · for admissions staff and counselors.</p>
       <div className="card">
         {blocked && (
           <div className="err" style={{ marginBottom: 14 }}>
@@ -35,9 +37,8 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
           <input name="email" type="email" placeholder="Email" required className="wide" />
           <input name="password" type="password" placeholder="Password" required className="wide" />
           <Btn className="ghost wide-btn">Sign in with password</Btn>
-          {error && <div className="err">{error}</div>}
+          {error && <div className="err">{error}<div style={{ marginTop: 6, fontSize: 12.5 }}>This page is for the admissions team. Students sign in at the <a href="/student/login">student portal</a>.</div></div>}
         </form>
-        <p className="muted" style={{ fontSize: 12.5, margin: '14px 0 0', textAlign: 'center' }}>Applying as a student? <a href="/student/login">Student portal sign-in</a></p>
       </div>
     </div>
   );

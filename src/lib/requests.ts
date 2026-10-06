@@ -1,6 +1,6 @@
 import { admin } from './supabase';
 import { sendMail, signFor } from './mail';
-import { site } from './emailTemplate';
+import { site, studentSite } from './emailTemplate';
 import { counselorKey, schoolShort } from './docs';
 import { FINAL_STATUSES, REQUIRED_DOCS } from './constants';
 import { loadStudents } from './overview';
@@ -18,7 +18,7 @@ export function docRequestEmail(r: SRow, replyTo: string) {
   const uni = [schoolShort(a.school), tidy(a.programme)].filter(Boolean).join(' · ');
   const n = r.missing.length, total = REQUIRED_DOCS.length;
   const subject = `Documents needed for your application${a.school ? ` — ${schoolShort(a.school)}` : ''}`;
-  const body = `Hi ${firstName(a.preferred_name || a.name)},\n\nWe're preparing your application${uni ? ` (${uni})` : ''} and still need the following ${n === 1 ? 'document' : 'documents'}:\n\n${r.missing.map((d) => `• ${d}`).join('\n')}\n\nYou can upload ${n === 1 ? 'it' : 'them'} in your student portal (${site()}/student/login, sign in with this email address) or reply to this email with clear scans or photos attached.\n\nIf you've already sent any of these, just let us know and we'll check.`;
+  const body = `Hi ${firstName(a.preferred_name || a.name)},\n\nWe're preparing your application${uni ? ` (${uni})` : ''} and still need the following ${n === 1 ? 'document' : 'documents'}:\n\n${r.missing.map((d) => `• ${d}`).join('\n')}\n\nYou can upload ${n === 1 ? 'it' : 'them'} in your student portal (${studentSite()}/student/login, sign in with this email address) or reply to this email with clear scans or photos attached.\n\nIf you've already sent any of these, just let us know and we'll check.`;
   const html = {
     eyebrow: 'Documents needed', title: n === 1 ? 'One document to go' : `${n} documents to go`, greeting: `Hi ${firstName(a.preferred_name || a.name)},`, preheader: `We still need ${r.missing.join(', ')} to move your application forward.`,
     blocks: [
@@ -27,7 +27,7 @@ export function docRequestEmail(r: SRow, replyTo: string) {
       { type: 'p' as const, text: 'The quickest way is to upload them in your student portal. Sign in with this email address (we’ll send you a code, there is no password). You can also reply to this email with clear scans or photos attached.' },
       { type: 'note' as const, text: 'Already sent one of these? Just reply and tell us. We’ll check right away.' },
     ],
-    cta: { label: 'Upload my documents', href: `${site()}/student/login` },
+    cta: { label: 'Upload my documents', href: `${studentSite()}/student/login` },
   };
   return { subject, body, html };
 }

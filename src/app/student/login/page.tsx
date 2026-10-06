@@ -5,6 +5,8 @@ import { requestStudentCode, verifyStudentCode, signInWithGoogle } from '@/app/a
 import Mark from '@/components/Mark';
 import Btn from '@/components/Btn';
 
+export const metadata = { title: 'Student sign-in' };
+
 export default async function StudentLogin({ searchParams }: { searchParams: Promise<{ step?: string; email?: string; error?: string }> }) {
   const sp = await searchParams;
   if (await currentStudent()) redirect('/student');
@@ -34,7 +36,7 @@ export default async function StudentLogin({ searchParams }: { searchParams: Pro
             </form>
             <div className="or">or</div>
             <form action={signInWithGoogle}><Btn className="btn-google ghost" data-busy="Opening Google…">Continue with Google</Btn></form>
-            <p className="muted" style={{ fontSize: 12.5, margin: '14px 0 0', textAlign: 'center' }}>No password to remember. Staff? <a href="/login">Sign in here</a>.</p>
+            <p className="muted" style={{ fontSize: 12.5, margin: '14px 0 0', textAlign: 'center' }}>No password to remember.</p>
           </>
         )}
       </div>

@@ -1,6 +1,6 @@
 import { admin } from './supabase';
 import { sendMail } from './mail';
-import { site } from './emailTemplate';
+import { site, studentSite } from './emailTemplate';
 import { checkMeetingUrl, providerName } from './meet';
 
 export type Slot = { id: string; starts_at: string; duration_min: number; trainer: string | null; teams_url: string; capacity: number; notes: string | null; created_by: string; cancelled_at: string | null };
@@ -18,7 +18,7 @@ const stamp = (d: Date) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}
 export function icsFile(slot: Slot, who: string) {
   const start = new Date(slot.starts_at), end = new Date(start.getTime() + slot.duration_min * 60_000);
   const body = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//WhiteRock Admissions//Interview training//EN', 'METHOD:PUBLISH', 'BEGIN:VEVENT', `UID:${slot.id}-${who.replace(/\W/g, '')}@whiterock`, `DTSTAMP:${stamp(new Date())}`, `DTSTART:${stamp(start)}`, `DTEND:${stamp(end)}`,
-    'SUMMARY:Interview training (WhiteRock Admissions)', `LOCATION:${ics(slot.teams_url)}`, `DESCRIPTION:${ics(`Join on ${providerName(slot.teams_url)}: ${slot.teams_url}\nSee your booking: ${site()}/student`)}`, `URL:${slot.teams_url}`, 'BEGIN:VALARM', 'TRIGGER:-PT30M', 'ACTION:DISPLAY', 'DESCRIPTION:Interview training starts in 30 minutes', 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+    'SUMMARY:Interview training (WhiteRock Admissions)', `LOCATION:${ics(slot.teams_url)}`, `DESCRIPTION:${ics(`Join on ${providerName(slot.teams_url)}: ${slot.teams_url}\nSee your booking: ${studentSite()}/student`)}`, `URL:${slot.teams_url}`, 'BEGIN:VALARM', 'TRIGGER:-PT30M', 'ACTION:DISPLAY', 'DESCRIPTION:Interview training starts in 30 minutes', 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
   return Buffer.from(body).toString('base64');
 }
 export function googleCalUrl(slot: Slot) {
@@ -53,7 +53,7 @@ export async function emailBooking(slot: Slot, student: { name: string; email: s
   const first = (student.preferred || student.name).split(/[\s,]+/)[0];
   if (kind === 'booked') {
     return sendMail({
-      to: student.email, subject: `Interview training booked · ${fmt(slot.starts_at, 'Africa/Lagos')}`, body: `Hi ${first},\n\nYour interview training is booked.\n\nWhen: ${whenText(slot.starts_at)}\nLength: ${slot.duration_min} minutes\nJoin on ${providerName(slot.teams_url)}: ${slot.teams_url}\n\nManage your booking: ${site()}/student`,
+      to: student.email, subject: `Interview training booked · ${fmt(slot.starts_at, 'Africa/Lagos')}`, body: `Hi ${first},\n\nYour interview training is booked.\n\nWhen: ${whenText(slot.starts_at)}\nLength: ${slot.duration_min} minutes\nJoin on ${providerName(slot.teams_url)}: ${slot.teams_url}\n\nManage your booking: ${studentSite()}/student`,
       eyebrow: 'Interview training', title: 'Your session is booked', greeting: `Hi ${first},`, preheader: `${fmt(slot.starts_at, 'Africa/Lagos')} on ${providerName(slot.teams_url)}`, replyTo: by.includes('@') ? by : '', from: by.includes('@') ? by : undefined,
       blocks: [{ type: 'p', text: 'Your interview training session is confirmed. We’ll practise real interview questions so you feel confident on the day.' },
         { type: 'checklist', title: 'Your session', items: [whenText(slot.starts_at), `${slot.duration_min} minutes on ${providerName(slot.teams_url)}`], tone: 'ok' },
@@ -64,9 +64,9 @@ export async function emailBooking(slot: Slot, student: { name: string; email: s
     });
   }
   return sendMail({
-    to: student.email, subject: 'Your interview training session was cancelled', body: `Hi ${first},\n\nYour interview training on ${whenText(slot.starts_at)} has been cancelled. Please book another time: ${site()}/student`,
+    to: student.email, subject: 'Your interview training session was cancelled', body: `Hi ${first},\n\nYour interview training on ${whenText(slot.starts_at)} has been cancelled. Please book another time: ${studentSite()}/student`,
     eyebrow: 'Interview training', title: 'Session cancelled', greeting: `Hi ${first},`, preheader: 'Please pick another time.', replyTo: by.includes('@') ? by : '', from: by.includes('@') ? by : undefined,
-    blocks: [{ type: 'p', text: `We’re sorry. The session on ${whenText(slot.starts_at)} has been cancelled.` }, { type: 'p', text: 'You can pick another time in your student portal.' }], cta: { label: 'Choose a new time', href: `${site()}/student` },
+    blocks: [{ type: 'p', text: `We’re sorry. The session on ${whenText(slot.starts_at)} has been cancelled.` }, { type: 'p', text: 'You can pick another time in your student portal.' }], cta: { label: 'Choose a new time', href: `${studentSite()}/student` },
   });
 }
 
