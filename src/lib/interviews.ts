@@ -89,3 +89,34 @@ export async function sendInterviewReminders() {
   }
   return { sent };
 }
+
+/** Tells the student's counselor (and the trainer, if that's someone else) that a student has been booked in. */
+export async function emailCounselorBooking(slot: Slot, app: { name: string; school: string | null; programme: string | null; status: string | null; application_id: string; counselor: string | null }, actor: string) {
+  const db = admin();
+  const { counselorKey } = await import('./docs');
+  const { data: c } = app.counselor ? await db.from('portal_counselors').select('name, email').eq('name_key', counselorKey(app.counselor)).maybeSingle() : { data: null };
+  const { data: tr } = slot.trainer ? await db.from('portal_staff').select('email, display_name').eq('email', slot.trainer.toLowerCase()).maybeSingle() : { data: null };
+  const to = [...new Set([c?.email, tr?.email].filter(Boolean).map((e) => e!.toLowerCase()))].filter((e) => e !== actor.toLowerCase() || true);
+  const provider = providerName(slot.teams_url);
+  const sent: string[] = [];
+  for (const email of to) {
+    const forTrainer = tr?.email?.toLowerCase() === email && c?.email?.toLowerCase() !== email;
+    const name = forTrainer ? (tr?.display_name || 'there') : (c?.name || 'there');
+    const first = name.replace(/^(mr|mrs|ms|miss|dr)\.?\s+/i, '').split(/[\s,]+/)[0];
+    try {
+      await sendMail({
+        to: email, subject: `Interview training booked: ${app.name} · ${fmt(slot.starts_at, 'Africa/Lagos')}`, body: `Hi ${first},\n\n${app.name} has been booked for interview training.\n\nWhen: ${whenText(slot.starts_at)}\nLength: ${slot.duration_min} minutes\nJoin on ${provider}: ${slot.teams_url}`,
+        eyebrow: 'Interview training', title: forTrainer ? `${app.name} is booked with you` : `${app.name} is booked for interview training`, greeting: `Hi ${first},`, preheader: `${fmt(slot.starts_at, 'Africa/Lagos')} · ${app.name}`, replyTo: actor.includes('@') ? actor : '', from: actor.includes('@') ? actor : undefined,
+        blocks: [
+          { type: 'p', text: forTrainer ? 'A student has been booked into one of your interview-training sessions.' : 'Your student has been invited to an interview-training session and has been sent the details.' },
+          { type: 'students', rows: [{ name: app.name, meta: [app.school, app.programme && app.programme.toUpperCase() !== 'N/A' ? app.programme : ''].filter(Boolean).join(' · '), status: app.status || undefined }] },
+          { type: 'checklist', title: 'The session', items: [whenText(slot.starts_at), `${slot.duration_min} minutes on ${provider}`], tone: 'ok' },
+          { type: 'note', text: 'A calendar invite is attached. Open the Interviews page in the portal to mark the session as done and leave feedback.' }],
+        cta: { label: `Join on ${provider}`, href: slot.teams_url },
+        attachments: [{ name: 'interview-training.ics', mime: 'text/calendar', base64: icsFile(slot, email) }],
+      });
+      sent.push(email);
+    } catch { /* one failed email shouldn't undo the booking */ }
+  }
+  return sent;
+}

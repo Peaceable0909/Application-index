@@ -13,7 +13,7 @@ import { requestDocs, summarise, digestEmail, sendPaymentReminders, summariseRem
 import { sendMail } from '@/lib/mail';
 import { site } from '@/lib/emailTemplate';
 import { audit } from '@/lib/audit';
-import { bookSlotCore, emailBooking, MIN_NOTICE_H } from '@/lib/interviews';
+import { bookSlotCore, emailBooking, emailCounselorBooking, MIN_NOTICE_H } from '@/lib/interviews';
 import { checkMeetingUrl } from '@/lib/meet';
 import { appsForEmail, currentStudent, isStudentEmail } from '@/lib/student';
 import { runBackup } from '@/lib/backup';
@@ -1112,13 +1112,29 @@ export async function saveOffer(f: FormData) {
 // ================= Interview training =================
 const backTo = (path: string, msg: string, err = false): never => redirect(`${path}${path.includes('?') ? '&' : '?'}${err ? 'err' : 'msg'}=${encodeURIComponent(msg)}`);
 
+/** Books one student into a session, then emails the student and their counselor (and the trainer). */
+async function inviteToSlot(staff: { email: string; role: string; counselor_key: string | null }, slotId: string, appId: string): Promise<{ ok: boolean; name?: string; error?: string }> {
+  const db = admin();
+  if (!(await canAccessApp(staff as never, appId))) return { ok: false, error: 'not your student' };
+  const { data: a } = await db.from('portal_applications').select('application_id, name, email, school, programme, status, counselor, preferred_name').eq('application_id', appId).single();
+  if (!a) return { ok: false, error: 'student not found' };
+  if (!a.email || !EMAIL_RE.test(a.email)) return { ok: false, name: a.name, error: 'no email address' };
+  const r = await bookSlotCore({ slotId, applicationId: appId, studentEmail: a.email, bookedBy: staff.email, asStudent: false });
+  if (!r.ok) return { ok: false, name: a.name, error: r.error };
+  await log(appId, staff.email, 'interview_booked', { when: r.slot!.starts_at });
+  try { await emailBooking(r.slot!, { name: a.name, email: a.email, preferred: a.preferred_name }, staff.email, 'booked'); } catch { /* booking stands */ }
+  await emailCounselorBooking(r.slot!, a, staff.email).catch(() => []);
+  return { ok: true, name: a.name };
+}
+
 export async function createInterviewSlots(f: FormData) {
   const staff = await requireStaff();
   let starts: string[] = [];
   try { const raw = JSON.parse(s(f, 'starts') || '[]'); if (Array.isArray(raw)) starts = raw.map(String); } catch { /* ignore */ }
   starts = starts.map((x) => new Date(x)).filter((d) => !isNaN(d.getTime()) && d.getTime() > Date.now()).map((d) => d.toISOString()).slice(0, 12);
   if (!starts.length) backTo('/interviews', 'Pick a date and time in the future.', true);
-  const duration = Math.max(10, Math.min(240, Number(s(f, 'duration')) || 45)), capacity = Math.max(1, Math.min(20, Number(s(f, 'capacity')) || 1));
+  const duration = Math.max(10, Math.min(240, Number(s(f, 'duration')) || 45)), capacity0 = Math.max(1, Math.min(20, Number(s(f, 'capacity')) || 1));
+  const invites = [...new Set(f.getAll('invite').map(String).filter(Boolean))].slice(0, 20);
   const trainer = s(f, 'trainer') || staff.email, notes = s(f, 'notes').slice(0, 300) || null;
   const auto = s(f, 'link_mode') !== 'paste';
   let pasted: string | null = null;
@@ -1136,11 +1152,14 @@ export async function createInterviewSlots(f: FormData) {
       backTo('/interviews', /unknown action/i.test(msg) ? 'Your Apps Script needs the newest PortalApi.gs (it is missing “createMeet”). Or choose “Paste a link” instead.' : /Calendar is not defined|Calendar\.Events/i.test(msg) ? 'Switch on the Google Calendar service in Apps Script (Services → + → Google Calendar API), then try again. Or choose “Paste a link” instead.' : `Could not create a Google Meet link: ${msg.replace(/^Apps Script:\s*/, '').slice(0, 160)}`, true);
     }
   }
-  const { error } = await admin().from('portal_interview_slots').insert(rows.map((r) => ({ ...r, duration_min: duration, trainer, capacity, notes, created_by: staff.email })));
+  const capacity = Math.max(capacity0, invites.length);
+  const { data: made, error } = await admin().from('portal_interview_slots').insert(rows.map((r) => ({ ...r, duration_min: duration, trainer, capacity, notes, created_by: staff.email }))).select('id, starts_at').order('starts_at');
   if (error) backTo('/interviews', `Could not create the sessions: ${error.message}`, true);
+  const invited: string[] = [], skipped: string[] = [];
+  if (invites.length && made?.length) for (const appId of invites) { const r = await inviteToSlot(staff, made[0].id, appId); if (r.ok) invited.push(r.name!); else skipped.push(`${r.name || 'a student'} (${r.error})`); }
   await audit(staff.email, 'interview_slots_created', `${starts.length} session(s)`, { first: starts[0] });
   revalidatePath('/interviews'); revalidatePath('/student');
-  backTo('/interviews', `${starts.length} session${starts.length === 1 ? '' : 's'} created. Students can book them now.`);
+  backTo('/interviews', `${starts.length} session${starts.length === 1 ? '' : 's'} created.${invited.length ? ` Invited ${invited.join(', ')}: they and their counselors have been emailed.` : ' Students can book them now.'}${skipped.length ? ` Not invited: ${skipped.join('; ')}.` : ''}`, skipped.length > 0 && !invited.length);
 }
 
 export async function cancelInterviewSlot(f: FormData) {
@@ -1163,15 +1182,10 @@ export async function staffBookStudent(f: FormData) {
   const staff = await requireStaff();
   const slotId = s(f, 'slotId'), appId = s(f, 'appId');
   if (!appId) backTo('/interviews', 'Choose a student first.', true);
-  await guardApp(staff, appId);
-  const { data: a } = await admin().from('portal_applications').select('name, email, preferred_name').eq('application_id', appId).single();
-  if (!a?.email || !EMAIL_RE.test(a.email)) backTo('/interviews', 'That student has no email address on file.', true);
-  const r = await bookSlotCore({ slotId, applicationId: appId, studentEmail: a!.email!, bookedBy: staff.email, asStudent: false });
-  if (!r.ok) backTo('/interviews', r.error || 'Could not book.', true);
-  await log(appId, staff.email, 'interview_booked', { when: r.slot!.starts_at });
-  try { await emailBooking(r.slot!, { name: a!.name, email: a!.email!, preferred: a!.preferred_name }, staff.email, 'booked'); } catch { /* booking stands even if the email fails */ }
+  const r = await inviteToSlot(staff, slotId, appId);
   revalidatePath('/interviews'); revalidatePath('/student');
-  backTo('/interviews', `${a!.name} is booked and has been emailed the meeting link.`);
+  if (!r.ok) backTo('/interviews', `${r.name ? `${r.name}: ` : ''}${r.error}`, true);
+  backTo('/interviews', `${r.name} is booked. They and their counselor have been emailed the meeting link.`);
 }
 
 export async function setBookingStatus(f: FormData) {

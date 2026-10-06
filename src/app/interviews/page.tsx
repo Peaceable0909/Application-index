@@ -4,6 +4,7 @@ import { admin } from '@/lib/supabase';
 import { loadPeople } from '@/lib/people';
 import { cancelInterviewSlot, createInterviewSlots, setBookingStatus, staffBookStudent } from '../actions';
 import { whenText } from '@/lib/interviews';
+import { schoolShort } from '@/lib/docs';
 import { providerName } from '@/lib/meet';
 import LocalTime from '@/components/LocalTime';
 import SlotForm from '@/components/SlotForm';
@@ -34,7 +35,7 @@ export default async function Interviews({ searchParams }: { searchParams: Promi
       <div className="head"><h1>Interview training</h1>{!past && <span className="badge plain">{upcomingCount} upcoming</span>}</div>
       <p className="sub">Sessions students can book, each with its own video link (Google Meet by default). Students get a confirmation with a calendar invite, and a reminder the day before.</p>
       {sp.msg && <div className="card ok">{sp.msg}</div>}{sp.err && <div className="card err">{sp.err}</div>}
-      <Fold label="New session" icon="video"><SlotForm action={createInterviewSlots} people={staffPeople} defaultTrainer={staff.email} defaultUrl={last?.[0]?.teams_url || ''} /></Fold>
+      <Fold label="New session" icon="video"><SlotForm action={createInterviewSlots} people={staffPeople} defaultTrainer={staff.email} defaultUrl={last?.[0]?.teams_url || ''} students={bookable.map((a) => ({ id: a.application_id, name: a.name, school: schoolShort(a.school), counselor: a.counselor || '', hasEmail: !!a.email }))} /></Fold>
       <div className="tabs" style={{ marginTop: 0 }}><Link href="/interviews" className={`tab ${!past ? 'active' : ''}`}>Upcoming</Link><Link href="/interviews?tab=past" className={`tab ${past ? 'active' : ''}`}>Past</Link></div>
       {!(slots || []).length && <div className="card muted">{past ? 'No sessions in the last 60 days.' : 'No upcoming sessions. Create one above and students can start booking.'}</div>}
       <div className="grid g2" style={{ alignItems: 'start' }}>
