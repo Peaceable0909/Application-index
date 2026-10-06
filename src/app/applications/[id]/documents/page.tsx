@@ -30,7 +30,7 @@ export default async function Documents({ params, searchParams }: { params: Prom
   return (
     <>
       <Link href={`/applications/${id}?tab=documents`} className="crumb">← {app.name}</Link>
-      <div className="head"><h1>Documents</h1>{app.drive_folder_url && <a href={app.drive_folder_url} target="_blank">Drive folder ↗</a>}</div>
+      <div className="head"><h1>Documents</h1><Link className="btn ghost sm" href={`/extracted?student=${encodeURIComponent(id)}`}>View extracted text</Link>{app.drive_folder_url && <a href={app.drive_folder_url} target="_blank">Drive folder ↗</a>}</div>
       <p className="sub">{app.name} · {[app.school, app.programme].filter(Boolean).join(' · ')}</p>
       {sp.msg && <div className="card ok">{sp.msg}</div>}
       {sp.err && <div className="card err">{sp.err}</div>}

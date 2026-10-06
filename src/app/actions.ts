@@ -867,3 +867,21 @@ export async function backupNow() {
   try { const r = await runBackup(me.email); redirect('/settings?msg=' + encodeURIComponent(`Backup saved: ${r.name}${r.failed.length ? ` (some tables failed: ${r.failed.join('; ')})` : ''}.`)); }
   catch (e) { rethrow(e); redirect('/settings?err=' + encodeURIComponent(`Backup failed: ${(e as Error).message}`)); }
 }
+
+// Extracted text page: read one document's full text out through Drive OCR and keep it. Called one file at a time so the page can show progress.
+export async function extractFile(fileId: string): Promise<{ ok: boolean; chars?: number; error?: string }> {
+  const staff = await requireStaff();
+  const db = admin();
+  const { data: doc } = await db.from('portal_documents').select('drive_file_id, application_id').eq('drive_file_id', fileId).maybeSingle();
+  if (!doc || !(await canAccessApp(staff, doc.application_id))) return { ok: false, error: 'Not found' };
+  const row = { drive_file_id: fileId, application_id: doc.application_id, extracted_by: staff.email, extracted_at: new Date().toISOString() };
+  try {
+    const r = await callScript<{ text: string; chars: number; truncated: boolean; method: string }>('extractFull', { fileId });
+    await db.from('portal_doc_text').upsert({ ...row, text: r.text, chars: r.chars, truncated: r.truncated, method: r.method, error: r.chars < 5 ? 'No readable text was found. The scan may be too faint, rotated, or a picture without writing.' : null });
+    return { ok: true, chars: r.chars };
+  } catch (e) {
+    const msg = (e as Error).message.replace(/^Apps Script:\s*/, '').slice(0, 300);
+    await db.from('portal_doc_text').upsert({ ...row, text: '', chars: 0, truncated: false, method: null, error: /unknown action/i.test(msg) ? 'Your Apps Script needs the newest PortalApi.gs (it is missing “extractFull”).' : msg });
+    return { ok: false, error: msg };
+  }
+}

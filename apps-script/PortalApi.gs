@@ -46,6 +46,7 @@ function portalDispatch_(e) {
       case 'addMaster':        return portalJson_({ ok: true, data: portalAddMaster_(p) });
       case 'listRegent':       return portalJson_({ ok: true, data: portalListRegent_() });
       case 'extractText':      return portalJson_({ ok: true, data: portalExtractText_(p.fileId) });
+      case 'extractFull':      return portalJson_({ ok: true, data: portalExtractFull_(p.fileId) });
       case 'aiChat':           return portalJson_({ ok: true, data: portalAiChat_(p) });
       case 'searchFolders':    return portalJson_({ ok: true, data: portalSearchFolders_(p.students || []) });
       case 'updateRegent':     return portalJson_({ ok: true, data: portalUpdateRegent_(p) });
@@ -434,6 +435,27 @@ function portalExtractText_(fileId) {
   }
   text = String(text || '').replace(/\s+/g, ' ').trim();
   return { text: text.slice(0, 5000), chars: text.length };
+}
+
+// Full text of one file with its line breaks kept (for the portal's "Extracted text" page).
+// Google Docs and plain text are read directly; PDFs, images and Word files go through Drive's OCR / converter.
+function portalExtractFull_(fileId) {
+  const f = DriveApp.getFileById(fileId);
+  const mime = f.getMimeType(), name = f.getName();
+  let text = '', method = 'ocr';
+  if (mime === 'application/vnd.google-apps.document') {
+    text = DocumentApp.openById(fileId).getBody().getText(); method = 'google-doc';
+  } else if (/^text\//.test(mime) || /\.(txt|csv|md)$/i.test(name)) {
+    text = f.getBlob().getDataAsString('UTF-8'); method = 'text';
+  } else {
+    if (f.getSize() > 10 * 1024 * 1024) throw new Error('File too large to read (10MB max)');
+    const tmp = Drive.Files.create({ name: 'portal-ocr-temp', mimeType: 'application/vnd.google-apps.document' }, f.getBlob(), { ocrLanguage: 'en' });
+    try { text = DocumentApp.openById(tmp.id).getBody().getText(); }
+    finally { try { Drive.Files.remove(tmp.id); } catch (e) { Logger.log('temp cleanup failed: ' + e); } }
+  }
+  text = String(text || '').replace(/\r/g, '').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  const LIMIT = 120000;
+  return { text: text.slice(0, LIMIT), chars: text.length, truncated: text.length > LIMIT, method: method };
 }
 
 // ---- Background triggers (no edits to your form's doPost needed) -------------
