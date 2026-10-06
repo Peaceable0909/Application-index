@@ -8,6 +8,7 @@ import { dateTime } from '@/lib/format';
 import Btn from '@/components/Btn';
 import Icon from '@/components/Icon';
 import Fold from '@/components/Fold';
+import DocTypeSelect from '@/components/DocTypeSelect';
 import { uploadDocument } from '../actions';
 
 const kb = (n: number | null) => (n ? `${Math.max(1, Math.round(n / 1024))} KB` : '');
@@ -47,7 +48,7 @@ export default async function Documents({ searchParams }: { searchParams: Promis
         <form action={uploadDocument} className="filters">
           <input type="hidden" name="returnTo" value="/documents" />
           <select name="id" required style={{ minWidth: 240 }}><option value="">Choose a student…</option>{uploadable.map((r) => <option key={r.a.application_id} value={r.a.application_id}>{r.a.name} — {r.a.school || ''}</option>)}</select>
-          <select name="docType">{ALL_DOC_TYPES.map((t) => <option key={t}>{t}</option>)}</select>
+          <DocTypeSelect types={ALL_DOC_TYPES} defaultValue="CV" compact />
           <input type="file" name="file" required /><Btn>Upload to Drive</Btn>
         </form>
         <p className="muted" style={{ marginBottom: 0 }}>Only students with a linked Drive folder are listed. Link folders under <Link href="/drive">Drive matches</Link>.</p>

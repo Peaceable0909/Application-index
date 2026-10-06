@@ -13,6 +13,7 @@ import { requestDocs, summarise, digestEmail, sendPaymentReminders, summariseRem
 import { sendMail } from '@/lib/mail';
 import { site } from '@/lib/emailTemplate';
 import { audit } from '@/lib/audit';
+import { cleanLabel, resolveLabel } from '@/lib/docLabel';
 import { bookSlotCore, emailBooking, emailCounselorBooking, MIN_NOTICE_H } from '@/lib/interviews';
 import { checkMeetingUrl } from '@/lib/meet';
 import { appsForEmail, currentStudent, isStudentEmail } from '@/lib/student';
@@ -330,14 +331,16 @@ export async function uploadDocument(f: FormData) {
   const { data: app } = await db.from('portal_applications').select('name, drive_folder_id').eq('application_id', id).single();
   if (!app?.drive_folder_id) return back(id, 'This application has no Drive folder', true, ret);
   const ext = (file.name.match(/\.[^.]+$/) || ['.pdf'])[0];
-  const name = docType && docType !== 'Other' ? `${app.name} - ${docType}${ext}` : file.name;
+  let label: ReturnType<typeof resolveLabel> | null = null;
+  if (docType === 'Other') { const l = cleanLabel(s(f, 'docLabel')); if (!l) return back(id, 'Name the kind of document (for example “Bank statement”).', true, ret); label = resolveLabel(l); }
+  const name = label ? `${app.name} - ${label.override || label.docType}${ext}` : docType ? `${app.name} - ${docType}${ext}` : file.name;
   try {
     const up = await callScript<DriveFile>('uploadFile', {
       applicationId: id, folderId: app.drive_folder_id, name, mimeType: file.type,
       base64: Buffer.from(await file.arrayBuffer()).toString('base64'),
     });
     await db.from('portal_documents').upsert({
-      drive_file_id: up.id, application_id: id, name: up.name, doc_type: docTypeFromName(up.name), mime_type: up.mimeType,
+      drive_file_id: up.id, application_id: id, name: up.name, doc_type: label ? label.docType : docTypeFromName(up.name), type_override: label?.override ?? null, mime_type: up.mimeType,
       size_bytes: up.size, drive_url: up.url, source: 'portal', uploaded_by: staff.email,
     });
     await log(id, staff.email, 'doc_uploaded', { name: up.name });
@@ -360,11 +363,13 @@ export async function setDocType(f: FormData) {
   const id = s(f, 'id'), fileId = s(f, 'fileId'), type = s(f, 'docType'), ret = s(f, 'returnTo');
   await guardApp(staff, id);
   if (!(ALL_DOC_TYPES as readonly string[]).includes(type)) return back(id, 'Invalid document type', true, ret);
+  let shown: string = type;
+  if (type === 'Other') { const l = cleanLabel(s(f, 'docLabel')); if (!l) return back(id, 'Name the kind of document (for example “Bank statement”).', true, ret); shown = resolveLabel(l).override || resolveLabel(l).docType; }
   const { data: doc } = await admin().from('portal_documents').select('name, doc_type, application_id').eq('drive_file_id', fileId).single();
   if (doc) await guardApp(staff, doc.application_id);
-  await admin().from('portal_documents').update({ type_override: type === doc?.doc_type ? null : type }).eq('drive_file_id', fileId);
-  await log(id, staff.email, 'doc_retyped', { name: doc?.name, type });
-  back(id, `Marked as ${type}`, false, ret);
+  await admin().from('portal_documents').update({ type_override: shown === doc?.doc_type ? null : shown }).eq('drive_file_id', fileId);
+  await log(id, staff.email, 'doc_retyped', { name: doc?.name, type: shown });
+  back(id, `Marked as ${shown}`, false, ret);
 }
 
 // ---- Reminders ----
@@ -960,10 +965,12 @@ export async function studentUpload(f: FormData): Promise<{ ok: boolean; error?:
   const { count } = await db.from('portal_documents').select('drive_file_id', { count: 'exact', head: true }).eq('uploaded_by', me.email).gte('created_at', day);
   if ((count || 0) >= 25) return { ok: false, error: 'You’ve reached today’s upload limit. Please try again tomorrow.' };
   const ext = (file.name.match(/\.[^.]+$/) || ['.pdf'])[0].toLowerCase();
-  const name = docType === 'Other' ? file.name.replace(/[^\w.\- ()]+/g, '_').slice(-90) : `${app.name} - ${docType}${ext}`;
+  let label: ReturnType<typeof resolveLabel> | null = null;
+  if (docType === 'Other') { const l = cleanLabel(s(f, 'docLabel')); if (!l) return { ok: false, error: 'Please name the kind of document, for example “Bank statement”.' }; label = resolveLabel(l); }
+  const name = `${app.name} - ${label ? label.override || label.docType : docType}${ext}`;
   try {
     const up = await callScript<DriveFile>('uploadFile', { applicationId: appId, folderId: folder, name, mimeType: file.type || 'application/octet-stream', base64: buf.toString('base64') });
-    await db.from('portal_documents').upsert({ drive_file_id: up.id, application_id: appId, name: up.name, doc_type: docType === 'Other' ? docTypeFromName(up.name) : docType, mime_type: up.mimeType, size_bytes: up.size, drive_url: up.url, source: 'portal', uploaded_by: me.email });
+    await db.from('portal_documents').upsert({ drive_file_id: up.id, application_id: appId, name: up.name, doc_type: label ? label.docType : docType, type_override: label?.override ?? null, mime_type: up.mimeType, size_bytes: up.size, drive_url: up.url, source: 'portal', uploaded_by: me.email });
     await log(appId, me.email, 'doc_uploaded', { name: up.name, by: 'student' });
   } catch (e) { return { ok: false, error: `Upload failed. Please try again. (${(e as Error).message.slice(0, 120)})` }; }
   revalidatePath('/student'); revalidatePath('/');

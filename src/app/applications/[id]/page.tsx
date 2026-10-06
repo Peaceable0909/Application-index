@@ -18,6 +18,7 @@ import Btn from '@/components/Btn';
 import Icon from '@/components/Icon';
 import { niceName } from '@/components/UserMenu';
 import OfferForm from '@/components/OfferForm';
+import DocTypeSelect from '@/components/DocTypeSelect';
 import { getOffer, milestones } from '@/lib/offer';
 import { saveOffer, inviteOneStudent, sendStudentReminder, saveDates, addNote, addReminder, addToMaster, completeReminder, createDraft, scanDocs, setDocType, dismissSuggestion, generateSummary, linkFolder, refreshDocuments, scanStudent, sendCounselorEmail, unlinkFolder, updateCounselor, updateRegent, updateStatus, uploadDocument } from '../../actions';
 
@@ -387,7 +388,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
             {app.drive_folder_id && (
               <div className="filters" style={{ marginTop: 16 }}>
                 <form action={uploadDocument} className="filters"><input type="hidden" name="id" value={id} /><input type="hidden" name="returnTo" value={ret('documents')} />
-                  <select name="docType" defaultValue={missing[0] || 'Other'}>{ALL_DOC_TYPES.map((t) => <option key={t}>{t}</option>)}</select><input type="file" name="file" required /><Btn>Upload to Drive</Btn></form>
+                  <DocTypeSelect types={ALL_DOC_TYPES} defaultValue={missing[0] || 'Other'} compact /><input type="file" name="file" required /><Btn>Upload to Drive</Btn></form>
                 <form action={refreshDocuments}><input type="hidden" name="id" value={id} /><input type="hidden" name="returnTo" value={ret('documents')} /><Btn className="ghost">Refresh from Drive</Btn></form>
               </div>
             )}

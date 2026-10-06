@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { ALL_DOC_TYPES } from '@/lib/constants';
 import { scanDocs, setDocType, uploadDocument } from '@/app/actions';
 import Btn from '@/components/Btn';
+import DocTypeSelect from '@/components/DocTypeSelect';
 
 export type ViewerDoc = {
   id: string; name: string; type: string; path: string | null; size: number; mime: string; driveUrl: string; fromOther: boolean; added: string;
@@ -61,7 +62,7 @@ export default function DocViewer({ appId, docs, missing, initial, canUpload, sc
         {canUpload && (
           <form action={uploadDocument} style={{ borderTop: '1px solid var(--line)', marginTop: 12, paddingTop: 10 }} className="grid">
             <input type="hidden" name="id" value={appId} /><input type="hidden" name="returnTo" value={returnTo} />
-            <select name="docType" defaultValue={missing[0] || 'Other'}>{ALL_DOC_TYPES.map((t) => <option key={t}>{t}</option>)}</select>
+            <DocTypeSelect types={ALL_DOC_TYPES} defaultValue={missing[0] || 'Other'} />
             <input type="file" name="file" required />
             <Btn>Upload to Drive</Btn>
           </form>
@@ -105,7 +106,7 @@ export default function DocViewer({ appId, docs, missing, initial, canUpload, sc
             <form action={setDocType} className="filters" style={{ marginTop: 10 }}>
               <input type="hidden" name="id" value={appId} /><input type="hidden" name="fileId" value={doc.id} /><input type="hidden" name="returnTo" value={returnTo} />
               <span className="muted">Document type:</span>
-              <select name="docType" defaultValue={doc.type}>{ALL_DOC_TYPES.map((t) => <option key={t}>{t}</option>)}</select>
+              <DocTypeSelect key={doc.id} types={ALL_DOC_TYPES} defaultValue={(ALL_DOC_TYPES as readonly string[]).includes(doc.type) ? doc.type : 'Other'} compact />
               <Btn className="ghost sm">Change</Btn>
               <span className="muted">Use ← → keys to move between documents.</span>
             </form>
