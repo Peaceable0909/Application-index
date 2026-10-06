@@ -6,7 +6,7 @@ import LocalTime from './LocalTime';
 import Icon from './Icon';
 
 export type SlotView = { id: string; starts_at: string; duration_min: number; notes: string | null; free: number };
-export type MyBooking = { id: string; starts_at: string; duration_min: number; teams_url: string; notes: string | null; status: string; feedback: string | null; canCancel: boolean; gcal: string };
+export type MyBooking = { id: string; starts_at: string; duration_min: number; teams_url: string; provider: string; notes: string | null; status: string; feedback: string | null; canCancel: boolean; gcal: string };
 
 export default function StudentInterviews({ slots, upcoming, past, hasUpcoming }: { slots: SlotView[]; upcoming: MyBooking[]; past: MyBooking[]; hasUpcoming: boolean }) {
   const router = useRouter();
@@ -21,14 +21,14 @@ export default function StudentInterviews({ slots, upcoming, past, hasUpcoming }
   return (
     <div className="card scard-big rise">
       <div className="sb-head"><h2 style={{ margin: 0 }}><Icon n="video" size={18} /> Interview training</h2></div>
-      <p className="muted" style={{ marginTop: -8 }}>Practise real interview questions with a trainer on Microsoft Teams. Pick a time that suits you.</p>
+      <p className="muted" style={{ marginTop: -8 }}>Practise real interview questions with a trainer on a video call. Pick a time that suits you.</p>
       {msg && <div className={`xnote ${msg.bad ? 'bad' : ''}`} style={{ marginBottom: 12 }}>{msg.t}</div>}
 
       {upcoming.map((b) => (
         <div key={b.id} className="ibook">
-          <div><div className="eyebrow">Your booking</div><b style={{ fontSize: 18, color: 'var(--ink)' }}><LocalTime iso={b.starts_at} long /></b><div className="muted" style={{ fontSize: 13 }}>{b.duration_min} minutes · Microsoft Teams{b.notes ? ` · ${b.notes}` : ''}</div></div>
+          <div><div className="eyebrow">Your booking</div><b style={{ fontSize: 18, color: 'var(--ink)' }}><LocalTime iso={b.starts_at} long /></b><div className="muted" style={{ fontSize: 13 }}>{b.duration_min} minutes · {b.provider}{b.notes ? ` · ${b.notes}` : ''}</div></div>
           <div className="filters">
-            <a className="btn" href={b.teams_url} target="_blank" rel="noreferrer"><Icon n="video" size={15} /> Join on Teams</a>
+            <a className="btn" href={b.teams_url} target="_blank" rel="noreferrer"><Icon n="video" size={15} /> Join on {b.provider}</a>
             <a className="btn ghost sm" href={b.gcal} target="_blank" rel="noreferrer">Add to Google Calendar</a>
             {b.canCancel && <button className="btn ghost sm" disabled={busy === b.id} onClick={() => confirm('Cancel this session?') && run(b.id, () => studentCancelBooking(b.id), 'Your session was cancelled.')}>Cancel</button>}
           </div>
@@ -43,7 +43,7 @@ export default function StudentInterviews({ slots, upcoming, past, hasUpcoming }
             {slots.map((sl) => (
               <li key={sl.id}><span className="dstat" style={{ background: '#eef3ff', color: 'var(--blue)' }}><Icon n="clock" size={14} /></span>
                 <div className="dmain"><b><LocalTime iso={sl.starts_at} /></b><small>{sl.duration_min} minutes{sl.notes ? ` · ${sl.notes}` : ''}{sl.free > 1 ? ` · ${sl.free} places left` : ''}</small></div>
-                <button className="btn sm" disabled={!!busy} onClick={() => run(sl.id, () => studentBookSlot(sl.id), 'Booked! We’ve emailed you the Teams link and a calendar invite.')}>{busy === sl.id ? 'Booking…' : 'Book'}</button></li>
+                <button className="btn sm" disabled={!!busy} onClick={() => run(sl.id, () => studentBookSlot(sl.id), 'Booked! We’ve emailed you the meeting link and a calendar invite.')}>{busy === sl.id ? 'Booking…' : 'Book'}</button></li>
             ))}
           </ul>
         </>

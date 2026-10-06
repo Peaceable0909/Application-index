@@ -4,6 +4,7 @@ import { admin } from '@/lib/supabase';
 import { loadPeople } from '@/lib/people';
 import { cancelInterviewSlot, createInterviewSlots, setBookingStatus, staffBookStudent } from '../actions';
 import { whenText } from '@/lib/interviews';
+import { providerName } from '@/lib/meet';
 import LocalTime from '@/components/LocalTime';
 import SlotForm from '@/components/SlotForm';
 import Fold from '@/components/Fold';
@@ -31,7 +32,7 @@ export default async function Interviews({ searchParams }: { searchParams: Promi
   return (
     <>
       <div className="head"><h1>Interview training</h1>{!past && <span className="badge plain">{upcomingCount} upcoming</span>}</div>
-      <p className="sub">Sessions students can book, each with a Microsoft Teams link. Students get a confirmation with a calendar invite, and a reminder the day before.</p>
+      <p className="sub">Sessions students can book, each with its own video link (Google Meet by default). Students get a confirmation with a calendar invite, and a reminder the day before.</p>
       {sp.msg && <div className="card ok">{sp.msg}</div>}{sp.err && <div className="card err">{sp.err}</div>}
       <Fold label="New session" icon="video"><SlotForm action={createInterviewSlots} people={staffPeople} defaultTrainer={staff.email} defaultUrl={last?.[0]?.teams_url || ''} /></Fold>
       <div className="tabs" style={{ marginTop: 0 }}><Link href="/interviews" className={`tab ${!past ? 'active' : ''}`}>Upcoming</Link><Link href="/interviews?tab=past" className={`tab ${past ? 'active' : ''}`}>Past</Link></div>
@@ -44,7 +45,7 @@ export default async function Interviews({ searchParams }: { searchParams: Promi
             <div key={sl.id} className="card slotcard">
               <div className="sl-head"><div><b style={{ fontSize: 17, color: 'var(--ink)' }}><LocalTime iso={sl.starts_at} long /></b><div className="muted" style={{ fontSize: 12.5 }}>{sl.duration_min} min · {whenText(sl.starts_at)}</div></div>
                 <span className={`badge ${free > 0 ? 'green' : 'plain'}`}>{free > 0 ? `${free} of ${sl.capacity} free` : 'Full'}</span></div>
-              <div className="filters" style={{ margin: '10px 0' }}><a className="btn sm" href={sl.teams_url} target="_blank" rel="noreferrer"><Icon n="video" size={14} /> Open Teams link</a><span className="muted" style={{ fontSize: 13 }}>Trainer: {trainer?.name || sl.trainer || '—'}</span></div>
+              <div className="filters" style={{ margin: '10px 0' }}><a className="btn sm" href={sl.teams_url} target="_blank" rel="noreferrer"><Icon n="video" size={14} /> Open {providerName(sl.teams_url)}</a><span className="muted" style={{ fontSize: 13 }}>Trainer: {trainer?.name || sl.trainer || '—'}</span></div>
               {sl.notes && <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>{sl.notes}</div>}
               {list.map((b) => {
                 const a = b.portal_applications as unknown as { name: string; school: string | null; counselor: string | null } | null, mine = canSee(staff, a?.counselor ?? null);

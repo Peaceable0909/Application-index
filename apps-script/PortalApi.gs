@@ -46,6 +46,8 @@ function portalDispatch_(e) {
       case 'addMaster':        return portalJson_({ ok: true, data: portalAddMaster_(p) });
       case 'listRegent':       return portalJson_({ ok: true, data: portalListRegent_() });
       case 'extractText':      return portalJson_({ ok: true, data: portalExtractText_(p.fileId) });
+      case 'createMeet':       return portalJson_({ ok: true, data: portalCreateMeet_(p) });
+      case 'deleteMeet':       return portalJson_({ ok: true, data: portalDeleteMeet_(p) });
       case 'extractFull':      return portalJson_({ ok: true, data: portalExtractFull_(p.fileId) });
       case 'aiChat':           return portalJson_({ ok: true, data: portalAiChat_(p) });
       case 'searchFolders':    return portalJson_({ ok: true, data: portalSearchFolders_(p.students || []) });
@@ -437,6 +439,23 @@ function portalExtractText_(fileId) {
   }
   text = String(text || '').replace(/\s+/g, ' ').trim();
   return { text: text.slice(0, 5000), chars: text.length };
+}
+
+// Creates a calendar event on the script owner's calendar with its own Google Meet link, and returns the link.
+// Needs the "Google Calendar API" advanced service switched on (Apps Script → Services → + → Google Calendar API).
+function portalCreateMeet_(p) {
+  const start = new Date(p.startsAt), end = new Date(start.getTime() + (Number(p.durationMin) || 45) * 60000);
+  const ev = Calendar.Events.insert({
+    summary: p.summary || 'Interview training', description: p.description || '',
+    start: { dateTime: start.toISOString() }, end: { dateTime: end.toISOString() },
+    conferenceData: { createRequest: { requestId: Utilities.getUuid(), conferenceSolutionKey: { type: 'hangoutsMeet' } } },
+  }, 'primary', { conferenceDataVersion: 1 });
+  if (!ev.hangoutLink) throw new Error('Google did not return a Meet link');
+  return { url: ev.hangoutLink, eventId: ev.id };
+}
+function portalDeleteMeet_(p) {
+  if (!p.eventId) return { deleted: false };
+  try { Calendar.Events.remove('primary', p.eventId); return { deleted: true }; } catch (e) { return { deleted: false }; }
 }
 
 // Full text of one file with its line breaks kept (for the portal's "Extracted text" page).

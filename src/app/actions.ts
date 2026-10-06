@@ -13,7 +13,8 @@ import { requestDocs, summarise, digestEmail, sendPaymentReminders, summariseRem
 import { sendMail } from '@/lib/mail';
 import { site } from '@/lib/emailTemplate';
 import { audit } from '@/lib/audit';
-import { bookSlotCore, checkTeamsUrl, emailBooking, MIN_NOTICE_H } from '@/lib/interviews';
+import { bookSlotCore, emailBooking, MIN_NOTICE_H } from '@/lib/interviews';
+import { checkMeetingUrl } from '@/lib/meet';
 import { appsForEmail, currentStudent, isStudentEmail } from '@/lib/student';
 import { runBackup } from '@/lib/backup';
 import { notifyAssigned } from '@/lib/notify';
@@ -1117,11 +1118,25 @@ export async function createInterviewSlots(f: FormData) {
   try { const raw = JSON.parse(s(f, 'starts') || '[]'); if (Array.isArray(raw)) starts = raw.map(String); } catch { /* ignore */ }
   starts = starts.map((x) => new Date(x)).filter((d) => !isNaN(d.getTime()) && d.getTime() > Date.now()).map((d) => d.toISOString()).slice(0, 12);
   if (!starts.length) backTo('/interviews', 'Pick a date and time in the future.', true);
-  const url = checkTeamsUrl(s(f, 'teams_url'));
-  if (!url) backTo('/interviews', 'Paste a Microsoft Teams meeting link (it should start with https://teams.microsoft.com/…).', true);
   const duration = Math.max(10, Math.min(240, Number(s(f, 'duration')) || 45)), capacity = Math.max(1, Math.min(20, Number(s(f, 'capacity')) || 1));
   const trainer = s(f, 'trainer') || staff.email, notes = s(f, 'notes').slice(0, 300) || null;
-  const { error } = await admin().from('portal_interview_slots').insert(starts.map((starts_at) => ({ starts_at, duration_min: duration, trainer, teams_url: url!, capacity, notes, created_by: staff.email })));
+  const auto = s(f, 'link_mode') !== 'paste';
+  let pasted: string | null = null;
+  if (!auto) { pasted = checkMeetingUrl(s(f, 'teams_url')); if (!pasted) backTo('/interviews', 'Paste a Google Meet link (like https://meet.google.com/abc-defg-hij) or a Microsoft Teams link.', true); }
+  const rows: { starts_at: string; teams_url: string; calendar_event_id: string | null }[] = [];
+  for (const starts_at of starts) {
+    if (!auto) { rows.push({ starts_at, teams_url: pasted!, calendar_event_id: null }); continue; }
+    try {
+      const m = await callScript<{ url: string; eventId: string }>('createMeet', { startsAt: starts_at, durationMin: duration, summary: 'Interview training (WhiteRock Admissions)', description: 'Interview practice session for a student.' });
+      rows.push({ starts_at, teams_url: m.url, calendar_event_id: m.eventId });
+    } catch (e) {
+      rethrow(e);
+      const msg = (e as Error).message;
+      for (const r of rows) if (r.calendar_event_id) { try { await callScript('deleteMeet', { eventId: r.calendar_event_id }); } catch { /* best effort */ } }
+      backTo('/interviews', /unknown action/i.test(msg) ? 'Your Apps Script needs the newest PortalApi.gs (it is missing “createMeet”). Or choose “Paste a link” instead.' : /Calendar is not defined|Calendar\.Events/i.test(msg) ? 'Switch on the Google Calendar service in Apps Script (Services → + → Google Calendar API), then try again. Or choose “Paste a link” instead.' : `Could not create a Google Meet link: ${msg.replace(/^Apps Script:\s*/, '').slice(0, 160)}`, true);
+    }
+  }
+  const { error } = await admin().from('portal_interview_slots').insert(rows.map((r) => ({ ...r, duration_min: duration, trainer, capacity, notes, created_by: staff.email })));
   if (error) backTo('/interviews', `Could not create the sessions: ${error.message}`, true);
   await audit(staff.email, 'interview_slots_created', `${starts.length} session(s)`, { first: starts[0] });
   revalidatePath('/interviews'); revalidatePath('/student');
@@ -1135,6 +1150,7 @@ export async function cancelInterviewSlot(f: FormData) {
   if (!slot) backTo('/interviews', 'Session not found.', true);
   if (staff.role === 'counselor' && slot!.created_by !== staff.email && slot!.trainer !== staff.email) backTo('/interviews', 'You can only cancel your own sessions.', true);
   await db.from('portal_interview_slots').update({ cancelled_at: new Date().toISOString() }).eq('id', id);
+  if (slot!.calendar_event_id) { try { await callScript('deleteMeet', { eventId: slot!.calendar_event_id }); } catch { /* the session is cancelled either way */ } }
   const { data: bs } = await db.from('portal_interview_bookings').select('id, student_email, portal_applications(name, preferred_name)').eq('slot_id', id).eq('status', 'booked');
   await db.from('portal_interview_bookings').update({ status: 'cancelled', cancelled_at: new Date().toISOString() }).eq('slot_id', id).eq('status', 'booked');
   let told = 0;
@@ -1155,7 +1171,7 @@ export async function staffBookStudent(f: FormData) {
   await log(appId, staff.email, 'interview_booked', { when: r.slot!.starts_at });
   try { await emailBooking(r.slot!, { name: a!.name, email: a!.email!, preferred: a!.preferred_name }, staff.email, 'booked'); } catch { /* booking stands even if the email fails */ }
   revalidatePath('/interviews'); revalidatePath('/student');
-  backTo('/interviews', `${a!.name} is booked and has been emailed the Teams link.`);
+  backTo('/interviews', `${a!.name} is booked and has been emailed the meeting link.`);
 }
 
 export async function setBookingStatus(f: FormData) {
