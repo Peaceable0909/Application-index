@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { studentBookSlot, studentCancelBooking } from '@/app/actions';
 import LocalTime from './LocalTime';
 import Icon from './Icon';
+import Confirmed from './Confirmed';
 
 export type SlotView = { id: string; starts_at: string; duration_min: number; notes: string | null; free: number };
 export type MyBooking = { id: string; starts_at: string; duration_min: number; teams_url: string; provider: string; notes: string | null; status: string; feedback: string | null; canCancel: boolean; gcal: string };
@@ -12,14 +13,18 @@ export default function StudentInterviews({ slots, upcoming, past, hasUpcoming }
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ t: string; bad?: boolean } | null>(null);
-  async function run(key: string, fn: () => Promise<{ ok: boolean; error?: string }>, okText: string) {
+  const [done, setDone] = useState<{ title: string; lines: string[]; link?: string } | null>(null);
+  async function run(key: string, fn: () => Promise<{ ok: boolean; error?: string }>, okText: string, celebrate?: { title: string; lines: string[] }) {
     setBusy(key); setMsg(null);
     const r = await fn();
     setMsg(r.ok ? { t: okText } : { t: r.error || 'Something went wrong', bad: true });
+    if (r.ok && celebrate) setDone(celebrate);
     setBusy(null); router.refresh();
   }
+  const when = (iso: string) => { const d = new Date(iso); return `${d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })} at ${d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })}`; };
   return (
     <div className="card scard-big rise" id="interview">
+      {done && <Confirmed title={done.title} lines={done.lines} onClose={() => setDone(null)} />}
       <div className="sb-head"><h2 style={{ margin: 0 }}><Icon n="video" size={18} /> Interview training</h2></div>
       <p className="muted" style={{ marginTop: -8 }}>Practise real interview questions with a trainer on a video call. Pick a time that suits you.</p>
       {msg && <div className={`xnote ${msg.bad ? 'bad' : ''}`} style={{ marginBottom: 12 }}>{msg.t}</div>}
@@ -43,7 +48,7 @@ export default function StudentInterviews({ slots, upcoming, past, hasUpcoming }
             {slots.map((sl) => (
               <li key={sl.id}><span className="dstat" style={{ background: '#eef3ff', color: 'var(--blue)' }}><Icon n="clock" size={14} /></span>
                 <div className="dmain"><b><LocalTime iso={sl.starts_at} /></b><small>{sl.duration_min} minutes{sl.notes ? ` · ${sl.notes}` : ''}{sl.free > 1 ? ` · ${sl.free} places left` : ''}</small></div>
-                <button className="btn sm" disabled={!!busy} onClick={() => run(sl.id, () => studentBookSlot(sl.id), 'Booked! We’ve emailed you the meeting link and a calendar invite.')}>{busy === sl.id ? 'Booking…' : 'Book'}</button></li>
+                <button className="btn sm" disabled={!!busy} onClick={() => run(sl.id, () => studentBookSlot(sl.id), 'Booked! We’ve emailed you the meeting link and a calendar invite.', { title: 'You’re booked!', lines: [when(sl.starts_at), `${sl.duration_min} minutes`, 'We’ve emailed you the meeting link and a calendar invite.'] })}>{busy === sl.id ? 'Booking…' : 'Book'}</button></li>
             ))}
           </ul>
         </>

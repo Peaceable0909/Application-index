@@ -9,6 +9,7 @@ import { providerName } from '@/lib/meet';
 import LocalTime from '@/components/LocalTime';
 import SlotForm from '@/components/SlotForm';
 import Fold from '@/components/Fold';
+import FlashSuccess from '@/components/FlashSuccess';
 import Btn from '@/components/Btn';
 import Icon from '@/components/Icon';
 
@@ -34,6 +35,7 @@ export default async function Interviews({ searchParams }: { searchParams: Promi
     <>
       <div className="head"><h1>Interview training</h1>{!past && <span className="badge plain">{upcomingCount} upcoming</span>}</div>
       <p className="sub">Sessions students can book, each with its own video link (Google Meet by default). Students get a confirmation with a calendar invite, and a reminder the day before.</p>
+      {sp.msg && /created|booked|invited/i.test(sp.msg) && <FlashSuccess key={sp.msg} title={/created/i.test(sp.msg) ? 'Session created' : 'Booked and emailed'} message={sp.msg} />}
       {sp.msg && <div className="card ok">{sp.msg}</div>}{sp.err && <div className="card err">{sp.err}</div>}
       <Fold label="New session" icon="video"><SlotForm action={createInterviewSlots} people={staffPeople} defaultTrainer={staff.email} defaultUrl={last?.[0]?.teams_url || ''} students={bookable.map((a) => ({ id: a.application_id, name: a.name, school: schoolShort(a.school), counselor: a.counselor || '', hasEmail: !!a.email }))} /></Fold>
       <div className="tabs" style={{ marginTop: 0 }}><Link href="/interviews" className={`tab ${!past ? 'active' : ''}`}>Upcoming</Link><Link href="/interviews?tab=past" className={`tab ${past ? 'active' : ''}`}>Past</Link></div>

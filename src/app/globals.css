@@ -512,3 +512,19 @@ html, body { max-width:100%; overflow-x:clip; }
 .sp-ico { width:32px; height:32px; border-radius:50%; background:#e8eefc; color:var(--blue); display:grid; place-items:center; flex:none; } .sp-i.done .sp-ico { background:#e3f6ea; color:#15803d; }
 .sp-i b { color:var(--ink); display:block; } .sp-f { display:flex; gap:12px; margin-top:4px; align-items:center; } .sp-f small { color:var(--muted); } .sp-f a { font-weight:650; font-size:13px; }
 .todo { border-left:4px solid var(--amber, #d97706); } .todo.clear { border-left-color:#16a34a; } .todo ul { list-style:none; margin:10px 0 0; padding:0; display:grid; gap:8px; } .todo li { display:flex; gap:10px; align-items:center; flex-wrap:wrap; } .todo li a { margin-left:auto; font-weight:650; }
+
+/* ---- confirmation moment ---- */
+.cf-bg { position:fixed; inset:0; z-index:200; display:grid; place-items:center; padding:20px; background:rgba(8,16,40,.55); backdrop-filter:blur(4px); animation:fade .25s both; }
+.cf-card { position:relative; width:min(380px,calc(100vw - 40px)); background:#fff; border-radius:22px; padding:34px 26px 22px; text-align:center; box-shadow:0 40px 90px -24px rgba(8,16,40,.7); animation:cfpop .5s cubic-bezier(.2,1.2,.3,1) both; overflow:hidden; }
+@keyframes cfpop { from { transform:translateY(24px) scale(.9); opacity:0 } to { transform:none; opacity:1 } }
+.cf-svg { width:96px; height:96px; display:block; margin:0 auto 14px; overflow:visible; }
+.cf-fill { fill:#e8f8ee; transform-origin:center; animation:cffill .45s .35s both cubic-bezier(.2,1.4,.4,1); } @keyframes cffill { from { transform:scale(0) } to { transform:scale(1) } }
+.cf-ring { fill:none; stroke:#16a34a; stroke-width:4; stroke-linecap:round; stroke-dasharray:214; stroke-dashoffset:214; transform:rotate(-90deg); transform-origin:center; animation:cfdraw .6s .1s ease-out forwards; }
+.cf-tick { fill:none; stroke:#16a34a; stroke-width:6; stroke-linecap:round; stroke-linejoin:round; stroke-dasharray:50; stroke-dashoffset:50; animation:cfdraw .4s .6s ease-out forwards; }
+@keyframes cfdraw { to { stroke-dashoffset:0 } }
+.cf-burst { position:absolute; left:50%; top:80px; width:0; height:0; pointer-events:none; } .cf-burst i { position:absolute; width:8px; height:8px; margin:-4px; border-radius:50%; background:var(--c); opacity:0; animation:cfburst .8s ease-out forwards; }
+@keyframes cfburst { 0% { opacity:1; transform:rotate(var(--a)) translateY(0) scale(.4) } 100% { opacity:0; transform:rotate(var(--a)) translateY(calc(var(--d) * -1)) scale(1) } }
+.cf-card h2 { margin:0 0 6px; font-size:23px; color:var(--ink); animation:cfup .4s .75s both; } .cf-card p { margin:0 0 4px; color:var(--text); animation:cfup .4s .85s both; } @keyframes cfup { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:none } }
+.cf-actions { display:flex; gap:10px; justify-content:center; margin-top:18px; flex-wrap:wrap; animation:cfup .4s .95s both; }
+.cf-bar { position:absolute; left:0; bottom:0; height:4px; width:100%; background:linear-gradient(90deg,#16a34a,#2458d6); transform-origin:left; animation:cfbar linear forwards; } @keyframes cfbar { from { transform:scaleX(1) } to { transform:scaleX(0) } }
+@media (prefers-reduced-motion:reduce){ .cf-ring,.cf-tick { animation:none; stroke-dashoffset:0 } .cf-burst { display:none } .cf-card,.cf-fill { animation:none } }
