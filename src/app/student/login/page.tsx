@@ -14,14 +14,14 @@ export default async function StudentLogin({ searchParams }: { searchParams: Pro
     <div className="auth">
       <div style={{ display: 'grid', placeItems: 'center', marginBottom: 14 }}><Mark size={46} /></div>
       <h1>Student <em>Portal</em></h1>
-      <p className="muted" style={{ margin: 0 }}>{code ? 'Check your email for a 6-digit code.' : 'Track your application and upload your documents.'}</p>
+      <p className="muted" style={{ margin: 0 }}>{code ? 'Check your email for your sign-in code.' : 'Track your application and upload your documents.'}</p>
       <div className="card">
         {sp.error && <div className="err" style={{ marginBottom: 14 }}>{sp.error}</div>}
         {code ? (
           <form action={verifyStudentCode} className="grid" style={{ gap: 12 }}>
             <input type="hidden" name="email" value={sp.email} />
             <div className="muted" style={{ fontSize: 13.5 }}>We sent a code to <b style={{ color: 'var(--ink)' }}>{sp.email}</b>. It can take a minute to arrive. Check your spam folder too.</div>
-            <input name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9 ]{6,7}" maxLength={7} placeholder="123456" required autoFocus className="wide codein" />
+            <input name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9 ]{6,12}" maxLength={12} placeholder="Enter your code" required autoFocus className="wide codein" />
             <Btn className="wide-btn">Sign in</Btn>
             <a href="/student/login" className="muted" style={{ textAlign: 'center', fontSize: 13.5 }}>Use a different email or send a new code</a>
           </form>

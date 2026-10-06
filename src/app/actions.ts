@@ -891,7 +891,7 @@ export async function extractFile(fileId: string): Promise<{ ok: boolean; chars?
 // ================= Student portal =================
 const STUDENT_CODE_LIMIT = 5;   // sign-in codes per email per hour
 
-/** Step 1: email a 6-digit code. Same reply whether or not the address is on file, so nobody can probe who has applied. */
+/** Step 1: email a sign-in code (its length is set in Supabase, so nothing here assumes 6 or 8 digits). Same reply whether or not the address is on file, so nobody can probe who has applied. */
 export async function requestStudentCode(f: FormData) {
   const email = s(f, 'email').toLowerCase();
   if (!EMAIL_RE.test(email)) redirect('/student/login?error=' + encodeURIComponent('Enter a valid email address.'));
@@ -922,7 +922,7 @@ export async function requestStudentCode(f: FormData) {
 export async function verifyStudentCode(f: FormData) {
   const email = s(f, 'email').toLowerCase(), code = s(f, 'code').replace(/\D/g, '');
   const back2 = (m: string): never => redirect(`/student/login?step=code&email=${encodeURIComponent(email)}&error=${encodeURIComponent(m)}`);
-  if (code.length !== 6) back2('Enter the 6-digit code from your email.');
+  if (code.length < 6 || code.length > 10) back2('Enter the code from your email.');
   if (!(await isStudentEmail(email))) back2('That code didn’t work. Request a new one.');
   const { error } = await (await sessionClient()).auth.verifyOtp({ email, token: code, type: 'email' });
   if (error) back2('That code didn’t work or has expired. Request a new one.');
@@ -1013,7 +1013,7 @@ async function inviteStudentsCore(rowsIn: { id: string }[], actor: string, force
     const body = `Hi ${a.name.split(/[\s,]+/)[0]},\n\nYour student portal is ready. Sign in with ${a.email} to see where your application is, upload your documents and message your counselor.\n\n${site()}/student/login`;
     try {
       await sendMail({ to: a.email, subject, body, eyebrow: 'Student portal', title: 'Your student portal is ready', greeting: `Hi ${a.name.split(/[\s,]+/)[0]},`, preheader: 'See your application progress and upload your documents.', replyTo: c?.email || actor, from: c?.email || actor,
-        blocks: [{ type: 'p', text: 'You can now follow your application online. In your portal you can:' }, { type: 'steps', items: ['See exactly where your application is', 'Upload any documents we still need', 'Message your counselor directly'] }, { type: 'note', text: `Sign in with this email address: ${a.email}. We’ll send you a 6-digit code, so there is no password to remember.` }], cta: { label: 'Open my student portal', href: `${site()}/student/login` } });
+        blocks: [{ type: 'p', text: 'You can now follow your application online. In your portal you can:' }, { type: 'steps', items: ['See exactly where your application is', 'Upload any documents we still need', 'Message your counselor directly'] }, { type: 'note', text: `Sign in with this email address: ${a.email}. We’ll email you a sign-in code, so there is no password to remember.` }], cta: { label: 'Open my student portal', href: `${site()}/student/login` } });
       await db.from('portal_messages').insert({ application_id: a.application_id, counselor_name: c?.name || null, to_email: a.email, to_kind: 'student', subject, body, sent_by: actor });
       await log(a.application_id, actor, 'email_sent', { to: a.email, subject });
       done.add(a.email.toLowerCase()); out.sent++;
