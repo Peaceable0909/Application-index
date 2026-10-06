@@ -1,4 +1,4 @@
-// ============================================================
+// ==========================================================
 // WHITEROCK PORTAL API  — add this as a NEW file (PortalApi.gs)
 // in the SAME Apps Script project as your existing doPost.
 //
@@ -18,7 +18,7 @@
 //        notifyPortal_();
 // 4. Deploy > Manage deployments > edit > New version (Execute as: Me,
 //    Who has access: Anyone). The token is what protects it.
-// ========================================--==================
+// ========================================--================
 
 const PORTAL_MAX_FILE_BYTES = 25 * 1024 * 1024;
 // The hand-maintained sheet (tab name). Only columns A..N are read; the
