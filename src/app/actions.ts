@@ -6,13 +6,14 @@ import { admin, sessionClient } from '@/lib/supabase';
 import { guardApp, requireStaff, requireTeam } from '@/lib/auth';
 import { callScript, DriveFile } from '@/lib/appsScript';
 import { counselorKey, docTypeFromName, dobForMaster, schoolShort } from '@/lib/docs';
-import { ALL_DOC_TYPES } from '@/lib/constants';
+import { ALL_DOC_TYPES, CAS_STATUSES, VISA_STATUSES } from '@/lib/constants';
 import { syncAll, syncFolders } from '@/lib/sync';
 import { STATUSES } from '@/lib/constants';
 import { requestDocs, summarise, digestEmail, sendPaymentReminders, summariseReminders } from '@/lib/requests';
 import { sendMail } from '@/lib/mail';
 import { site } from '@/lib/emailTemplate';
 import { audit } from '@/lib/audit';
+import { bookSlotCore, checkTeamsUrl, emailBooking, MIN_NOTICE_H } from '@/lib/interviews';
 import { appsForEmail, currentStudent, isStudentEmail } from '@/lib/student';
 import { runBackup } from '@/lib/backup';
 import { notifyAssigned } from '@/lib/notify';
@@ -1067,4 +1068,131 @@ export async function studentSaveDetails(f: FormData): Promise<{ ok: boolean; er
   await log(me.apps[0].application_id, me.email, 'details_updated', { fields: 'contact details', by: 'student' });
   revalidatePath('/student'); revalidatePath('/applications');
   return { ok: true, sheet };
+}
+
+// ================= Offer & visa tracking =================
+export async function saveOffer(f: FormData) {
+  const staff = await requireStaff();
+  const id = s(f, 'id'), ret = `/applications/${encodeURIComponent(id)}?tab=offer`;
+  await guardApp(staff, id);
+  const date = (k: string) => { const v = s(f, k); return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null; };
+  const pick = (k: string, ok: readonly string[]) => { const v = s(f, k); return ok.includes(v) ? v : null; };
+  let conditions: { text: string; met: boolean; due?: string | null }[] = [];
+  try { const raw = JSON.parse(s(f, 'conditions') || '[]'); if (Array.isArray(raw)) conditions = raw.slice(0, 20).map((c) => ({ text: String(c.text || '').replace(/\s+/g, ' ').trim().slice(0, 200), met: !!c.met, due: /^\d{4}-\d{2}-\d{2}$/.test(c.due || '') ? c.due : null })).filter((c) => c.text); } catch { /* ignore bad json */ }
+  const docId = s(f, 'offer_doc_id') || null;
+  const row = {
+    application_id: id, offer_type: pick('offer_type', ['Conditional', 'Unconditional']), offer_date: date('offer_date'), offer_doc_id: docId, conditions, deposit_due: date('deposit_due'),
+    cas_status: pick('cas_status', CAS_STATUSES), cas_applied_date: date('cas_applied_date'), cas_received_date: date('cas_received_date'),
+    visa_status: pick('visa_status', VISA_STATUSES), visa_applied_date: date('visa_applied_date'), visa_biometrics_date: date('visa_biometrics_date'), visa_decision_date: date('visa_decision_date'),
+    student_note: s(f, 'student_note').slice(0, 600) || null, visible_to_student: f.get('visible') === 'on', updated_by: staff.email, updated_at: new Date().toISOString(),
+  };
+  const db = admin();
+  const { error } = await db.from('portal_offers').upsert(row);
+  if (error) return back(id, `Could not save: ${error.message}`, true, ret);
+  await log(id, staff.email, 'offer_updated', { offer: row.offer_type || '', cas: row.cas_status || '', visa: row.visa_status || '' });
+  let extra = '';
+  if (f.get('notify') === 'on') {
+    const { data: a } = await db.from('portal_applications').select('name, email, preferred_name, counselor').eq('application_id', id).single();
+    if (a?.email && EMAIL_RE.test(a.email) && row.visible_to_student) {
+      try {
+        const first = (a.preferred_name || a.name).split(/[\s,]+/)[0];
+        const bits = [row.offer_type ? `${row.offer_type} offer` : '', row.cas_status && row.cas_status !== 'Not started' ? `CAS: ${row.cas_status}` : '', row.visa_status && row.visa_status !== 'Not started' ? `Visa: ${row.visa_status}` : ''].filter(Boolean);
+        await sendMail({ to: a.email, subject: 'An update on your application', body: `Hi ${first},\n\nThere is an update on your application${bits.length ? `: ${bits.join(' · ')}` : ''}.\n\nSign in to your student portal to see the details: ${site()}/student/login`, replyTo: staff.email, from: staff.email, eyebrow: 'Application update', title: 'There’s an update on your application', greeting: `Hi ${first},`, preheader: bits.join(' · ') || 'See the latest in your student portal.',
+          blocks: [{ type: 'p', text: 'Your counselor has updated your offer and visa progress.' }, ...(bits.length ? [{ type: 'list' as const, items: bits }] : []), ...(row.student_note ? [{ type: 'quote' as const, from: 'Note from your counselor', text: row.student_note }] : [])], cta: { label: 'See my progress', href: `${site()}/student/login` } });
+        await db.from('portal_messages').insert({ application_id: id, to_email: a.email, to_kind: 'student', subject: 'An update on your application', body: bits.join(' · ') || 'Offer & visa update', sent_by: staff.email });
+        extra = ' The student was emailed.';
+      } catch { extra = ' (The email to the student could not be sent.)'; }
+    }
+  }
+  revalidatePath('/student');
+  back(id, `Offer & visa saved.${extra}`, false, ret);
+}
+
+// ================= Interview training =================
+const backTo = (path: string, msg: string, err = false): never => redirect(`${path}${path.includes('?') ? '&' : '?'}${err ? 'err' : 'msg'}=${encodeURIComponent(msg)}`);
+
+export async function createInterviewSlots(f: FormData) {
+  const staff = await requireStaff();
+  let starts: string[] = [];
+  try { const raw = JSON.parse(s(f, 'starts') || '[]'); if (Array.isArray(raw)) starts = raw.map(String); } catch { /* ignore */ }
+  starts = starts.map((x) => new Date(x)).filter((d) => !isNaN(d.getTime()) && d.getTime() > Date.now()).map((d) => d.toISOString()).slice(0, 12);
+  if (!starts.length) backTo('/interviews', 'Pick a date and time in the future.', true);
+  const url = checkTeamsUrl(s(f, 'teams_url'));
+  if (!url) backTo('/interviews', 'Paste a Microsoft Teams meeting link (it should start with https://teams.microsoft.com/…).', true);
+  const duration = Math.max(10, Math.min(240, Number(s(f, 'duration')) || 45)), capacity = Math.max(1, Math.min(20, Number(s(f, 'capacity')) || 1));
+  const trainer = s(f, 'trainer') || staff.email, notes = s(f, 'notes').slice(0, 300) || null;
+  const { error } = await admin().from('portal_interview_slots').insert(starts.map((starts_at) => ({ starts_at, duration_min: duration, trainer, teams_url: url!, capacity, notes, created_by: staff.email })));
+  if (error) backTo('/interviews', `Could not create the sessions: ${error.message}`, true);
+  await audit(staff.email, 'interview_slots_created', `${starts.length} session(s)`, { first: starts[0] });
+  revalidatePath('/interviews'); revalidatePath('/student');
+  backTo('/interviews', `${starts.length} session${starts.length === 1 ? '' : 's'} created. Students can book them now.`);
+}
+
+export async function cancelInterviewSlot(f: FormData) {
+  const staff = await requireStaff();
+  const id = s(f, 'slotId'), db = admin();
+  const { data: slot } = await db.from('portal_interview_slots').select('*').eq('id', id).maybeSingle();
+  if (!slot) backTo('/interviews', 'Session not found.', true);
+  if (staff.role === 'counselor' && slot!.created_by !== staff.email && slot!.trainer !== staff.email) backTo('/interviews', 'You can only cancel your own sessions.', true);
+  await db.from('portal_interview_slots').update({ cancelled_at: new Date().toISOString() }).eq('id', id);
+  const { data: bs } = await db.from('portal_interview_bookings').select('id, student_email, portal_applications(name, preferred_name)').eq('slot_id', id).eq('status', 'booked');
+  await db.from('portal_interview_bookings').update({ status: 'cancelled', cancelled_at: new Date().toISOString() }).eq('slot_id', id).eq('status', 'booked');
+  let told = 0;
+  for (const b of bs || []) { const a = b.portal_applications as unknown as { name: string; preferred_name: string | null } | null; try { await emailBooking(slot as never, { name: a?.name || 'there', email: b.student_email, preferred: a?.preferred_name }, staff.email, 'slot_cancelled'); told++; } catch { /* ignore */ } }
+  revalidatePath('/interviews'); revalidatePath('/student');
+  backTo('/interviews', `Session cancelled${told ? `, and ${told} student${told === 1 ? ' was' : 's were'} emailed` : ''}.`);
+}
+
+export async function staffBookStudent(f: FormData) {
+  const staff = await requireStaff();
+  const slotId = s(f, 'slotId'), appId = s(f, 'appId');
+  if (!appId) backTo('/interviews', 'Choose a student first.', true);
+  await guardApp(staff, appId);
+  const { data: a } = await admin().from('portal_applications').select('name, email, preferred_name').eq('application_id', appId).single();
+  if (!a?.email || !EMAIL_RE.test(a.email)) backTo('/interviews', 'That student has no email address on file.', true);
+  const r = await bookSlotCore({ slotId, applicationId: appId, studentEmail: a!.email!, bookedBy: staff.email, asStudent: false });
+  if (!r.ok) backTo('/interviews', r.error || 'Could not book.', true);
+  await log(appId, staff.email, 'interview_booked', { when: r.slot!.starts_at });
+  try { await emailBooking(r.slot!, { name: a!.name, email: a!.email!, preferred: a!.preferred_name }, staff.email, 'booked'); } catch { /* booking stands even if the email fails */ }
+  revalidatePath('/interviews'); revalidatePath('/student');
+  backTo('/interviews', `${a!.name} is booked and has been emailed the Teams link.`);
+}
+
+export async function setBookingStatus(f: FormData) {
+  const staff = await requireStaff();
+  const id = s(f, 'bookingId'), status = s(f, 'status'), db = admin();
+  const { data: b } = await db.from('portal_interview_bookings').select('id, application_id').eq('id', id).maybeSingle();
+  if (!b) backTo('/interviews', 'Booking not found.', true);
+  await guardApp(staff, b!.application_id);
+  if (!['booked', 'completed', 'no_show', 'cancelled'].includes(status)) backTo('/interviews', 'Unknown status.', true);
+  await db.from('portal_interview_bookings').update({ status, feedback: s(f, 'feedback').slice(0, 1000) || null, feedback_visible: f.get('visible') === 'on', ...(status === 'cancelled' ? { cancelled_at: new Date().toISOString() } : {}) }).eq('id', id);
+  await log(b!.application_id, staff.email, 'interview_updated', { status });
+  revalidatePath('/interviews'); revalidatePath('/student');
+  backTo(s(f, 'tab') === 'past' ? '/interviews?tab=past' : '/interviews', 'Saved.');
+}
+
+export async function studentBookSlot(slotId: string): Promise<{ ok: boolean; error?: string }> {
+  const me = await currentStudent();
+  if (!me) return { ok: false, error: 'Please sign in again.' };
+  const app = me.apps[0];
+  const r = await bookSlotCore({ slotId, applicationId: app.application_id, studentEmail: me.email, bookedBy: me.email, asStudent: true });
+  if (!r.ok) return { ok: false, error: r.error };
+  await log(app.application_id, me.email, 'interview_booked', { when: r.slot!.starts_at, by: 'student' });
+  try { await emailBooking(r.slot!, { name: app.name, email: me.email, preferred: app.preferred_name }, r.slot!.trainer || r.slot!.created_by, 'booked'); } catch { /* the booking stands */ }
+  revalidatePath('/student'); revalidatePath('/interviews');
+  return { ok: true };
+}
+
+export async function studentCancelBooking(bookingId: string): Promise<{ ok: boolean; error?: string }> {
+  const me = await currentStudent();
+  if (!me) return { ok: false, error: 'Please sign in again.' };
+  const db = admin();
+  const { data: b } = await db.from('portal_interview_bookings').select('id, application_id, status, portal_interview_slots(starts_at)').eq('id', bookingId).maybeSingle();
+  if (!b || !me.ids.includes(b.application_id) || b.status !== 'booked') return { ok: false, error: 'Booking not found.' };
+  const start = (b.portal_interview_slots as unknown as { starts_at: string } | null)?.starts_at;
+  if (!start || new Date(start).getTime() - Date.now() < MIN_NOTICE_H * 3600_000) return { ok: false, error: `Sessions can only be cancelled up to ${MIN_NOTICE_H} hours before they start. Please message your counselor.` };
+  await db.from('portal_interview_bookings').update({ status: 'cancelled', cancelled_at: new Date().toISOString() }).eq('id', bookingId);
+  await log(b.application_id, me.email, 'interview_cancelled', { when: start, by: 'student' });
+  revalidatePath('/student'); revalidatePath('/interviews');
+  return { ok: true };
 }

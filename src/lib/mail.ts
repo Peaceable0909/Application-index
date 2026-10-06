@@ -16,7 +16,7 @@ export async function signFor(email: string | null | undefined, fallbackName?: s
   return { name: fallbackName || 'WhiteRock Admissions', title: 'Admissions Team', email: e || null };
 }
 
-export type MailOpts = { to: string; subject: string; body: string; replyTo?: string; eyebrow?: string; title?: string; preheader?: string; blocks?: Block[]; greeting?: string; cta?: EmailSpec['cta']; sign?: Sign; footerNote?: string; from?: string };
+export type MailOpts = { to: string; subject: string; body: string; replyTo?: string; eyebrow?: string; title?: string; preheader?: string; blocks?: Block[]; greeting?: string; cta?: EmailSpec['cta']; sign?: Sign; footerNote?: string; from?: string; attachments?: { name: string; mime: string; base64: string }[] };
 
 /** Sends a designed HTML email with the plain-text version as the fallback. */
 export async function sendMail(o: MailOpts) {
@@ -28,5 +28,5 @@ export async function sendMail(o: MailOpts) {
     blocks: o.blocks ?? derived.blocks, cta: o.cta, sign, footerNote: o.footerNote,
   });
   const text = `${o.body}\n\n—\n${sign.name}${sign.title ? `, ${sign.title}` : ''}\nWhiteRock Admissions · ${site()}`;
-  return callScript('sendEmail', { to: o.to, subject: o.subject, body: text, htmlBody: html, replyTo: o.replyTo || '' });
+  return callScript('sendEmail', { to: o.to, subject: o.subject, body: text, htmlBody: html, replyTo: o.replyTo || '', ...(o.attachments?.length ? { attachments: o.attachments } : {}) });
 }

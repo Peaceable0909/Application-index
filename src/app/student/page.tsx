@@ -12,6 +12,9 @@ import Icon from '@/components/Icon';
 import StudentUploader from '@/components/StudentUploader';
 import StudentMessage from '@/components/StudentMessage';
 import StudentDetails from '@/components/StudentDetails';
+import StudentInterviews, { MyBooking, SlotView } from '@/components/StudentInterviews';
+import { milestones, Offer } from '@/lib/offer';
+import { googleCalUrl, MIN_NOTICE_H } from '@/lib/interviews';
 
 export const maxDuration = 60;
 const OTHER_TYPES = ALL_DOC_TYPES.filter((t) => !(REQUIRED_DOCS as readonly string[]).includes(t));
@@ -23,6 +26,17 @@ export default async function StudentHome() {
   if (!me) redirect('/student/login');
   const db = admin();
   const { data: counselors } = await db.from('portal_counselors').select('name, name_key, email');
+  const { data: offerRows } = await db.from('portal_offers').select('*').in('application_id', me.ids).eq('visible_to_student', true);
+  const nowIso = new Date().toISOString();
+  const { data: openSlots } = await db.from('portal_interview_slots').select('*').is('cancelled_at', null).gt('starts_at', new Date(Date.now() + MIN_NOTICE_H * 3600_000).toISOString()).lt('starts_at', new Date(Date.now() + 28 * 864e5).toISOString()).order('starts_at').limit(40);
+  const { data: allB } = (openSlots || []).length ? await db.from('portal_interview_bookings').select('slot_id, status').in('slot_id', (openSlots || []).map((x) => x.id)).in('status', ['booked', 'completed', 'no_show']) : { data: [] };
+  const { data: myB } = await db.from('portal_interview_bookings').select('*, portal_interview_slots(*)').in('application_id', me.ids).neq('status', 'cancelled').order('created_at', { ascending: false }).limit(30);
+  const toBooking = (b: NonNullable<typeof myB>[number]): MyBooking | null => { const sl = b.portal_interview_slots as unknown as { id: string; starts_at: string; duration_min: number; teams_url: string; notes: string | null; cancelled_at: string | null } | null; return sl && !sl.cancelled_at ? { id: b.id, starts_at: sl.starts_at, duration_min: sl.duration_min, teams_url: sl.teams_url, notes: sl.notes, status: b.status, feedback: b.feedback_visible ? b.feedback : null, canCancel: new Date(sl.starts_at).getTime() - Date.now() >= MIN_NOTICE_H * 3600_000, gcal: googleCalUrl(sl as never) } : null; };
+  const mine = (myB || []).map(toBooking).filter(Boolean) as MyBooking[];
+  const upcomingB = mine.filter((b) => b.status === 'booked' && new Date(b.starts_at).getTime() + b.duration_min * 60_000 > Date.now()).sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+  const pastB = mine.filter((b) => !upcomingB.includes(b) && (b.status !== 'booked' || new Date(b.starts_at) < new Date())).sort((a, b) => b.starts_at.localeCompare(a.starts_at)).slice(0, 5);
+  const slotViews: SlotView[] = (openSlots || []).map((x) => ({ id: x.id, starts_at: x.starts_at, duration_min: x.duration_min, notes: x.notes, free: x.capacity - (allB || []).filter((b) => b.slot_id === x.id).length })).filter((x) => x.free > 0);
+  void nowIso;
   const { data: profiles } = await db.from('portal_staff').select('email, display_name, avatar_url, color, title');
 
   // one card per university (several submissions to the same university count as one)
@@ -35,7 +49,8 @@ export default async function StudentHome() {
     const c = (counselors || []).find((x) => x.name_key === counselorKey(a.counselor));
     const prof = c?.email ? (profiles || []).find((p) => p.email.toLowerCase() === c.email!.toLowerCase()) : null;
     const missing = REQUIRED_DOCS.filter((t) => !docs.some((d) => d.type === t));
-    return { a, ids, docs, folderApp, c, prof, missing, canUpload: !!folderApp.drive_folder_id };
+    const offer = ((offerRows || []).filter((o) => ids.includes(o.application_id)).sort((x, y) => y.updated_at.localeCompare(x.updated_at))[0] as unknown as Offer | undefined) || null;
+    return { a, ids, docs, folderApp, c, prof, missing, offer, canUpload: !!folderApp.drive_folder_id };
   });
   const first = me.apps[0].preferred_name || me.name.split(/[\s,]+/).filter(Boolean)[0] || 'there';
 
@@ -46,7 +61,7 @@ export default async function StudentHome() {
     <>
       <div className="head"><h1>Hi {first} 👋</h1></div>
       <p className="sub">Here is where your application stands, and what we still need from you.</p>
-      {cards.map(({ a, docs, folderApp, c, prof, missing, canUpload }) => {
+      {cards.map(({ a, docs, folderApp, c, prof, missing, offer, canUpload }) => {
         const idx = stepIndex(a.status), final = a.status && FINAL_STATUSES.includes(a.status) && a.status !== 'Enrolled';
         const left = a.deadline ? Math.ceil((new Date(a.deadline + 'T23:59:59').getTime() - Date.now()) / 864e5) : null;
         const done = REQUIRED_DOCS.length - missing.length;
@@ -63,6 +78,18 @@ export default async function StudentHome() {
               </div>
             )}
             {a.progress != null && !final && <div className="bar" style={{ margin: '4px 0 14px' }}><i style={{ width: `${a.progress}%` }} /></div>}
+
+            {offer && (offer.offer_type || offer.cas_status || offer.visa_status || offer.conditions?.length) && (
+              <div className="offerp">
+                <h3><Icon n="check-circle" size={16} /> Offer &amp; visa</h3>
+                <div className="ms-strip" style={{ marginBottom: 10 }}>{milestones(offer).map((m) => <div key={m.key} className={`ms ${m.state}`}><i>{m.state === 'done' ? '✓' : m.state === 'bad' ? '✕' : ''}</i><b>{m.label}</b><small>{[m.detail, m.date ? new Date(m.date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''].filter(Boolean).join(' · ') || 'Not yet'}</small></div>)}</div>
+                {(offer.conditions || []).length > 0 && (
+                  <ul className="dlist" style={{ marginBottom: 10 }}>{offer.conditions.map((cd, i) => <li key={i} className={cd.met ? 'got' : 'need'}><span className="dstat">{cd.met ? '✓' : '!'}</span><div className="dmain"><b>{cd.text}</b><small className={cd.met ? '' : 'warn-t'}>{cd.met ? 'Met' : 'Still to do'}{cd.due ? ` · by ${new Date(cd.due + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}</small></div></li>)}</ul>
+                )}
+                {offer.offer_doc_id && docs.some((d) => d.id === offer.offer_doc_id) && <a className="btn ghost sm" href={`/api/files/${encodeURIComponent(offer.offer_doc_id)}`} target="_blank" rel="noreferrer"><Icon n="eye" size={14} /> View my offer letter</a>}
+                {offer.student_note && <div className="fb" style={{ marginTop: 10 }}><b>Note from your counselor</b><div>{offer.student_note}</div></div>}
+              </div>
+            )}
 
             <div className="sgrid">
               <section>
@@ -112,6 +139,7 @@ export default async function StudentHome() {
           </div>
         );
       })}
+      <StudentInterviews slots={slotViews} upcoming={upcomingB} past={pastB} hasUpcoming={upcomingB.length > 0} />
       <StudentDetails locked={locked} phone={a0.phone || ''} city={a0.city || ''} preferred={a0.preferred_name || ''} />
       <p className="muted" style={{ fontSize: 13, textAlign: 'center', marginTop: 24 }}>Questions? Use the message box above. Your documents are stored privately and only your counselors can see them.</p>
     </>

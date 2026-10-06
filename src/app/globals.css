@@ -490,3 +490,15 @@ html, body { max-width:100%; overflow-x:clip; }
 .smsg textarea { width:100%; height:auto; padding:10px 12px; margin-bottom:8px; } .ok-t { color:#15803d; font-weight:600; } .bad-t { color:#b91c1c; font-weight:600; }
 .codein { font:700 26px/1 ui-monospace,Menlo,Consolas,monospace; letter-spacing:6px; text-align:center; height:56px; }
 @media (max-width:860px){ .sgrid { grid-template-columns:1fr; gap:22px; } .stu-top { padding:10px 16px; } .stu-me small { display:none; } .stu-main { padding:18px 14px 60px; } .scard-big { padding:16px; } .stp span { font-size:11px; } }
+
+/* ---- offer & visa ---- */
+.ms-strip { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; margin-bottom:16px; } .ms { padding:12px; border:1px solid var(--line); border-radius:12px; background:#fff; display:grid; gap:2px; } .ms i { font-style:normal; width:22px; height:22px; border-radius:50%; background:#e6ebf6; display:grid; place-items:center; font-size:12px; font-weight:700; margin-bottom:4px; color:#fff; } .ms b { color:var(--ink); font-size:13.5px; } .ms small { color:var(--muted); font-size:12px; }
+.ms.done { border-color:#c9ecd5; background:#f4fbf6; } .ms.done i { background:#16a34a; } .ms.now { border-color:#bcd0fb; background:#f3f7ff; } .ms.now i { background:var(--blue); box-shadow:0 0 0 4px rgba(36,88,230,.15); } .ms.bad { border-color:#fecaca; background:#fff5f5; } .ms.bad i { background:#dc2626; }
+.conds { list-style:none; margin:0 0 12px; padding:0; display:grid; gap:8px; } .conds li { display:flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid var(--line); border-radius:10px; flex-wrap:wrap; } .conds li label { flex:1; display:flex; gap:10px; align-items:center; min-width:160px; } .conds li.met label span { text-decoration:line-through; color:var(--muted); } .conds li input[type=date] { width:140px; height:32px; }
+
+/* ---- interview training ---- */
+.slotcard .sl-head { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; } .bk { padding:10px 0; border-top:1px solid var(--line); } .bk-top { display:flex; align-items:center; gap:10px; flex-wrap:wrap; } .bk-top b { color:var(--ink); flex:1; min-width:120px; }
+.sl-actions { display:grid; gap:10px; margin-top:12px; padding-top:12px; border-top:1px dashed var(--line); }
+.offerp { margin:6px 0 18px; padding:16px; border:1px solid var(--line); border-radius:14px; background:#fbfcfe; } .offerp h3 { display:flex; align-items:center; gap:8px; margin:0 0 12px; font-size:15.5px; }
+.ibook { display:flex; justify-content:space-between; gap:16px; align-items:center; flex-wrap:wrap; padding:16px; border:1px solid #bcd0fb; background:#f3f7ff; border-radius:14px; margin-bottom:14px; }
+.pastb { padding:10px 0; border-top:1px solid var(--line); } .fb { margin-top:8px; padding:10px 12px; border-left:3px solid var(--blue); background:#f3f7ff; border-radius:8px; font-size:13.5px; } .fb b { display:block; font-size:12px; color:var(--blue); margin-bottom:2px; }

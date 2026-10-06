@@ -7,7 +7,7 @@ import { requireStaff, canAccessApp } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
 import { attentionReasons, AppRow, isFormSubmission } from '@/lib/attention';
 import { missingDocs, counselorKey, effType, schoolShort } from '@/lib/docs';
-import { ALL_DOC_TYPES, REQUIRED_DOCS, STATUSES } from '@/lib/constants';
+import { ALL_DOC_TYPES, CAS_STATUSES, REQUIRED_DOCS, STATUSES, VISA_STATUSES } from '@/lib/constants';
 import { statusTone } from '@/lib/ui';
 import { ago, dateTime, decodeId, describeActivity, initials, shortDate, STEPS, stepIndex } from '@/lib/format';
 import { hashOf } from '@/lib/ai';
@@ -17,10 +17,12 @@ import { studentFacts, AppFull, StudentSummary } from '@/lib/overview';
 import Btn from '@/components/Btn';
 import Icon from '@/components/Icon';
 import { niceName } from '@/components/UserMenu';
-import { inviteOneStudent, sendStudentReminder, saveDates, addNote, addReminder, addToMaster, completeReminder, createDraft, scanDocs, setDocType, dismissSuggestion, generateSummary, linkFolder, refreshDocuments, scanStudent, sendCounselorEmail, unlinkFolder, updateCounselor, updateRegent, updateStatus, uploadDocument } from '../../actions';
+import OfferForm from '@/components/OfferForm';
+import { getOffer, milestones } from '@/lib/offer';
+import { saveOffer, inviteOneStudent, sendStudentReminder, saveDates, addNote, addReminder, addToMaster, completeReminder, createDraft, scanDocs, setDocType, dismissSuggestion, generateSummary, linkFolder, refreshDocuments, scanStudent, sendCounselorEmail, unlinkFolder, updateCounselor, updateRegent, updateStatus, uploadDocument } from '../../actions';
 
 type SP = { msg?: string; err?: string; preview?: string; tab?: string; compose?: string; draft?: string };
-const TABS = ['overview', 'documents', 'notes', 'activity', 'messages', 'regent', 'sources'] as const;
+const TABS = ['overview', 'documents', 'offer', 'notes', 'activity', 'messages', 'regent', 'sources'] as const;
 const FIELDS: [string, string][] = [['oppId', 'OPP ID'], ['payment', 'Payment'], ['interview', 'Interview booking'], ['name', 'Name'], ['email', 'Email'], ['phone', 'Phone'], ['school', 'University'], ['programme', 'Programme'], ['country', 'Country'], ['city', 'City'], ['gender', 'Gender'], ['dob', 'Date of birth'], ['age', 'Age'], ['counselor', 'Counselor'], ['status', 'Status'], ['notes', 'Notes']];
 const kb = (n: number | null) => (n ? `${Math.max(1, Math.round(n / 1024))} KB` : '');
 const ext = (n: string) => (n.match(/\.([a-z0-9]+)$/i)?.[1] || '').toLowerCase();
@@ -46,6 +48,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
     db.from('portal_messages').select('*').eq('application_id', id).order('created_at', { ascending: false }).limit(50),
     db.from('portal_reminders').select('*').eq('application_id', id).eq('status', 'pending').order('due_on'),
   ]);
+  const offerRow = await getOffer(id);
   const { data: docs } = await db.from('portal_documents').select('*').in('application_id', (siblings || []).map((s) => s.application_id)).order('created_at', { ascending: false });
 
   const judged = isFormSubmission(app) || !!app.drive_folder_id;
@@ -167,7 +170,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
       )}
 
       <div className="tabs" role="tablist">
-        {([['overview', 'Overview', null], ['documents', 'Documents', judged ? `${presentRequired}/${REQUIRED_DOCS.length}` : null], ['notes', 'Notes', (notes || []).length || null], ['activity', 'Activity', null], ['messages', 'Messages', (messages || []).length || null], ...(app.in_regent ? [['regent', 'Regent', null]] : []), ['sources', 'Sources', null]] as [string, string, string | number | null][]).map(([k, label, n]) => (
+        {([['overview', 'Overview', null], ['documents', 'Documents', judged ? `${presentRequired}/${REQUIRED_DOCS.length}` : null], ['offer', 'Offer & visa', offerRow?.offer_type ? '✓' : null], ['notes', 'Notes', (notes || []).length || null], ['activity', 'Activity', null], ['messages', 'Messages', (messages || []).length || null], ...(app.in_regent ? [['regent', 'Regent', null]] : []), ['sources', 'Sources', null]] as [string, string, string | number | null][]).map(([k, label, n]) => (
           <Link key={k} href={tabHref(k)} scroll={false} role="tab" aria-selected={tab === k} className={`tab ${tab === k ? 'active' : ''}`}>{label}{n ? <span className="n">{n}</span> : null}</Link>
         ))}
       </div>
@@ -413,6 +416,16 @@ export default async function ApplicationPage({ params, searchParams }: { params
               </div>
             </div>
           </div>
+        )}
+
+        {tab === 'offer' && (
+          <>
+            {offerRow && (
+              <div className="card ms-strip">{milestones(offerRow).map((m) => <div key={m.key} className={`ms ${m.state}`}><i>{m.state === 'done' ? '✓' : m.state === 'bad' ? '✕' : ''}</i><b>{m.label}</b><small>{[m.detail, m.date ? new Date(m.date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''].filter(Boolean).join(' · ') || 'Not yet'}</small></div>)}</div>
+            )}
+            <OfferForm action={saveOffer} id={id} offer={(offerRow || {}) as unknown as Record<string, string | boolean | null>} conditions={offerRow?.conditions || []}
+              docs={(docs || []).map((d) => ({ id: d.drive_file_id, name: d.name, type: effType(d) }))} casStatuses={CAS_STATUSES} visaStatuses={VISA_STATUSES} />
+          </>
         )}
 
         {tab === 'notes' && (

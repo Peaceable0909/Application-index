@@ -4,6 +4,7 @@ import { PROGRESS, REQUIRED_DOCS, STATUSES } from './constants';
 export function docTypeFromName(fileName: string): string {
   const base = fileName.replace(/\.[^.]+$/, '');
   const label = (base.includes(' - ') ? base.split(' - ').pop()! : base).toLowerCase();
+  if (/offer/.test(label)) return 'Offer Letter';
   if (/passport/.test(label)) return 'Passport';
   if (/\bcv\b|resume|curriculum/.test(label)) return 'CV';
   if (/transcript/.test(label)) return 'Transcript';

@@ -13,6 +13,10 @@ export function describeActivity(kind: string, d: Record<string, string>): { tit
     case 'interview_change': return { title: `Interview · ${d.to || '—'}`, icon: 'clock', tone: 'purple' };
     case 'doc_uploaded': return { title: `Document uploaded${d.name ? ` · ${d.name.split(' - ').pop()}` : ''}`, icon: 'upload', tone: 'green' };
     case 'details_updated': return { title: 'Student updated their details', icon: 'user', tone: '' };
+    case 'offer_updated': return { title: `Offer & visa updated${d.visa ? ` · visa ${d.visa}` : ''}`, icon: 'check-circle', tone: 'green' };
+    case 'interview_booked': return { title: 'Interview training booked', icon: 'video', tone: 'purple' };
+    case 'interview_cancelled': return { title: 'Interview training cancelled', icon: 'video', tone: 'amber' };
+    case 'interview_updated': return { title: `Interview training · ${(d.status || '').replace('_', ' ')}`, icon: 'video', tone: '' };
     case 'doc_retyped': return { title: `Document re-labelled · ${d.type || ''}`, icon: 'file', tone: '' };
     case 'email_sent': return { title: `Email sent${d.subject ? ` · ${d.subject}` : ''}`, icon: 'mail', tone: '' };
     case 'moved_to_master': return { title: 'Added to Sheet1', icon: 'check-circle', tone: 'green' };

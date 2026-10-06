@@ -543,7 +543,8 @@ function portalSendEmail_(p) {
   const opts = { name: 'WhiteRock Admissions' };
   if (p.cc) opts.cc = p.cc;
   if (p.replyTo) opts.replyTo = p.replyTo;
-  if (p.htmlBody) opts.htmlBody = p.htmlBody;   // designed version; the plain body stays as the fallback
+  if (p.htmlBody) opts.htmlBody = p.htmlBody;
+  if (p.attachments && p.attachments.length) opts.attachments = p.attachments.map(function (a) { return Utilities.newBlob(Utilities.base64Decode(a.base64), a.mime || 'application/octet-stream', a.name); });   // e.g. calendar invites (.ics)   // designed version; the plain body stays as the fallback
   GmailApp.sendEmail(p.to, p.subject, p.body, opts);
   return { sent: true };
 }

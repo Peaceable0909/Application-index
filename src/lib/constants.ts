@@ -12,6 +12,8 @@ export const FINAL_STATUSES = ['Enrolled', 'Rejected', 'Withdrawn'];
 // Documents every application is expected to have. Edit to suit; per-school
 // rules can be added later.
 export const REQUIRED_DOCS = ['Passport', 'CV', 'Transcript', 'Degree Certificate', 'WAEC/NECO', 'SOP'] as const;
-export const ALL_DOC_TYPES = [...REQUIRED_DOCS, 'IELTS', 'Reference', 'Other'] as const;
+export const ALL_DOC_TYPES = [...REQUIRED_DOCS, 'IELTS', 'Reference', 'Offer Letter', 'Other'] as const;
+export const CAS_STATUSES = ['Not started', 'Requested', 'Received'] as const;
+export const VISA_STATUSES = ['Not started', 'Preparing', 'Applied', 'Biometrics booked', 'Decision awaited', 'Approved', 'Refused'] as const;
 
 export const STALE_DAYS = 7;
