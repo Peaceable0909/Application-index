@@ -13,6 +13,7 @@ import { requestDocs, summarise, digestEmail, sendPaymentReminders, summariseRem
 import { sendMail } from '@/lib/mail';
 import { site, studentSite } from '@/lib/emailTemplate';
 import { audit } from '@/lib/audit';
+import { addNotice } from '@/lib/notices';
 import { cleanLabel, resolveLabel } from '@/lib/docLabel';
 import { bookSlotCore, emailBooking, emailCounselorBooking, MIN_NOTICE_H } from '@/lib/interviews';
 import { checkMeetingUrl } from '@/lib/meet';
@@ -314,6 +315,7 @@ export async function sendCounselorEmail(f: FormData) {
   const db = admin();
   const { data: a } = await db.from('portal_applications').select('email, counselor').eq('application_id', id).maybeSingle();
   const kind = a?.email && a.email.toLowerCase() === to.toLowerCase() ? 'student' : 'counselor';
+  if (kind === 'student') await addNotice({ email: to, applicationId: id, kind: 'message', title: subject, body: body.replace(/\s+/g, ' ').slice(0, 220), href: '/student', by: staff.email });
   await db.from('portal_messages').insert({ application_id: id, counselor_name: a?.counselor || null, to_email: to, to_kind: kind, subject, body, sent_by: staff.email });
   await log(id, staff.email, 'email_sent', { to, subject });
   await db.from('portal_ai_cache').delete().eq('cache_key', `draft:${id}:${staff.email}`);
@@ -1107,6 +1109,7 @@ export async function saveOffer(f: FormData) {
         const bits = [row.offer_type ? `${row.offer_type} offer` : '', row.cas_status && row.cas_status !== 'Not started' ? `CAS: ${row.cas_status}` : '', row.visa_status && row.visa_status !== 'Not started' ? `Visa: ${row.visa_status}` : ''].filter(Boolean);
         await sendMail({ to: a.email, subject: 'An update on your application', body: `Hi ${first},\n\nThere is an update on your application${bits.length ? `: ${bits.join(' · ')}` : ''}.\n\nSign in to your student portal to see the details: ${studentSite()}/student/login`, replyTo: staff.email, from: staff.email, eyebrow: 'Application update', title: 'There’s an update on your application', greeting: `Hi ${first},`, preheader: bits.join(' · ') || 'See the latest in your student portal.',
           blocks: [{ type: 'p', text: 'Your counselor has updated your offer and visa progress.' }, ...(bits.length ? [{ type: 'list' as const, items: bits }] : []), ...(row.student_note ? [{ type: 'quote' as const, from: 'Note from your counselor', text: row.student_note }] : [])], cta: { label: 'See my progress', href: `${studentSite()}/student/login` } });
+        await addNotice({ email: a.email, applicationId: id, kind: 'offer', title: 'An update on your offer and visa', body: bits.join(' · ') || 'Your counselor updated your progress.', href: '/student#offer', by: staff.email });
         await db.from('portal_messages').insert({ application_id: id, to_email: a.email, to_kind: 'student', subject: 'An update on your application', body: bits.join(' · ') || 'Offer & visa update', sent_by: staff.email });
         extra = ' The student was emailed.';
       } catch { extra = ' (The email to the student could not be sent.)'; }

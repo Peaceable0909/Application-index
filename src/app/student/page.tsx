@@ -62,12 +62,25 @@ export default async function StudentHome() {
     <>
       <div className="head"><h1>Hi {first} 👋</h1></div>
       <p className="sub">Here is where your application stands, and what we still need from you.</p>
+      {(() => {
+        const items: { text: string; href: string }[] = [];
+        for (const c of cards) {
+          if (c.missing.length) items.push({ text: `Upload ${c.missing.join(', ')}${cards.length > 1 ? ` (${schoolShort(c.a.school) || 'application'})` : ''}`, href: '#documents' });
+          if (c.a.in_regent && !/^paid/i.test(c.a.payment || '')) items.push({ text: 'Your payment hasn’t been received yet', href: '#application' });
+          const open = (c.offer?.conditions || []).filter((x) => !x.met).length;
+          if (open) items.push({ text: `${open} offer condition${open === 1 ? '' : 's'} still to meet`, href: '#offer' });
+        }
+        if (!upcomingB.length && slotViews.length) items.push({ text: 'Book your interview training session', href: '#interview' });
+        return items.length
+          ? <div className="card todo rise"><h2 style={{ margin: 0 }}>What we need from you</h2><ul>{items.map((i, n) => <li key={n}><span className="dstat" style={{ width: 22, height: 22, fontSize: 12 }}>!</span>{i.text}<a href={i.href}>Go →</a></li>)}</ul></div>
+          : <div className="card todo clear rise"><b style={{ color: '#15803d' }}>You’re all caught up ✓</b><span className="muted"> Nothing needed from you right now.</span></div>;
+      })()}
       {cards.map(({ a, docs, folderApp, c, prof, missing, offer, canUpload }) => {
         const idx = stepIndex(a.status), final = a.status && FINAL_STATUSES.includes(a.status) && a.status !== 'Enrolled';
         const left = a.deadline ? Math.ceil((new Date(a.deadline + 'T23:59:59').getTime() - Date.now()) / 864e5) : null;
         const done = REQUIRED_DOCS.length - missing.length;
         return (
-          <div key={a.student_key} className="card scard-big rise">
+          <div key={a.student_key} id="application" className="card scard-big rise">
             <div className="sb-head">
               <div><div className="eyebrow">{schoolShort(a.school) || 'Your application'}</div><h2 style={{ margin: 0 }}>{a.programme && a.programme.toUpperCase() !== 'N/A' ? a.programme : 'Your programme'}</h2></div>
               {a.status && <span className={`badge ${final ? 'red' : a.status === 'Enrolled' ? 'green' : 'plain'}`}>{a.status}</span>}
@@ -81,7 +94,7 @@ export default async function StudentHome() {
             {a.progress != null && !final && <div className="bar" style={{ margin: '4px 0 14px' }}><i style={{ width: `${a.progress}%` }} /></div>}
 
             {offer && (offer.offer_type || offer.cas_status || offer.visa_status || offer.conditions?.length) && (
-              <div className="offerp">
+              <div className="offerp" id="offer">
                 <h3><Icon n="check-circle" size={16} /> Offer &amp; visa</h3>
                 <div className="ms-strip" style={{ marginBottom: 10 }}>{milestones(offer).map((m) => <div key={m.key} className={`ms ${m.state}`}><i>{m.state === 'done' ? '✓' : m.state === 'bad' ? '✕' : ''}</i><b>{m.label}</b><small>{[m.detail, m.date ? new Date(m.date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''].filter(Boolean).join(' · ') || 'Not yet'}</small></div>)}</div>
                 {(offer.conditions || []).length > 0 && (
@@ -94,7 +107,7 @@ export default async function StudentHome() {
 
             <div className="sgrid">
               <section>
-                <h3><Icon n="file" size={16} /> Your documents <span className="muted" style={{ fontWeight: 500 }}>{done} of {REQUIRED_DOCS.length} required received</span></h3>
+                <h3 id="documents"><Icon n="file" size={16} /> Your documents <span className="muted" style={{ fontWeight: 500 }}>{done} of {REQUIRED_DOCS.length} required received</span></h3>
                 <ul className="dlist">
                   {REQUIRED_DOCS.map((t) => {
                     const mine = docs.filter((d) => d.type === t);

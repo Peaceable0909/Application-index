@@ -2,6 +2,7 @@ import { admin } from './supabase';
 import { sendMail } from './mail';
 import { site, studentSite } from './emailTemplate';
 import { checkMeetingUrl, providerName } from './meet';
+import { addNotice } from './notices';
 
 export type Slot = { id: string; starts_at: string; duration_min: number; trainer: string | null; teams_url: string; capacity: number; notes: string | null; created_by: string; cancelled_at: string | null };
 export type Booking = { id: string; slot_id: string; application_id: string; student_email: string; status: 'booked' | 'cancelled' | 'completed' | 'no_show'; booked_by: string | null; feedback: string | null; feedback_visible: boolean; created_at: string };
@@ -51,6 +52,9 @@ export async function bookSlotCore(o: { slotId: string; applicationId: string; s
 
 export async function emailBooking(slot: Slot, student: { name: string; email: string; preferred?: string | null }, by: string, kind: 'booked' | 'cancelled' | 'slot_cancelled') {
   const first = (student.preferred || student.name).split(/[\s,]+/)[0];
+  await addNotice(kind === 'booked'
+    ? { email: student.email, kind: 'interview', title: `Interview training booked · ${fmt(slot.starts_at, 'Africa/Lagos')}`, body: `${whenText(slot.starts_at)}. The meeting link is in your booking below.`, href: '/student#interview', by }
+    : { email: student.email, kind: 'interview', title: 'Your interview training session was cancelled', body: `The session on ${whenText(slot.starts_at)} was cancelled. Please book another time.`, href: '/student#interview', by });
   if (kind === 'booked') {
     return sendMail({
       to: student.email, subject: `Interview training booked · ${fmt(slot.starts_at, 'Africa/Lagos')}`, body: `Hi ${first},\n\nYour interview training is booked.\n\nWhen: ${whenText(slot.starts_at)}\nLength: ${slot.duration_min} minutes\nJoin on ${providerName(slot.teams_url)}: ${slot.teams_url}\n\nManage your booking: ${studentSite()}/student`,

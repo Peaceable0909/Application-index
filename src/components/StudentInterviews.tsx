@@ -19,7 +19,7 @@ export default function StudentInterviews({ slots, upcoming, past, hasUpcoming }
     setBusy(null); router.refresh();
   }
   return (
-    <div className="card scard-big rise">
+    <div className="card scard-big rise" id="interview">
       <div className="sb-head"><h2 style={{ margin: 0 }}><Icon n="video" size={18} /> Interview training</h2></div>
       <p className="muted" style={{ marginTop: -8 }}>Practise real interview questions with a trainer on a video call. Pick a time that suits you.</p>
       {msg && <div className={`xnote ${msg.bad ? 'bad' : ''}`} style={{ marginBottom: 12 }}>{msg.t}</div>}
