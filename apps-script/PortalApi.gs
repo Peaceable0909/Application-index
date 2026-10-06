@@ -1,4 +1,4 @@
-// ============================================================
+// ==========================================================
 // WHITEROCK PORTAL API  — add this as a NEW file (PortalApi.gs)
 // in the SAME Apps Script project as your existing doPost.
 //
