@@ -13,6 +13,7 @@ const ITEMS = [
   { href: '/payments', label: 'Payments', icon: 'trend' },
   { href: '/reports', label: 'Reports', icon: 'note' },
   { href: '/tasks', label: 'Tasks', icon: 'tasks', badge: 'tasks' },
+  { href: '/inbox', label: 'Student inbox', icon: 'mail', badge: 'inbox' },
   { href: '/chat', label: 'Chat', icon: 'chat', badge: 'chat' },
   { href: '/documents', label: 'Documents', icon: 'folder' },
   { href: '/extracted', label: 'Extracted text', icon: 'note' },
@@ -25,9 +26,9 @@ const ITEMS = [
   { href: '/settings', label: 'Settings', icon: 'settings' },
 ];
 
-const COUNSELOR_ITEMS: typeof ITEMS = [{ href: '/my', label: 'My students', icon: 'users' }, { href: '/pipeline', label: 'Pipeline', icon: 'bolt' }, { href: '/calendar', label: 'Deadlines', icon: 'clock' }, { href: '/interviews', label: 'Interviews', icon: 'video' }, { href: '/extracted', label: 'Extracted text', icon: 'note' }, { href: '/chat', label: 'Chat', icon: 'chat', badge: 'chat' }, { href: '/team', label: 'Team', icon: 'user' }];
+const COUNSELOR_ITEMS: typeof ITEMS = [{ href: '/my', label: 'My students', icon: 'users' }, { href: '/pipeline', label: 'Pipeline', icon: 'bolt' }, { href: '/calendar', label: 'Deadlines', icon: 'clock' }, { href: '/interviews', label: 'Interviews', icon: 'video' }, { href: '/extracted', label: 'Extracted text', icon: 'note' }, { href: '/inbox', label: 'Student inbox', icon: 'mail', badge: 'inbox' }, { href: '/chat', label: 'Chat', icon: 'chat', badge: 'chat' }, { href: '/team', label: 'Team', icon: 'user' }];
 
-export default function Nav({ taskCount = 0, chatCount = 0, mobile = false, role = 'staff' }: { taskCount?: number; chatCount?: number; mobile?: boolean; role?: string }) {
+export default function Nav({ taskCount = 0, chatCount = 0, inboxCount = 0, mobile = false, role = 'staff' }: { taskCount?: number; chatCount?: number; inboxCount?: number; mobile?: boolean; role?: string }) {
   const p = usePathname();
   const [chat, setChat] = useState(chatCount);
   useEffect(() => setChat(chatCount), [chatCount]);
@@ -41,6 +42,7 @@ export default function Nav({ taskCount = 0, chatCount = 0, mobile = false, role
           {!mobile && <Icon n={i.icon} size={19} />}
           <span>{i.label}</span>
           {!mobile && i.badge === 'tasks' && taskCount > 0 && <span className="n">{taskCount > 99 ? '99+' : taskCount}</span>}
+          {!mobile && i.badge === 'inbox' && inboxCount > 0 && <span className="n">{inboxCount > 99 ? '99+' : inboxCount}</span>}
           {!mobile && i.badge === 'chat' && chat > 0 && <span className="n">{chat > 99 ? '99+' : chat}</span>}
         </Link>
       ))}

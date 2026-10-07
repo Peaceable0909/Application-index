@@ -4,6 +4,7 @@ import { Inter, Instrument_Serif } from 'next/font/google';
 import { currentStaff } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
 import { appIdsFor } from '@/lib/auth';
+import { inboxUnread } from '@/lib/inbox';
 import Mark from '@/components/Mark';
 import Nav from '@/components/Nav';
 import TopSearch from '@/components/TopSearch';
@@ -29,9 +30,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const student = staff ? null : await currentStudent();
   const studentNotices = student ? await noticesFor(student) : [];
   const studentUnread = student ? ((await admin().from('portal_student_msgs').select('id', { count: 'exact', head: true }).eq('student_email', student.email).eq('from_student', false).is('student_read_at', null)).count || 0) : 0;
-  let taskCount = 0, chatCount = 0;
+  let taskCount = 0, chatCount = 0, inboxCount = 0;
   if (staff) {
     const q = admin().from('portal_tasks').select('id', { count: 'exact', head: true }).eq('status', 'open');
+    inboxCount = await inboxUnread(staff).catch(() => 0);
     chatCount = await unreadTotal(staff.email).catch(() => 0);
     taskCount = (staff.role === 'counselor' ? await q.in('application_id', await appIdsFor(staff.counselor_key)) : await q).count || 0;
   }
@@ -47,7 +49,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <div className="shell">
             <aside className="side">
               <Link href="/" className="brand"><Mark size={36} inverse /><span><b>Admissions <em>Portal</em></b><small>WhiteRock Admissions</small></span></Link>
-              <Nav taskCount={taskCount} chatCount={chatCount} role={staff.role} />
+              <Nav taskCount={taskCount} chatCount={chatCount} inboxCount={inboxCount} role={staff.role} />
               <div className="tag">More opportunities.<br />Brighter futures.</div>
             </aside>
             <div className="maincol">
