@@ -21,6 +21,7 @@ import OfferForm from '@/components/OfferForm';
 import DocTypeSelect from '@/components/DocTypeSelect';
 import { getOffer, milestones } from '@/lib/offer';
 import { saveOffer, inviteOneStudent, sendStudentReminder, saveDates, addNote, addReminder, addToMaster, completeReminder, createDraft, scanDocs, setDocType, dismissSuggestion, generateSummary, linkFolder, refreshDocuments, scanStudent, sendCounselorEmail, unlinkFolder, updateCounselor, updateRegent, updateStatus, uploadDocument } from '../../actions';
+import { loadThread } from '@/lib/thread';
 import StaffStudentPanel from '@/components/StaffStudentPanel';
 
 type SP = { msg?: string; err?: string; preview?: string; tab?: string; compose?: string; draft?: string };
@@ -51,8 +52,8 @@ export default async function ApplicationPage({ params, searchParams }: { params
     db.from('portal_reminders').select('*').eq('application_id', id).eq('status', 'pending').order('due_on'),
   ]);
   const offerRow = await getOffer(id);
-  const [{ data: chatRows }, { data: checkRows }] = await Promise.all([
-    db.from('portal_student_msgs').select('id, from_student, body, created_at').eq('application_id', id).order('created_at').limit(200),
+  const [chatRows, { data: checkRows }] = await Promise.all([
+    app.email ? loadThread({ role: 'staff', email: staff.email, appId: id, studentEmail: app.email.toLowerCase(), staff }, false) : Promise.resolve({ msgs: [], other: undefined }),
     db.from('portal_checklist').select('id, text, due, done').eq('application_id', id).order('created_at'),
   ]);
   const { data: docs } = await db.from('portal_documents').select('*').in('application_id', (siblings || []).map((s) => s.application_id)).order('created_at', { ascending: false });
@@ -457,7 +458,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
         )}
 
         {tab === 'messages' && (<>
-          <StaffStudentPanel appId={id} studentName={app.name} msgs={(chatRows || []).map((m) => ({ id: m.id, mine: !m.from_student, body: m.body, at: m.created_at }))} items={(checkRows || []) as { id: string; text: string; due: string | null; done: boolean }[]} />
+          <StaffStudentPanel appId={id} studentName={app.name} msgs={chatRows.msgs} otherInit={chatRows.other} items={(checkRows || []) as { id: string; text: string; due: string | null; done: boolean }[]} />
           <div className="grid g2" style={{ alignItems: 'start' }}>
             <div>
             <div className="card ai">
