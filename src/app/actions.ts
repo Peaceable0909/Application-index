@@ -1251,57 +1251,8 @@ export async function studentToggleChecklist(id: string): Promise<{ ok: boolean 
   return { ok: true };
 }
 
-/** In-portal chat: the student writes; saved to the thread, and the counselor gets one email at most every 3 hours. */
-export async function studentSend(f: FormData): Promise<{ ok: boolean; error?: string }> {
-  const me = await currentStudent();
-  if (!me) return { ok: false, error: 'Please sign in again.' };
-  const appId = s(f, 'appId'), body = s(f, 'body').trim().slice(0, 2000);
-  if (!me.ids.includes(appId)) return { ok: false, error: 'That application isn’t yours.' };
-  if (body.length < 1) return { ok: false, error: 'Write your message first.' };
-  const db = admin();
-  const { count } = await db.from('portal_student_msgs').select('id', { count: 'exact', head: true }).eq('student_email', me.email).eq('from_student', true).gte('created_at', new Date(Date.now() - 864e5).toISOString());
-  if ((count || 0) >= 40) return { ok: false, error: 'That’s a lot of messages for one day. Your counselor will reply soon.' };
-  const { data: last } = await db.from('portal_student_msgs').select('created_at').eq('student_email', me.email).eq('from_student', true).order('created_at', { ascending: false }).limit(1);
-  const { error } = await db.from('portal_student_msgs').insert({ student_email: me.email, application_id: appId, from_student: true, sender_email: me.email, body, student_read_at: new Date().toISOString() });
-  if (error) return { ok: false, error: 'Could not send. Please try again.' };
-  const quiet = !last?.[0] || Date.now() - new Date(last[0].created_at).getTime() > 3 * 3600_000;
-  if (quiet) { const fd = new FormData(); fd.set('appId', appId); fd.set('body', body); try { await studentMessage(fd); } catch { /* the message is saved either way */ } }
-  revalidatePath('/student/messages');
-  return { ok: true };
-}
 
-export async function studentMarkRead(): Promise<void> {
-  const me = await currentStudent();
-  if (!me) return;
-  await admin().from('portal_student_msgs').update({ student_read_at: new Date().toISOString() }).eq('student_email', me.email).eq('from_student', false).is('student_read_at', null);
-}
 
-/** Staff reply in the student's chat. Email only if the student hasn't been active for 5 minutes, and at most every 3 hours. */
-export async function staffReplyStudent(f: FormData): Promise<{ ok: boolean; error?: string }> {
-  const st = await requireStaff();
-  await guardApp(st, s(f, 'appId'));
-  const appId = s(f, 'appId'), body = s(f, 'body').trim().slice(0, 2000);
-  if (!body) return { ok: false, error: 'Write your reply first.' };
-  const db = admin();
-  const { data: app } = await db.from('portal_applications').select('name, email, school').eq('application_id', appId).single();
-  if (!app?.email) return { ok: false, error: 'No student email on file.' };
-  const to = app.email.toLowerCase();
-  const { error } = await db.from('portal_student_msgs').insert({ student_email: to, application_id: appId, from_student: false, sender_email: st.email, body, staff_read_at: new Date().toISOString() });
-  if (error) return { ok: false, error: 'Could not send.' };
-  await db.from('portal_student_msgs').update({ staff_read_at: new Date().toISOString() }).eq('student_email', to).eq('from_student', true).is('staff_read_at', null);
-  const [{ data: seen }, { data: prev }] = await Promise.all([
-    db.from('portal_student_seen').select('last_active_at').eq('email', to).maybeSingle(),
-    db.from('portal_student_msgs').select('created_at').eq('student_email', to).eq('from_student', false).order('created_at', { ascending: false }).range(1, 1),
-  ]);
-  const away = !seen || Date.now() - new Date(seen.last_active_at).getTime() > 5 * 60_000;
-  const quiet = !prev?.[0] || Date.now() - new Date(prev[0].created_at).getTime() > 3 * 3600_000;
-  try { await addNotice({ email: to, applicationId: appId, kind: 'message', title: 'New message from your counselor', body: body.slice(0, 140), href: '/student/messages', by: st.email }); } catch { /* optional */ }
-  if (away && quiet) {
-    try { await sendMail({ to, subject: 'New message from your counselor', body: `${shownName(st) || 'Your counselor'} wrote:\n\n${body}`, eyebrow: 'Message', title: 'You have a new message', greeting: `Hi ${app.name.split(/[\s,]+/).filter(Boolean)[0] || 'there'},`, preheader: body.slice(0, 100), sign: { name: shownName(st) || 'Admissions', title: 'Admissions Counselor', email: st.email }, blocks: [{ type: 'quote', from: shownName(st) || 'Your counselor', text: body.slice(0, 600) }], cta: { label: 'Open your messages', href: `${studentSite()}/student/messages` } }); } catch { /* chat still has it */ }
-  }
-  revalidatePath(`/applications/${appId}`);
-  return { ok: true };
-}
 
 export async function staffAddChecklist(f: FormData): Promise<{ ok: boolean; error?: string }> {
   const st = await requireStaff();
@@ -1329,10 +1280,3 @@ export async function staffRemoveChecklist(id: string): Promise<{ ok: boolean }>
   return { ok: true };
 }
 
-/** Marks a student's messages as read once staff open their conversation. */
-export async function staffMarkChatRead(appId: string): Promise<void> {
-  const st = await requireStaff();
-  await guardApp(st, appId);
-  await admin().from('portal_student_msgs').update({ staff_read_at: new Date().toISOString() }).eq('application_id', appId).eq('from_student', true).is('staff_read_at', null);
-  revalidatePath('/inbox');
-}
