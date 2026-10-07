@@ -20,7 +20,7 @@ document download goes through the portal server after a staff login check.
    (set `PORTAL_TOKEN`, add the 1-line hook at the top of `doPost`, redeploy a new version).
 3. **Env vars** – copy `.env.example` → `.env.local` (or set them in Vercel).
 4. **Staff login** – create a user (same email as in `portal_staff`) in Supabase → Authentication → Users.
-5. Deploy to Vercel. `vercel.json` syncs every 10 min; the Apps Script webhook (`notifyPortal_`) makes new
+5. Deploy to Vercel. `vercel.json` syncs daily (Vercel free plan limit); the Apps Script webhook (`notifyPortal_`) makes new
    applications appear instantly; **Sync now** on the dashboard forces it.
 
 ## Features

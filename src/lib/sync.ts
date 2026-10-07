@@ -1,29 +1,34 @@
+import { createHash } from 'crypto';
 import { admin } from './supabase';
-import { callScript, DriveFile, SheetRow } from './appsScript';
-import { counselorKey, docTypeFromName, studentKey } from './docs';
+import { refreshTasks } from './overview';
+import { callScript, DriveFile, MasterRow, RegentRow, SheetRow } from './appsScript';
+import { canonicalStatus, counselorKey, docTypeFromName, normEmail, normName, progressFor, schoolDisplay, schoolKey, studentKey } from './docs';
 
 const RECENT_MS = 3 * 24 * 3600 * 1000;
 
 function parseSubmitted(s: string): string | null {
   if (!s) return null;
+  const m = /^(\d{2})-(\d{2})-(\d{4})(?: (\d{2}):(\d{2}))?$/.exec(s.trim()); // dd-MM-yyyy HH:mm (form log)
+  if (m) return new Date(`${m[3]}-${m[2]}-${m[1]}T${m[4] || '00'}:${m[5] || '00'}:00Z`).toISOString();
   const d = new Date(s);
-  if (!isNaN(d.getTime())) return d.toISOString();
-  const m = /^(\d{2})-(\d{2})-(\d{4})(?: (\d{2}):(\d{2}))?/.exec(s); // dd-MM-yyyy HH:mm
-  return m ? new Date(`${m[3]}-${m[2]}-${m[1]}T${m[4] || '00'}:${m[5] || '00'}:00Z`).toISOString() : null;
+  return isNaN(d.getTime()) ? null : d.toISOString();
 }
+const looksLikeDate = (s: string) => /^\d{1,4}[/-]\d{1,2}[/-]\d{1,4}/.test(s.trim()) || /^\d{4}-\d{2}-\d{2}T/.test(s.trim());
+const pick = (...v: (string | null | undefined)[]) => v.map((x) => (x || '').trim()).find((x) => x && x.toUpperCase() !== 'N/A') || null;
 
-export async function syncFolders(appIds: { id: string; folder: string }[]) {
+export async function syncFolders(apps: { id: string; folders: string[] }[]) {
   const db = admin();
-  for (let i = 0; i < appIds.length; i += 20) {
-    const chunk = appIds.slice(i, i + 20);
-    const listed = await callScript<Record<string, DriveFile[] | { error: string }>>('listFiles', { folderIds: chunk.map((c) => c.folder) });
-    for (const { id, folder } of chunk) {
-      const files = listed[folder];
-      if (!Array.isArray(files)) continue;
+  for (let i = 0; i < apps.length; i += 10) {
+    const chunk = apps.slice(i, i + 10);
+    const listed = await callScript<Record<string, DriveFile[] | { error: string }>>('listFiles', { folderIds: [...new Set(chunk.flatMap((c) => c.folders))] });
+    for (const { id, folders } of chunk) {
+      const results = folders.map((f) => listed[f]);
+      if (results.some((r) => !Array.isArray(r))) continue; // a folder failed to list: keep what we have
+      const files = (results as DriveFile[][]).flat();
       if (files.length) {
         await db.from('portal_documents').upsert(files.map((f) => ({
           drive_file_id: f.id, application_id: id, name: f.name, doc_type: docTypeFromName(f.name),
-          mime_type: f.mimeType, size_bytes: f.size, drive_url: f.url, created_at: f.createdAt,
+          mime_type: f.mimeType, size_bytes: f.size, drive_url: f.url, created_at: f.createdAt, folder_path: f.path || null,
         })), { onConflict: 'drive_file_id', ignoreDuplicates: false });
       }
       const keep = files.map((f) => f.id);
@@ -34,59 +39,157 @@ export async function syncFolders(appIds: { id: string; folder: string }[]) {
   }
 }
 
+/** Finds a student's row in a sheet: exact (email+school), then a unique email, then a unique name. */
+function makeFinder<T extends { name: string; email: string; school: string }>(rows: T[]) {
+  const byKey = new Map<string, T>(), byEmail = new Map<string, T[]>(), byName = new Map<string, T[]>();
+  let dupes = 0;
+  rows.forEach((m) => {
+    const k = studentKey(m.email, m.school, m.name);
+    if (byKey.has(k)) { dupes++; return; }
+    byKey.set(k, m);
+    const e = normEmail(m.email); if (e) byEmail.set(e, [...(byEmail.get(e) || []), m]);
+    const n = normName(m.name); if (n) byName.set(n, [...(byName.get(n) || []), m]);
+  });
+  const only = (xs?: T[]) => (xs && xs.length === 1 ? xs[0] : undefined);
+  // Same name at a different university is a different application, so a name-only match must agree on school.
+  const sameSchool = (a: string, b: string) => !schoolKey(a) || !schoolKey(b) || schoolKey(a) === schoolKey(b);
+  return {
+    dupes, unique: [...byKey.values()],
+    find: (x: { name: string; email: string; school: string }) => {
+      const hit = byKey.get(studentKey(x.email, x.school, x.name)) || only(byEmail.get(normEmail(x.email)));
+      if (hit) return hit;
+      const byN = only(byName.get(normName(x.name)));
+      return byN && sameSchool(x.school, byN.school) ? byN : undefined;
+    },
+  };
+}
+
+const isStub = (id: string) => /^(stub|master|regent):/.test(id);
+
+/**
+ * Three sources, one student record:
+ *  - Sheet1 (hand-maintained): status, counselor, notes, programme.
+ *  - Regent Only: OPP ID, payment, interview booking (and its own status/notes, shown for comparison).
+ *  - Applications (raw form log): submission time, contact details, Drive documents.
+ * A student found in only some of them still appears, flagged, so nothing is hidden.
+ */
 export async function syncAll(opts: { full?: boolean } = {}) {
   const db = admin();
-  const rows = await callScript<SheetRow[]>('listApplications');
+  const [raw, master, regent] = await Promise.all([
+    callScript<SheetRow[]>('listApplications'), callScript<MasterRow[]>('listMaster'), callScript<RegentRow[]>('listRegent'),
+  ]);
+  const M = makeFinder(master), G = makeFinder(regent);
+
   const { data: existing } = await db.from('portal_applications')
-    .select('application_id, status, counselor, docs_synced_at, drive_folder_id');
+    .select('application_id, status, counselor, docs_synced_at, student_key, payment, interview, extra_folder_ids');
   const known = new Map((existing || []).map((r) => [r.application_id, r]));
 
-  let created = 0;
-  const newActivity: object[] = [];
-  const upserts = rows.map((r) => {
-    const prev = known.get(r.applicationId);
+  const usedM = new Set<MasterRow>(), usedG = new Set<RegentRow>();
+  const activity: object[] = [];
+  let created = 0, changedBySheet = 0;
+  const touched: string[] = [];
+
+  const build = (id: string, r: SheetRow | null, m: MasterRow | null, g: RegentRow | null) => {
+    const prev = known.get(id);
+    const status = canonicalStatus(m?.status || '') || canonicalStatus(g?.status || '') || canonicalStatus(r?.status || '') || prev?.status || null;
+    const ref = m && m.studentIdOrDate && !looksLikeDate(m.studentIdOrDate) ? m.studentIdOrDate.trim() : null;
+    const submitted = r ? parseSubmitted(r.submittedAt)
+      : m && looksLikeDate(m.studentIdOrDate) ? parseSubmitted(m.studentIdOrDate)
+      : g ? parseSubmitted(g.date) : null;
+    const school = schoolDisplay(pick(r?.school, m?.school, g?.school));
+    const name = pick(m?.name, g?.name, r?.name) || 'Unknown';
+    const payment = pick(g?.payment);
+    const rawInterview = pick(g?.interview); // "To Be Booked for interview" / "...Interview" are the same thing
+    const interview = rawInterview && /to be booked/i.test(rawInterview) ? 'To be booked for interview' : rawInterview;
     if (!prev) {
       created++;
-      newActivity.push({ application_id: r.applicationId, actor: 'system', kind: 'new_application', detail: { school: r.school, programme: r.programme } });
+      activity.push({ application_id: id, actor: 'system', kind: r ? 'new_application' : 'imported_from_sheet', detail: { school, programme: pick(m?.programme, g?.programme, r?.programme) } });
+    } else {
+      if (prev.status && status && prev.status !== status) {
+        changedBySheet++; touched.push(id);
+        activity.push({ application_id: id, actor: 'sheet', kind: 'status_change', detail: { from: prev.status, to: status } });
+      }
+      if (g && prev.payment !== payment && (prev.payment || payment)) activity.push({ application_id: id, actor: 'sheet', kind: 'payment_change', detail: { from: prev.payment, to: payment } });
+      if (g && prev.interview !== interview && (prev.interview || interview)) activity.push({ application_id: id, actor: 'sheet', kind: 'interview_change', detail: { from: prev.interview, to: interview } });
     }
     return {
-      application_id: r.applicationId, sheet_row: r.row, submitted_at: parseSubmitted(r.submittedAt),
-      name: r.name, email: r.email || null, phone: r.phone || null, school: r.school || null,
-      programme: r.programme || null, country: r.country || null, city: r.city || null, gender: r.gender || null,
-      dob: r.dob || null, age: r.age || null,
-      // Sheet wins when it has a value (staff may edit it directly); a blank keeps the portal's value.
-      counselor: r.counselor || prev?.counselor || null,
-      status: r.status || prev?.status || null,
-      sheet_notes: r.notes || null,
-      drive_folder_id: r.driveFolderId || null,
-      drive_folder_url: r.driveFolderId ? `https://drive.google.com/drive/folders/${r.driveFolderId}` : null,
-      student_key: studentKey(r.email, r.school, r.name),
-      synced_at: new Date().toISOString(),
+      application_id: id, sheet_row: r?.row ?? null, master_row: m?.row ?? null, regent_row: g?.row ?? null,
+      submitted_at: submitted, name, email: pick(r?.email, m?.email, g?.email), phone: pick(r?.phone, m?.phone, g?.phone),
+      school, programme: pick(m?.programme, g?.programme, r?.programme), country: pick(m?.country, g?.country, r?.country),
+      city: pick(r?.city, m?.city, g?.city), gender: pick(r?.gender, m?.gender, g?.gender), dob: pick(r?.dob, m?.dob), age: pick(r?.age, m?.age),
+      counselor: pick(m?.counselor, g?.counselor, r?.counselor, prev?.counselor),
+      status, progress: progressFor(status), student_ref: ref, sheet_notes: pick(m?.notes, g?.notes, r?.notes),
+      opp_id: pick(g?.oppId), payment, interview,
+      // Form folder first; folders linked by hand in the portal are kept across syncs.
+      drive_folder_id: r?.driveFolderId || prev?.extra_folder_ids?.[0] || null,
+      drive_folder_url: (r?.driveFolderId || prev?.extra_folder_ids?.[0]) ? `https://drive.google.com/drive/folders/${r?.driveFolderId || prev?.extra_folder_ids?.[0]}` : null,
+      extra_folder_ids: prev?.extra_folder_ids || [],
+      student_key: studentKey(pick(r?.email, m?.email, g?.email), school, name),
+      in_master: !!m, in_regent: !!g, has_raw: !!r, master_data: m, regent_data: g, raw_data: r, synced_at: new Date().toISOString(),
     };
+  };
+
+  const rows = raw.map((r) => {
+    const m = M.find(r) || null, g = G.find(r) || null;
+    if (m) usedM.add(m); if (g) usedG.add(g);
+    return build(r.applicationId, r, m, g);
   });
-  for (let i = 0; i < upserts.length; i += 200) {
-    const { error } = await db.from('portal_applications').upsert(upserts.slice(i, i + 200), { onConflict: 'application_id' });
+  const rawKeys = new Set(rows.map((r) => r.student_key));
+
+  // Students with no form submission: one stub per student, gathering Sheet1 + Regent Only together.
+  const stubs = new Map<string, ReturnType<typeof build>>();
+  const stubFor = (m: MasterRow | null, g: RegentRow | null) => {
+    const key = studentKey(pick(m?.email, g?.email), schoolDisplay(pick(m?.school, g?.school)), pick(m?.name, g?.name) || '');
+    const id = 'stub:' + createHash('sha1').update(key).digest('hex').slice(0, 16);
+    if (!stubs.has(id)) stubs.set(id, build(id, null, m, g));
+  };
+  M.unique.filter((m) => !usedM.has(m)).forEach((m) => { const g = G.find(m) || null; if (g) usedG.add(g); stubFor(m, g); });
+  G.unique.filter((g) => !usedG.has(g)).forEach((g) => stubFor(null, g));
+  const all = [...rows, ...stubs.values()];
+
+  for (let i = 0; i < all.length; i += 100) {
+    const { error } = await db.from('portal_applications').upsert(all.slice(i, i + 100), { onConflict: 'application_id' });
     if (error) throw new Error(error.message);
   }
-  if (newActivity.length) await db.from('portal_activity').insert(newActivity);
+  if (activity.length) await db.from('portal_activity').insert(activity);
+  if (touched.length) await db.from('portal_applications').update({ last_activity_at: new Date().toISOString() }).in('application_id', touched);
 
-  // Make sure every counselor named in the sheet exists so an email can be attached in Settings.
+  // Keep notes/history when a stub becomes a real application (form submitted) or its id scheme changes.
+  const latestByKey = new Map<string, string>();
+  rows.forEach((r) => { if (!latestByKey.has(r.student_key)) latestByKey.set(r.student_key, r.application_id); });
+  const stubByKey = new Map([...stubs.values()].map((s) => [s.student_key, s.application_id]));
+  for (const [id, prev] of known) {
+    if (!isStub(id) || !prev.student_key) continue;
+    const target = latestByKey.get(prev.student_key) || stubByKey.get(prev.student_key);
+    if (!target || target === id) continue;
+    await db.from('portal_notes').update({ application_id: target }).eq('application_id', id);
+    await db.from('portal_activity').update({ application_id: target }).eq('application_id', id);
+    await db.from('portal_applications').delete().eq('application_id', id);
+  }
+
+  // Counselors: make sure each name exists so an email can be attached in Settings.
   const names = new Map<string, string>();
-  rows.forEach((r) => { const k = counselorKey(r.counselor); if (k && !names.has(k)) names.set(k, r.counselor.trim()); });
+  all.forEach((r) => { const k = counselorKey(r.counselor); if (k && !names.has(k)) names.set(k, (r.counselor || '').trim()); });
   if (names.size) {
-    await db.from('portal_counselors').upsert(
-      [...names].map(([name_key, name]) => ({ name_key, name })),
+    await db.from('portal_counselors').upsert([...names].map(([name_key, name]) => ({ name_key, name })),
       { onConflict: 'name_key', ignoreDuplicates: true });
   }
 
   const now = Date.now();
-  const needFiles = rows.filter((r) => {
-    if (!r.driveFolderId) return false;
-    const prev = known.get(r.applicationId);
-    const sub = parseSubmitted(r.submittedAt);
-    return opts.full || !prev?.docs_synced_at || (sub && now - new Date(sub).getTime() < RECENT_MS);
-  }).map((r) => ({ id: r.applicationId, folder: r.driveFolderId }));
+  const needFiles = all.map((r) => ({ r, folders: [...new Set([r.drive_folder_id, ...(r.extra_folder_ids || [])].filter(Boolean) as string[])] }))
+    .filter(({ r, folders }) => {
+      if (!folders.length) return false;
+      const prev = known.get(r.application_id);
+      return opts.full || !prev?.docs_synced_at || (r.submitted_at && now - new Date(r.submitted_at).getTime() < RECENT_MS);
+    }).map(({ r, folders }) => ({ id: r.application_id, folders }));
   await syncFolders(needFiles);
 
-  return { total: rows.length, created, foldersRefreshed: needFiles.length };
+  try { await refreshTasks(); } catch { /* tasks refresh again when the overview is opened */ }
+
+  return {
+    total: all.length, created, formSubmissions: rows.length,
+    inMaster: all.filter((r) => r.in_master).length, inRegent: all.filter((r) => r.in_regent).length,
+    formOnly: rows.filter((r) => !r.in_master).length, noForm: stubs.size,
+    statusChangedInSheet: changedBySheet, foldersRefreshed: needFiles.length,
+  };
 }

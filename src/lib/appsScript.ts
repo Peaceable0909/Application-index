@@ -14,7 +14,11 @@ export async function callScript<T>(action: string, payload: unknown = {}): Prom
   });
   const text = await res.text();
   let json: Reply<T>;
-  try { json = JSON.parse(text); } catch { throw new Error(`Apps Script returned non-JSON (${res.status})`); }
+  try { json = JSON.parse(text); } catch {
+    if (res.status === 404) throw new Error('Google says the Apps Script web app address no longer exists (404). Redeploy it, copy the new Web app URL, and update APPS_SCRIPT_URL in Vercel, then redeploy the portal.');
+    if (/accounts\.google\.com|sign in/i.test(text)) throw new Error('The Apps Script web app asks for a Google sign-in. In Deploy → Manage deployments, set “Who has access” to Anyone.');
+    throw new Error(`Apps Script returned something unexpected (HTTP ${res.status}). Check the deployment and APPS_SCRIPT_URL.`);
+  }
   if (!json.ok) throw new Error(`Apps Script: ${json.error}`);
   return json.data;
 }
@@ -24,4 +28,12 @@ export type SheetRow = {
   school: string; programme: string; country: string; city: string; gender: string; dob: string; age: string;
   counselor: string; status: string; notes: string; driveFolderId: string;
 };
-export type DriveFile = { id: string; name: string; mimeType: string; size: number; url: string; createdAt: string };
+export type DriveFile = { id: string; name: string; mimeType: string; size: number; url: string; createdAt: string; path?: string };
+export type MasterRow = {
+  row: number; studentIdOrDate: string; name: string; email: string; phone: string; school: string; programme: string;
+  country: string; city: string; gender: string; dob: string; age: string; counselor: string; status: string; notes: string;
+};
+export type RegentRow = {
+  row: number; date: string; name: string; email: string; phone: string; school: string; programme: string; country: string;
+  city: string; gender: string; oppId: string; payment: string; counselor: string; status: string; notes: string; interview: string;
+};

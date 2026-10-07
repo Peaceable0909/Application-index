@@ -1,17 +1,40 @@
 'use server';
 import { redirect } from 'next/navigation';
+import { headers } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 import { admin, sessionClient } from '@/lib/supabase';
-import { requireStaff } from '@/lib/auth';
+import { guardApp, requireStaff, requireTeam } from '@/lib/auth';
 import { callScript, DriveFile } from '@/lib/appsScript';
-import { counselorKey, docTypeFromName } from '@/lib/docs';
+import { counselorKey, docTypeFromName, dobForMaster, schoolShort } from '@/lib/docs';
+import { ALL_DOC_TYPES, CAS_STATUSES, VISA_STATUSES } from '@/lib/constants';
 import { syncAll, syncFolders } from '@/lib/sync';
 import { STATUSES } from '@/lib/constants';
+import { requestDocs, summarise, digestEmail, sendPaymentReminders, summariseReminders } from '@/lib/requests';
+import { sendMail } from '@/lib/mail';
+import { site, studentSite } from '@/lib/emailTemplate';
+import { audit } from '@/lib/audit';
+import { addNotice } from '@/lib/notices';
+import { shownName } from '@/lib/profile';
+import { cleanLabel, resolveLabel } from '@/lib/docLabel';
+import { bookSlotCore, emailBooking, emailCounselorBooking, MIN_NOTICE_H } from '@/lib/interviews';
+import { checkMeetingUrl } from '@/lib/meet';
+import { appsForEmail, currentStudent, isStudentEmail } from '@/lib/student';
+import { runBackup } from '@/lib/backup';
+import { notifyAssigned } from '@/lib/notify';
+import { after } from 'next/server';
+import { canAccessApp } from '@/lib/auth';
+import { docScanEnabled, scanOne } from '@/lib/docscan';
+import { draftEmail, PURPOSES, PurposeKey, TONES, ToneKey } from '@/lib/draft';
+import { aiOverview, aiStudentSummary, computeFacts, loadStudents, refreshTasks, studentFacts } from '@/lib/overview';
 
+// redirect() works by throwing; a catch block must pass that through instead of reporting it as an error.
+const rethrow = (e: unknown) => { if ((e as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw e; };
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const s = (f: FormData, k: string) => String(f.get(k) ?? '').trim();
-const back = (id: string, msg: string, err = false) =>
-  redirect(`/applications/${encodeURIComponent(id)}?${err ? 'err' : 'msg'}=${encodeURIComponent(msg)}`);
+const back = (id: string, msg: string, err = false, returnTo?: string) => {
+  const base = returnTo && /^\/(?!\/)/.test(returnTo) ? returnTo : `/applications/${encodeURIComponent(id)}`;
+  redirect(`${base}${base.includes('?') ? '&' : '?'}${err ? 'err' : 'msg'}=${encodeURIComponent(msg)}`);
+};
 
 async function log(applicationId: string, actor: string, kind: string, detail: object = {}) {
   const db = admin();
@@ -19,11 +42,37 @@ async function log(applicationId: string, actor: string, kind: string, detail: o
   await db.from('portal_applications').update({ last_activity_at: new Date().toISOString() }).eq('application_id', applicationId);
 }
 
+// Status/counselor/notes live in the hand-maintained master sheet when the student is in it;
+// otherwise they go to the raw Applications sheet. Notes are appended, never overwritten.
+async function writeBack(id: string, fields: Record<string, string>, notesAppend?: string, by?: string) {
+  const { data: app } = await admin().from('portal_applications')
+    .select('in_master, has_raw, master_data').eq('application_id', id).single();
+  if (!app) throw new Error('Application not found');
+  if (app.in_master && app.master_data) {
+    const m = app.master_data as { email: string; name: string; school: string };
+    await callScript('updateMaster', { email: m.email, name: m.name, school: m.school, fields, notesAppend, by });
+  } else if (app.has_raw) {
+    await callScript('updateRow', { applicationId: id, fields, notesAppend, by });
+  }
+}
+
 export async function signIn(f: FormData) {
   const sb = await sessionClient();
   const { error } = await sb.auth.signInWithPassword({ email: s(f, 'email'), password: s(f, 'password') });
   if (error) redirect(`/login?error=${encodeURIComponent(error.message)}`);
-  redirect('/');
+  redirect('/overview');
+}
+export async function signInWithGoogle() {
+  const h = await headers();
+  const host = h.get('x-forwarded-host') || h.get('host');
+  const proto = h.get('x-forwarded-proto') || 'https';
+  const sb = await sessionClient();
+  const { data, error } = await sb.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: `${proto}://${host}/auth/callback`, queryParams: { prompt: 'select_account' } },
+  });
+  if (error || !data.url) redirect(`/login?error=${encodeURIComponent(error?.message || 'Google sign-in failed')}`);
+  redirect(data.url);
 }
 export async function signOut() {
   const sb = await sessionClient();
@@ -32,125 +81,1250 @@ export async function signOut() {
 }
 
 export async function syncNow(f: FormData) {
-  await requireStaff();
+  const ret = s(f, 'returnTo') === '/applications' ? '/applications' : '/';
+  await requireTeam();
   let msg: string;
   try {
     const r = await syncAll({ full: f.get('full') === '1' });
-    msg = `Synced ${r.total} applications (${r.created} new).`;
-  } catch (e) { msg = `Sync failed: ${(e as Error).message}`; }
+    msg = `Synced ${r.total} students · ${r.formSubmissions} with a form submission · ${r.inMaster} in Sheet1 · ${r.inRegent} in Regent Only · ${r.formOnly} not yet in Sheet1 · ${r.created} new.`;
+  } catch (e) { rethrow(e); msg = `Sync failed: ${(e as Error).message}`; }
   revalidatePath('/');
-  redirect(`/?msg=${encodeURIComponent(msg)}`);
+  redirect(`${ret}?msg=${encodeURIComponent(msg)}`);
+}
+
+// Appends a form-only student to the master sheet. Returns 'added' | 'exists' | error text.
+async function pushToMaster(id: string, actor: string, status: string, counselor?: string): Promise<string> {
+  const db = admin();
+  const { data: a } = await db.from('portal_applications').select('*').eq('application_id', id).single();
+  if (!a) return 'Application not found';
+  if (a.in_master) return 'exists';
+  const r = await callScript<{ exists: boolean; row: number }>('addMaster', {
+    date: a.submitted_at, name: a.name, email: a.email || '', phone: a.phone || '', school: schoolShort(a.school),
+    programme: a.programme && a.programme.toUpperCase() !== 'N/A' ? a.programme : '', country: a.country || '',
+    city: a.city || '', gender: a.gender || '', dob: dobForMaster(a.dob), age: a.age || '',
+    counselor: counselor ?? a.counselor ?? '', status,
+  });
+  await log(id, actor, 'moved_to_master', { row: r.row, status, exists: r.exists });
+  return r.exists ? 'exists' : 'added';
+}
+
+export async function addToMaster(f: FormData) {
+  const staff = await requireTeam();
+  const id = s(f, 'id');
+  if (!(STATUSES as readonly string[]).includes(s(f, 'status'))) return back(id, 'Choose a status', true);
+  try {
+    const res = await pushToMaster(id, staff.email, s(f, 'status'), s(f, 'counselor') || undefined);
+    await syncAll();
+    revalidatePath('/');
+    return back(id, res === 'exists' ? 'Already in the master sheet' : 'Added to the master sheet (Sheet1)');
+  } catch (e) { rethrow(e); return back(id, `Could not add: ${(e as Error).message}`, true); }
+}
+
+// ---- Bulk actions (Applications page) ----
+const BULK_MAX = 15; // keeps each run inside the server time limit; run again for the rest
+function bulkBack(f: FormData, msg: string, err = false): never {
+  const r = s(f, 'returnTo');
+  const base = r.startsWith('/applications') && !r.startsWith('/applications/') ? r.split(/[?&](msg|err)=/)[0] : '/applications';
+  redirect(`${base}${base.includes('?') ? '&' : '?'}${err ? 'err' : 'msg'}=${encodeURIComponent(msg)}`);
+}
+function pickIds(f: FormData) {
+  const all = f.getAll('ids').map(String).filter(Boolean);
+  if (!all.length) bulkBack(f, 'Tick at least one student first.', true);
+  return { ids: all.slice(0, BULK_MAX), left: Math.max(0, all.length - BULK_MAX) };
+}
+const leftNote = (n: number) => (n ? ` ${n} more left — run it again.` : '');
+
+export async function bulkAddToMaster(f: FormData) {
+  const staff = await requireTeam();
+  const { ids, left } = pickIds(f);
+  const status = s(f, 'addStatus') || 'New Lead';
+  let added = 0, existed = 0, failed = 0;
+  for (const id of ids) {
+    try { (await pushToMaster(id, staff.email, status)) === 'added' ? added++ : existed++; } catch { failed++; }
+  }
+  try { await syncAll(); } catch { /* next sync will catch up */ }
+  revalidatePath('/applications');
+  bulkBack(f, `Added ${added} to Sheet1${existed ? `, ${existed} already there` : ''}${failed ? `, ${failed} failed` : ''}.${leftNote(left)}`);
+}
+
+export async function bulkSetStatus(f: FormData) {
+  const staff = await requireTeam();
+  const status = s(f, 'setStatus');
+  if (!(STATUSES as readonly string[]).includes(status)) bulkBack(f, 'Choose a status first.', true);
+  const { ids, left } = pickIds(f);
+  const db = admin();
+  let ok = 0, sheetFail = 0;
+  for (const id of ids) {
+    const { data: cur } = await db.from('portal_applications').select('status').eq('application_id', id).single();
+    await db.from('portal_applications').update({ status }).eq('application_id', id);
+    await log(id, staff.email, 'status_change', { from: cur?.status ?? null, to: status });
+    try { await writeBack(id, { status }); } catch { sheetFail++; }
+    ok++;
+  }
+  revalidatePath('/applications'); revalidatePath('/');
+  bulkBack(f, `Status set to “${status}” for ${ok} student${ok === 1 ? '' : 's'}${sheetFail ? ` (${sheetFail} could not be written to the sheet)` : ''}.${leftNote(left)}`, sheetFail > 0);
+}
+
+export async function bulkAssign(f: FormData) {
+  const staff = await requireTeam();
+  const pick = s(f, 'setCounselor');
+  if (!pick) bulkBack(f, 'Choose a counselor first.', true);
+  const counselor = pick === '__clear' ? '' : pick;
+  const { ids, left } = pickIds(f);
+  const db = admin();
+  let ok = 0, sheetFail = 0;
+  const assigned: { id: string; name: string; school: string | null; programme: string | null }[] = [];
+  for (const id of ids) {
+    const { data: cur } = await db.from('portal_applications').select('counselor, name, school, programme').eq('application_id', id).single();
+    await db.from('portal_applications').update({ counselor: counselor || null }).eq('application_id', id);
+    await log(id, staff.email, 'counselor_change', { from: cur?.counselor ?? null, to: counselor });
+    if (counselor && cur && cur.counselor !== counselor) assigned.push({ id, name: cur.name, school: cur.school, programme: cur.programme });
+    try { await writeBack(id, { counselor }); } catch { sheetFail++; }
+    ok++;
+  }
+  revalidatePath('/applications'); revalidatePath('/counselors');
+  if (counselor && assigned.length) after(() => notifyAssigned(counselor, assigned, staff.email));
+  bulkBack(f, `${counselor ? `Assigned to ${counselor}` : 'Unassigned'}: ${ok} student${ok === 1 ? '' : 's'}${sheetFail ? ` (${sheetFail} could not be written to the sheet)` : ''}.${leftNote(left)}`, sheetFail > 0);
+}
+
+// One email per counselor listing the selected students that belong to them.
+export async function bulkEmailCounselors(f: FormData) {
+  const staff = await requireTeam();
+  const { ids } = pickIds(f);
+  const db = admin();
+  const [{ rows, all }, { data: counselors }] = await Promise.all([loadStudents({ dups: true }), db.from('portal_counselors').select('*')]);
+  const chosen = new Set(ids);
+  const byCounselor = new Map<string, typeof rows>();
+  for (const r of rows.filter((r) => chosen.has(r.a.application_id))) {
+    const k = counselorKey(r.a.counselor); if (!k) continue;
+    byCounselor.set(k, [...(byCounselor.get(k) || []), r]);
+  }
+  void all;
+  let sent = 0, students = 0, noEmail: string[] = [];
+  for (const [k, list] of byCounselor) {
+    const c = (counselors || []).find((x) => x.name_key === k);
+    if (!c?.email) { noEmail.push(c?.name || list[0].a.counselor || k); continue; }
+    const { subject, body, html } = digestEmail(c.name, list, 'A quick update from admissions on these students.');
+    try {
+      await sendMail({ to: c.email, subject, body, replyTo: staff.email, from: staff.email, ...html, eyebrow: 'Update from admissions' });
+      await db.from('portal_messages').insert({ application_id: null, counselor_name: c.name, to_email: c.email, to_kind: 'counselor', subject, body, sent_by: staff.email });
+      sent++; students += list.length;
+    } catch { noEmail.push(`${c.name} (send failed)`); }
+  }
+  revalidatePath('/messages');
+  const skipped = noEmail.length ? ` Not emailed (no address or failed): ${noEmail.join(', ')}.` : '';
+  bulkBack(f, sent ? `Emailed ${sent} counselor${sent === 1 ? '' : 's'} about ${students} student${students === 1 ? '' : 's'}.${skipped}` : `No emails sent.${skipped || ' The selected students have no counselor.'}`, !sent);
+}
+
+export async function updateRegent(f: FormData) {
+  const staff = await requireTeam();
+  const id = s(f, 'id');
+  const db = admin();
+  const { data: a } = await db.from('portal_applications').select('in_regent, regent_data, opp_id, payment, interview').eq('application_id', id).single();
+  if (!a?.in_regent || !a.regent_data) return back(id, 'This student is not in the Regent Only tab', true, `/applications/${id}?tab=regent`);
+  const g = a.regent_data as { email: string; name: string; school: string };
+  const fields = { oppId: s(f, 'oppId'), payment: s(f, 'payment'), interview: s(f, 'interview') };
+  try { await callScript('updateRegent', { email: g.email, name: g.name, school: g.school, fields }); }
+  catch (e) { rethrow(e); return back(id, `Could not update the sheet: ${(e as Error).message}`, true, `/applications/${id}?tab=regent`); }
+  await db.from('portal_applications').update({ opp_id: fields.oppId || null, payment: fields.payment || null, interview: fields.interview || null }).eq('application_id', id);
+  await log(id, staff.email, 'regent_update', fields);
+  revalidatePath('/');
+  back(id, 'Regent details saved', false, `/applications/${id}?tab=regent`);
 }
 
 export async function updateStatus(f: FormData) {
   const staff = await requireStaff();
   const id = s(f, 'id'), status = s(f, 'status');
+  await guardApp(staff, id);
   if (!(STATUSES as readonly string[]).includes(status)) return back(id, 'Invalid status', true);
   const db = admin();
   const { data: cur } = await db.from('portal_applications').select('status').eq('application_id', id).single();
   await db.from('portal_applications').update({ status }).eq('application_id', id);
   await log(id, staff.email, 'status_change', { from: cur?.status ?? null, to: status });
-  try { await callScript('updateRow', { applicationId: id, fields: { status } }); }
-  catch (e) { return back(id, `Saved in portal but sheet write-back failed: ${(e as Error).message}`, true); }
+  const ret = s(f, 'returnTo');
+  try { await writeBack(id, { status }); }
+  catch (e) { rethrow(e); return back(id, `Saved in portal but sheet write-back failed: ${(e as Error).message}`, true, ret); }
   revalidatePath('/');
-  back(id, 'Status updated');
+  back(id, 'Status updated', false, ret);
 }
 
 export async function updateCounselor(f: FormData) {
-  const staff = await requireStaff();
+  const staff = await requireTeam();
   const id = s(f, 'id'), counselor = s(f, 'counselor');
   const db = admin();
   const { data: cur } = await db.from('portal_applications').select('counselor').eq('application_id', id).single();
   await db.from('portal_applications').update({ counselor: counselor || null }).eq('application_id', id);
   await log(id, staff.email, 'counselor_change', { from: cur?.counselor ?? null, to: counselor });
-  try { await callScript('updateRow', { applicationId: id, fields: { counselor } }); }
-  catch (e) { return back(id, `Saved in portal but sheet write-back failed: ${(e as Error).message}`, true); }
+  if (counselor && counselor !== cur?.counselor) { const { data: st } = await db.from('portal_applications').select('name, school, programme').eq('application_id', id).single(); if (st) after(() => notifyAssigned(counselor, [{ id, ...st }], staff.email)); }
+  const ret = s(f, 'returnTo');
+  try { await writeBack(id, { counselor }); }
+  catch (e) { rethrow(e); return back(id, `Saved in portal but sheet write-back failed: ${(e as Error).message}`, true, ret); }
   revalidatePath('/');
-  back(id, 'Counselor updated');
+  back(id, 'Counselor updated', false, ret);
 }
 
 export async function addNote(f: FormData) {
   const staff = await requireStaff();
-  const id = s(f, 'id'), body = s(f, 'body');
-  if (!body) return back(id, 'Note is empty', true);
+  const id = s(f, 'id'), body = s(f, 'body'), ret = s(f, 'returnTo');
+  await guardApp(staff, id);
+  if (!body) return back(id, 'Note is empty', true, ret);
   await admin().from('portal_notes').insert({ application_id: id, author: staff.email, body, pinned: f.get('pinned') === 'on' });
   await log(id, staff.email, 'note', { preview: body.slice(0, 120) });
-  try { await callScript('updateRow', { applicationId: id, fields: { notes: body } }); } catch { /* portal is the record; sheet mirror is best-effort */ }
-  back(id, 'Note added');
+  try { await writeBack(id, {}, body, staff.email); } catch { /* portal is the record; sheet mirror is best-effort */ }
+  back(id, 'Note added', false, ret);
+}
+
+// Writes an email draft with Qwen and stores it for the composer to pre-fill. Nothing is sent.
+export async function createDraft(f: FormData) {
+  const staff = await requireStaff();
+  const id = s(f, 'id');
+  await guardApp(staff, id);
+  const purpose = (s(f, 'purpose') in PURPOSES ? s(f, 'purpose') : 'custom') as PurposeKey;
+  const tone = (s(f, 'tone') in TONES ? s(f, 'tone') : 'friendly') as ToneKey;
+  const tab = `/applications/${id}?tab=messages`;
+  const db = admin();
+  const { data: a } = await db.from('portal_applications').select('name, counselor, programme, school, status, interview, payment').eq('application_id', id).single();
+  if (!a) return back(id, 'Student not found', true);
+  const { rows, all } = await loadStudents();
+  const row = rows.find((r) => r.a.application_id === id) || rows.find((r) => all.some((x) => x.application_id === id && x.student_key === r.a.student_key));
+  const first = a.name.trim().split(/\s+/)[0] || 'there';
+  try {
+    const draft = await draftEmail({
+      purpose, tone, instruction: s(f, 'instruction').slice(0, 400),
+      facts: { programme: a.programme && a.programme.toUpperCase() !== 'N/A' ? a.programme : null, university: a.school || null, status: a.status || null,
+        documentsMissing: row?.missing || [], documentsChecked: !!row?.judged, interviewStatus: a.interview || null, paymentRecorded: !!a.payment },
+      names: { first: first[0].toUpperCase() + first.slice(1).toLowerCase(), counselor: a.counselor || 'there', sender: staff.email.split('@')[0].replace(/[^a-zA-Z]+/g, ' ').trim().split(' ')[0].replace(/^./, (c) => c.toUpperCase()) || 'The team' },
+    });
+    await db.from('portal_ai_cache').upsert({ cache_key: `draft:${id}:${staff.email}`, kind: 'draft', input_hash: draft.at, output: draft, created_at: draft.at });
+    return back(id, 'AI draft ready — review and edit it before sending.', false, `${tab}&draft=1`);
+  } catch (e) { rethrow(e); return back(id, (e as Error).message, true, tab); }
 }
 
 export async function sendCounselorEmail(f: FormData) {
   const staff = await requireStaff();
-  const id = s(f, 'id'), to = s(f, 'to'), subject = s(f, 'subject'), body = s(f, 'body');
-  if (!EMAIL_RE.test(to)) return back(id, 'Enter a valid counselor email (add it under Settings)', true);
-  if (!subject || !body) return back(id, 'Subject and message are required', true);
-  try { await callScript('sendEmail', { to, subject, body, replyTo: staff.email }); }
-  catch (e) { return back(id, `Email failed: ${(e as Error).message}`, true); }
+  const id = s(f, 'id'), ret = s(f, 'returnTo');
+  await guardApp(staff, id);
+  const to = s(f, 'custom') || s(f, 'to'), subject = s(f, 'subject'), body = s(f, 'body');
+  if (!EMAIL_RE.test(to)) return back(id, 'Enter a valid email address (counselor emails are managed under Counselors)', true, ret);
+  if (staff.role === 'counselor') {   // counselors may email their student (or themselves), not arbitrary addresses
+    const { data: a0 } = await admin().from('portal_applications').select('email').eq('application_id', id).single();
+    if (![a0?.email, staff.email].filter(Boolean).map((x) => String(x).toLowerCase()).includes(to.toLowerCase())) return back(id, 'You can email the student from here.', true, ret);
+  }
+  if (!subject || !body) return back(id, 'Subject and message are required', true, ret);
+  try { await sendMail({ to, subject, body, replyTo: staff.email, from: staff.email }); }
+  catch (e) { rethrow(e); return back(id, `Email failed: ${(e as Error).message}`, true, ret); }
+  const db = admin();
+  const { data: a } = await db.from('portal_applications').select('email, counselor').eq('application_id', id).maybeSingle();
+  const kind = a?.email && a.email.toLowerCase() === to.toLowerCase() ? 'student' : 'counselor';
+  if (kind === 'student') await addNotice({ email: to, applicationId: id, kind: 'message', title: subject, body: body.replace(/\s+/g, ' ').slice(0, 220), href: '/student', by: staff.email });
+  await db.from('portal_messages').insert({ application_id: id, counselor_name: a?.counselor || null, to_email: to, to_kind: kind, subject, body, sent_by: staff.email });
   await log(id, staff.email, 'email_sent', { to, subject });
-  back(id, `Email sent to ${to}`);
+  await db.from('portal_ai_cache').delete().eq('cache_key', `draft:${id}:${staff.email}`);
+  revalidatePath('/messages');
+  back(id, `Email sent to ${to}`, false, ret);
 }
 
 export async function uploadDocument(f: FormData) {
   const staff = await requireStaff();
-  const id = s(f, 'id'), docType = s(f, 'docType');
+  const id = s(f, 'id'), docType = s(f, 'docType'), ret = s(f, 'returnTo');
+  await guardApp(staff, id);
   const file = f.get('file') as File | null;
-  if (!file || !file.size) return back(id, 'Choose a file', true);
+  if (!file || !file.size) return back(id, 'Choose a file', true, ret);
   const db = admin();
   const { data: app } = await db.from('portal_applications').select('name, drive_folder_id').eq('application_id', id).single();
-  if (!app?.drive_folder_id) return back(id, 'This application has no Drive folder', true);
+  if (!app?.drive_folder_id) return back(id, 'This application has no Drive folder', true, ret);
   const ext = (file.name.match(/\.[^.]+$/) || ['.pdf'])[0];
-  const name = docType && docType !== 'Other' ? `${app.name} - ${docType}${ext}` : file.name;
+  let label: ReturnType<typeof resolveLabel> | null = null;
+  if (docType === 'Other') { const l = cleanLabel(s(f, 'docLabel')); if (!l) return back(id, 'Name the kind of document (for example “Bank statement”).', true, ret); label = resolveLabel(l); }
+  const name = label ? `${app.name} - ${label.override || label.docType}${ext}` : docType ? `${app.name} - ${docType}${ext}` : file.name;
   try {
     const up = await callScript<DriveFile>('uploadFile', {
       applicationId: id, folderId: app.drive_folder_id, name, mimeType: file.type,
       base64: Buffer.from(await file.arrayBuffer()).toString('base64'),
     });
     await db.from('portal_documents').upsert({
-      drive_file_id: up.id, application_id: id, name: up.name, doc_type: docTypeFromName(up.name), mime_type: up.mimeType,
+      drive_file_id: up.id, application_id: id, name: up.name, doc_type: label ? label.docType : docTypeFromName(up.name), type_override: label?.override ?? null, mime_type: up.mimeType,
       size_bytes: up.size, drive_url: up.url, source: 'portal', uploaded_by: staff.email,
     });
     await log(id, staff.email, 'doc_uploaded', { name: up.name });
-  } catch (e) { return back(id, `Upload failed: ${(e as Error).message}`, true); }
-  back(id, 'Document uploaded to Drive and linked');
+  } catch (e) { rethrow(e); return back(id, `Upload failed: ${(e as Error).message}`, true, ret); }
+  back(id, 'Document uploaded to Drive and linked', false, ret);
 }
 
 export async function refreshDocuments(f: FormData) {
-  await requireStaff();
+  const staff = await requireStaff();
+  const id = s(f, 'id'), ret = s(f, 'returnTo');
+  await guardApp(staff, id);
+  const { data: app } = await admin().from('portal_applications').select('drive_folder_id, extra_folder_ids').eq('application_id', id).single();
+  const folders = [...new Set([app?.drive_folder_id, ...(app?.extra_folder_ids || [])].filter(Boolean) as string[])];
+  if (folders.length) await syncFolders([{ id, folders }]);
+  back(id, 'Documents refreshed from Drive', false, ret);
+}
+
+export async function setDocType(f: FormData) {
+  const staff = await requireStaff();
+  const id = s(f, 'id'), fileId = s(f, 'fileId'), type = s(f, 'docType'), ret = s(f, 'returnTo');
+  await guardApp(staff, id);
+  if (!(ALL_DOC_TYPES as readonly string[]).includes(type)) return back(id, 'Invalid document type', true, ret);
+  let shown: string = type;
+  if (type === 'Other') { const l = cleanLabel(s(f, 'docLabel')); if (!l) return back(id, 'Name the kind of document (for example “Bank statement”).', true, ret); shown = resolveLabel(l).override || resolveLabel(l).docType; }
+  const { data: doc } = await admin().from('portal_documents').select('name, doc_type, application_id').eq('drive_file_id', fileId).single();
+  if (doc) await guardApp(staff, doc.application_id);
+  await admin().from('portal_documents').update({ type_override: shown === doc?.doc_type ? null : shown }).eq('drive_file_id', fileId);
+  await log(id, staff.email, 'doc_retyped', { name: doc?.name, type: shown });
+  back(id, `Marked as ${shown}`, false, ret);
+}
+
+// ---- Reminders ----
+export async function addReminder(f: FormData) {
+  const staff = await requireStaff();
+  const id = s(f, 'id'), due = s(f, 'due'), note = s(f, 'note'), ret = s(f, 'returnTo');
+  await guardApp(staff, id);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(due) || !note) return back(id, 'Pick a date and write what to follow up on.', true, ret);
+  await admin().from('portal_reminders').insert({ application_id: id, due_on: due, note: note.slice(0, 300), created_by: staff.email });
+  await log(id, staff.email, 'reminder_set', { due, note: note.slice(0, 80) });
+  revalidatePath('/'); revalidatePath('/tasks');
+  back(id, `Reminder set for ${new Date(due).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}.`, false, ret);
+}
+export async function completeReminder(f: FormData) {
+  const staff = await requireStaff();
+  const { data: rem } = await admin().from('portal_reminders').select('application_id').eq('id', s(f, 'reminderId')).single();
+  if (rem) await guardApp(staff, rem.application_id);
+  await admin().from('portal_reminders').update({ status: 'done', done_at: new Date().toISOString() }).eq('id', s(f, 'reminderId'));
+  revalidatePath('/'); revalidatePath('/tasks');
+  const ret = s(f, 'returnTo');
+  redirect(/^\/(?!\/)/.test(ret) ? ret : '/tasks');
+}
+
+// ---- Overview, tasks, AI ----
+const DAY_MS = 864e5;
+const homeOr = (f: FormData | undefined, def = '/tasks') => { const r = f ? s(f, 'returnTo') : ''; return /^\/(?!\/)/.test(r) ? r : def; };
+
+export async function markSeen(f?: FormData) {
+  const staff = await requireStaff();
+  await admin().from('portal_staff').update({ last_seen_at: new Date().toISOString() }).eq('email', staff.email);
+  revalidatePath('/'); revalidatePath('/tasks');
+  redirect(homeOr(f));
+}
+
+async function closeTask(f: FormData, status: 'done' | 'dismissed' | 'snoozed', days: number) {
+  const staff = await requireStaff();
+  const db = admin();
+  const id = s(f, 'taskId');
+  const now = new Date();
+  const { data: t } = await db.from('portal_tasks').select('application_id, title').eq('id', id).single();
+  if (t?.application_id) await guardApp(staff, t.application_id);
+  await db.from('portal_tasks').update({ status, suppress_until: new Date(now.getTime() + days * DAY_MS).toISOString(), resolved_at: now.toISOString(), resolved_by: staff.email, updated_at: now.toISOString() }).eq('id', id);
+  if (t?.application_id) await log(t.application_id, staff.email, `task_${status}`, { title: t.title });
+  revalidatePath('/overview');
+  revalidatePath('/');
+  redirect(homeOr(f));
+}
+export async function completeTask(f: FormData) { return closeTask(f, 'done', 3); }
+export async function dismissTask(f: FormData) { return closeTask(f, 'dismissed', 14); }
+export async function snoozeTask(f: FormData) { return closeTask(f, 'snoozed', Math.max(1, Math.min(14, Number(s(f, 'days')) || 1))); }
+
+export async function refreshOverview(f?: FormData) {
+  await requireTeam();
+  const { rows, all } = await loadStudents();
+  await refreshTasks(rows);
+  const staff = await requireTeam();
+  const facts = await computeFacts(rows, all, staff.last_seen_at);
+  const r = await aiOverview(facts, true);
+  revalidatePath('/'); revalidatePath('/tasks');
+  redirect(`${homeOr(f)}${r.error ? `?err=${encodeURIComponent(r.error)}` : '?msg=Overview+refreshed'}`);
+}
+
+export async function generateSummary(f: FormData) {
+  const staff = await requireStaff();
   const id = s(f, 'id');
-  const { data: app } = await admin().from('portal_applications').select('drive_folder_id').eq('application_id', id).single();
-  if (app?.drive_folder_id) await syncFolders([{ id, folder: app.drive_folder_id }]);
-  back(id, 'Documents refreshed from Drive');
+  await guardApp(staff, id);
+  const { rows, all } = await loadStudents();
+  const row = rows.find((r) => r.a.application_id === id) || rows.find((r) => all.some((x) => x.application_id === id && x.student_key === r.a.student_key));
+  if (!row) return back(id, 'Student not found', true);
+  const submissions = all.filter((x) => x.student_key === row.a.student_key).length;
+  const r = await aiStudentSummary(id, studentFacts(row.a, { have: row.have, docCount: row.docCount, missing: row.missing, judged: row.judged, submissions }), true);
+  back(id, r.error ? `AI summary: ${r.error}` : 'AI summary generated', !!r.error);
+}
+
+// ---- AI document check (opt-in) ----
+export async function scanDocs(f: FormData) {
+  const staff = await requireStaff();
+  const id = s(f, 'id'), fileId = s(f, 'fileId'), ret = s(f, 'returnTo') || `/applications/${id}?tab=documents`;
+  await guardApp(staff, id);
+  if (!docScanEnabled()) return back(id, 'The AI document check is switched off. Turn it on in Settings → AI document check.', true, ret);
+  const db = admin();
+  const { data: app } = await db.from('portal_applications').select('name, student_key').eq('application_id', id).single();
+  if (!app) return back(id, 'Student not found', true, ret);
+  const { data: sibs } = await db.from('portal_applications').select('application_id').eq('student_key', app.student_key);
+  const { data: docs } = await db.from('portal_documents').select('drive_file_id, application_id, doc_type, type_override, name').in('application_id', (sibs || []).map((x) => x.application_id));
+  const { data: done } = await db.from('portal_doc_scans').select('drive_file_id').in('drive_file_id', (docs || []).map((d) => d.drive_file_id));
+  const scanned = new Set((done || []).map((d) => d.drive_file_id));
+  const todo = (fileId ? (docs || []).filter((d) => d.drive_file_id === fileId) : (docs || []).filter((d) => !scanned.has(d.drive_file_id))).slice(0, 4);
+  if (!todo.length) return back(id, 'Nothing new to check.', false, ret);
+  let ok = 0, flagged = 0, failure = '';
+  for (const d of todo) {
+    try { const r = await scanOne({ appId: d.application_id, fileId: d.drive_file_id, filedAs: d.type_override || d.doc_type, studentName: app.name, actor: staff.email }); ok++; if (r.flags.length) flagged++; }
+    catch (e) { rethrow(e); failure = (e as Error).message; break; }
+  }
+  await log(id, staff.email, 'doc_scanned', { count: ok });
+  const more = !fileId && (docs || []).length - scanned.size - ok > 0 ? ' Run it again for the remaining files.' : '';
+  return back(id, failure ? `Checked ${ok}. Then: ${failure}` : `AI checked ${ok} document${ok === 1 ? '' : 's'}${flagged ? ` — ${flagged} need a look` : ' — nothing unusual'}.${more}`, !!failure, ret);
+}
+
+// ---- Linking Google Drive folders ----
+type Candidate = { folderId: string; name: string; url: string; parent: string; score: number; exact: boolean; fileCount: number; modified: string };
+const docsTab = (id: string) => `/applications/${id}?tab=documents`;
+
+function folderIdFrom(input: string): string | null {
+  const t = input.trim();
+  const m = /folders\/([A-Za-z0-9_-]{10,})/.exec(t) || /[?&]id=([A-Za-z0-9_-]{10,})/.exec(t);
+  return m ? m[1] : /^[A-Za-z0-9_-]{10,}$/.test(t) ? t : null;
+}
+
+async function attachFolder(appId: string, folderId: string, actor: string): Promise<number> {
+  const db = admin();
+  const listed = await callScript<Record<string, DriveFile[] | { error: string }>>('listFiles', { folderIds: [folderId] });
+  const files = listed[folderId];
+  if (!Array.isArray(files)) throw new Error("Can't open that folder. Share it with the Google account that owns your Apps Script, then try again.");
+  const { data: a } = await db.from('portal_applications').select('extra_folder_ids, drive_folder_id').eq('application_id', appId).single();
+  if (!a) throw new Error('Student not found');
+  const extra = [...new Set([...(a.extra_folder_ids || []), folderId])];
+  await db.from('portal_applications').update({
+    extra_folder_ids: extra,
+    ...(a.drive_folder_id ? {} : { drive_folder_id: folderId, drive_folder_url: `https://drive.google.com/drive/folders/${folderId}` }),
+  }).eq('application_id', appId);
+  await syncFolders([{ id: appId, folders: [...new Set([a.drive_folder_id, ...extra].filter(Boolean) as string[])] }]);
+  await db.from('portal_folder_suggestions').update({ status: 'linked' }).eq('application_id', appId).eq('folder_id', folderId);
+  await log(appId, actor, 'folder_linked', { folder: folderId, files: files.length });
+  return files.length;
+}
+
+async function scanApps(apps: { application_id: string; name: string }[]): Promise<number> {
+  const db = admin();
+  if (!apps.length) return 0;
+  const found = await callScript<Record<string, Candidate[]>>('searchFolders', { students: apps.map((a) => ({ id: a.application_id, name: a.name })) });
+  const { data: used } = await db.from('portal_applications').select('drive_folder_id, extra_folder_ids');
+  const usedSet = new Set((used || []).flatMap((u) => [u.drive_folder_id, ...(u.extra_folder_ids || [])]).filter(Boolean));
+  let n = 0;
+  for (const a of apps) {
+    const rows = (found[a.application_id] || []).filter((c) => !usedSet.has(c.folderId)).map((c) => ({
+      application_id: a.application_id, folder_id: c.folderId, folder_name: c.name, folder_url: c.url, parent_name: c.parent || null,
+      score: c.score, exact: c.exact, file_count: c.fileCount, modified_at: c.modified,
+    }));
+    if (rows.length) await db.from('portal_folder_suggestions').upsert(rows, { onConflict: 'application_id,folder_id', ignoreDuplicates: true });
+    n += rows.length;
+    await db.from('portal_applications').update({ drive_scan_at: new Date().toISOString() }).eq('application_id', a.application_id);
+  }
+  return n;
+}
+
+export async function scanDrive() {
+  await requireTeam();
+  const { data: apps } = await admin().from('portal_applications').select('application_id, name')
+    .is('drive_folder_id', null).order('drive_scan_at', { ascending: true, nullsFirst: true }).limit(12);
+  let msg: string;
+  try { const n = await scanApps(apps || []); msg = `Searched Drive for ${(apps || []).length} students — ${n} possible folders found.`; }
+  catch (e) { rethrow(e); msg = `Drive search failed: ${(e as Error).message}`; }
+  revalidatePath('/drive');
+  redirect(`/drive?msg=${encodeURIComponent(msg)}`);
+}
+
+export async function scanStudent(f: FormData) {
+  await requireTeam();
+  const id = s(f, 'id');
+  const { data: a } = await admin().from('portal_applications').select('application_id, name').eq('application_id', id).single();
+  try { const n = a ? await scanApps([a]) : 0; return back(id, n ? `Found ${n} possible folder${n > 1 ? 's' : ''} — check below and link the right one.` : 'No matching folders found. Paste the folder link instead.', false, docsTab(id)); }
+  catch (e) { rethrow(e); return back(id, `Drive search failed: ${(e as Error).message}`, true, docsTab(id)); }
+}
+
+export async function linkFolder(f: FormData) {
+  const staff = await requireTeam();
+  const id = s(f, 'id'), ret = s(f, 'returnTo') || docsTab(id);
+  const folderId = folderIdFrom(s(f, 'folder'));
+  if (!folderId) return back(id, 'That doesn’t look like a Google Drive folder link or ID', true, ret);
+  try { const n = await attachFolder(id, folderId, staff.email); revalidatePath('/'); revalidatePath('/drive'); return back(id, `Folder linked — ${n} file${n === 1 ? '' : 's'} found`, false, ret); }
+  catch (e) { rethrow(e); return back(id, (e as Error).message, true, ret); }
+}
+
+export async function dismissSuggestion(f: FormData) {
+  await requireTeam();
+  const id = s(f, 'id'), ret = s(f, 'returnTo') || '/drive';
+  await admin().from('portal_folder_suggestions').update({ status: 'dismissed' }).eq('id', s(f, 'sid'));
+  revalidatePath('/drive');
+  redirect(ret.startsWith('/') ? ret : `/applications/${id}`);
+}
+
+export async function unlinkFolder(f: FormData) {
+  const staff = await requireTeam();
+  const id = s(f, 'id'), folderId = s(f, 'folderId');
+  const db = admin();
+  const { data: a } = await db.from('portal_applications').select('extra_folder_ids, drive_folder_id, raw_data').eq('application_id', id).single();
+  const rawFolder = (a?.raw_data as { driveFolderId?: string } | null)?.driveFolderId || null;
+  if (!a || folderId === rawFolder) return back(id, 'The form’s own folder can’t be unlinked', true, docsTab(id));
+  const extra = (a.extra_folder_ids || []).filter((x: string) => x !== folderId);
+  const primary = rawFolder || extra[0] || null;
+  await db.from('portal_applications').update({ extra_folder_ids: extra, drive_folder_id: primary, drive_folder_url: primary ? `https://drive.google.com/drive/folders/${primary}` : null }).eq('application_id', id);
+  const folders = [...new Set([rawFolder, ...extra].filter(Boolean) as string[])];
+  if (folders.length) await syncFolders([{ id, folders }]); else await db.from('portal_documents').delete().eq('application_id', id);
+  await log(id, staff.email, 'folder_unlinked', { folder: folderId });
+  revalidatePath('/');
+  back(id, 'Folder unlinked', false, docsTab(id));
+}
+
+// Link every student whose search found exactly one folder with their full name.
+export async function linkExactMatches() {
+  const staff = await requireTeam();
+  const db = admin();
+  const { data: sugg } = await db.from('portal_folder_suggestions').select('id, application_id, folder_id, exact').eq('status', 'new');
+  const byApp = new Map<string, { folder_id: string; exact: boolean }[]>();
+  (sugg || []).forEach((x) => byApp.set(x.application_id, [...(byApp.get(x.application_id) || []), x]));
+  let linked = 0, failed = 0;
+  for (const [appId, list] of [...byApp].slice(0, 10)) {
+    const exact = list.filter((x) => x.exact);
+    if (exact.length !== 1) continue;
+    try { await attachFolder(appId, exact[0].folder_id, staff.email); linked++; } catch { failed++; }
+  }
+  revalidatePath('/'); revalidatePath('/drive');
+  redirect(`/drive?msg=${encodeURIComponent(`Linked ${linked} folders${failed ? `, ${failed} failed` : ''}. (10 at a time — run again for more.)`)}`);
 }
 
 // ---- Settings ----
+export async function testConnection() {
+  await requireTeam();
+  const t0 = Date.now();
+  try {
+    await callScript('listFiles', { folderIds: [] });   // lightest command the script supports
+    redirect(`/settings?msg=${encodeURIComponent(`Apps Script is connected ✓ (${Date.now() - t0} ms).`)}`);
+  } catch (e) {
+    rethrow(e);
+    redirect(`/settings?err=${encodeURIComponent((e as Error).message)}`);
+  }
+}
+
 export async function saveCounselor(f: FormData) {
-  await requireStaff();
-  const email = s(f, 'email');
-  if (email && !EMAIL_RE.test(email)) redirect(`/settings?err=${encodeURIComponent('Invalid email for ' + s(f, 'name'))}`);
+  await requireTeam();
+  const email = s(f, 'email'), ret = s(f, 'returnTo') || '/counselors';
+  if (email && !EMAIL_RE.test(email)) redirect(`${ret}?err=${encodeURIComponent('Invalid email for ' + s(f, 'name'))}`);
   await admin().from('portal_counselors').update({ email: email || null, active: f.get('active') === 'on' }).eq('id', s(f, 'id'));
-  revalidatePath('/settings');
-  redirect('/settings?msg=Saved');
+  revalidatePath('/counselors');
+  redirect(`${ret}?msg=Saved`);
 }
 export async function addCounselor(f: FormData) {
-  await requireStaff();
-  const name = s(f, 'name'), email = s(f, 'email');
-  if (!name) redirect('/settings?err=Name+required');
-  if (email && !EMAIL_RE.test(email)) redirect('/settings?err=Invalid+email');
+  await requireTeam();
+  const name = s(f, 'name'), email = s(f, 'email'), ret = s(f, 'returnTo') || '/counselors';
+  if (!name) redirect(`${ret}?err=Name+required`);
+  if (email && !EMAIL_RE.test(email)) redirect(`${ret}?err=Invalid+email`);
   await admin().from('portal_counselors').upsert({ name, name_key: counselorKey(name), email: email || null }, { onConflict: 'name_key' });
-  redirect('/settings?msg=Counselor+saved');
+  redirect(`${ret}?msg=Counselor+saved`);
 }
+
+// Lets a counselor sign in (with Google, using their saved email) and see only their own students.
+export async function grantCounselorAccess(f: FormData) {
+  const me0 = await requireTeam();
+  const db = admin();
+  const { data: c } = await db.from('portal_counselors').select('*').eq('id', s(f, 'id')).single();
+  if (!c?.email) redirect('/counselors?err=' + encodeURIComponent('Save the counselor’s email first.'));
+  const email = c.email.toLowerCase();
+  const { data: ex } = await db.from('portal_staff').select('role').eq('email', email).maybeSingle();
+  if (ex && ex.role !== 'counselor') redirect('/counselors?err=' + encodeURIComponent(`${email} already has team access.`));
+  await db.from('portal_staff').upsert({ email, role: 'counselor', counselor_key: c.name_key });
+  await audit(me0.email, 'counselor_access_granted', email, { counselor: c.name });
+  revalidatePath('/counselors');
+  redirect(`/counselors?msg=${encodeURIComponent(`${c.name} can now sign in with ${email} and will see only their own students.`)}`);
+}
+export async function grantAllCounselorAccess() {
+  const me0 = await requireTeam();
+  const db = admin();
+  const [{ data: cs }, { data: staff }] = await Promise.all([db.from('portal_counselors').select('name, name_key, email, active').not('email', 'is', null), db.from('portal_staff').select('email, role')]);
+  const have = new Map((staff || []).map((r) => [r.email.toLowerCase(), r.role]));
+  const add = (cs || []).filter((c) => c.email && c.active !== false && !have.has(c.email.toLowerCase())).map((c) => ({ email: c.email!.toLowerCase(), role: 'counselor', counselor_key: c.name_key }));
+  if (add.length) { await db.from('portal_staff').upsert(add); await audit(me0.email, 'counselor_access_granted', add.map((a) => a.email).join(', '), { count: add.length }); }
+  const skipped = (cs || []).filter((c) => c.email && have.has(c.email.toLowerCase())).length;
+  revalidatePath('/counselors');
+  redirect(`/counselors?msg=${encodeURIComponent(add.length ? `Access given to ${add.length} counselor${add.length === 1 ? '' : 's'}: ${add.map((a) => a.email).join(', ')}.${skipped ? ` ${skipped} already had access.` : ''}` : 'Everyone with an email already has access.')}`);
+}
+export async function revokeCounselorAccess(f: FormData) {
+  const me1 = await requireTeam();
+  const db = admin();
+  const { data: c } = await db.from('portal_counselors').select('email').eq('id', s(f, 'id')).single();
+  if (c?.email) { await db.from('portal_staff').delete().eq('email', c.email.toLowerCase()).eq('role', 'counselor'); await audit(me1.email, 'counselor_access_removed', c.email); }
+  revalidatePath('/counselors');
+  redirect('/counselors?msg=Access+removed');
+}
+
+// Email a counselor the list of their students that need attention.
+export async function sendDigest(f: FormData) {
+  const staff = await requireTeam();
+  const db = admin();
+  const { data: c } = await db.from('portal_counselors').select('*').eq('id', s(f, 'id')).single();
+  if (!c?.email) redirect('/counselors?err=' + encodeURIComponent(`Add an email for ${c?.name || 'this counselor'} first`));
+  const { rows } = await loadStudents();
+  const mine = rows.filter((r) => counselorKey(r.a.counselor) === c.name_key && r.reasons.length && !(r.a.status && ['Enrolled', 'Rejected', 'Withdrawn'].includes(r.a.status)));
+  if (!mine.length) redirect(`/counselors?msg=${encodeURIComponent(`${c.name} has no students needing attention — nothing sent.`)}`);
+  const { subject, body, html } = digestEmail(c.name, mine);
+  try { await sendMail({ to: c.email, subject, body, replyTo: staff.email, from: staff.email, ...html, eyebrow: 'Students needing attention' }); }
+  catch (e) { redirect(`/counselors?err=${encodeURIComponent(`Email failed: ${(e as Error).message}`)}`); }
+  await db.from('portal_messages').insert({ application_id: null, counselor_name: c.name, to_email: c.email, to_kind: 'counselor', subject, body, sent_by: staff.email });
+  revalidatePath('/messages');
+  redirect(`/counselors?msg=${encodeURIComponent(`Digest sent to ${c.name} (${mine.length} students).`)}`);
+}
+
+// Free-form message from the Messages page (optionally tied to a student).
+export async function sendMessage(f: FormData) {
+  const staff = await requireTeam();
+  const to = s(f, 'custom') || s(f, 'to'), subject = s(f, 'subject'), body = s(f, 'body'), appId = s(f, 'applicationId') || null;
+  if (!EMAIL_RE.test(to) || !subject || !body) redirect('/messages?compose=1&err=' + encodeURIComponent('Recipient, subject and message are required'));
+  try { await sendMail({ to, subject, body, replyTo: staff.email, from: staff.email, eyebrow: 'Message' }); }
+  catch (e) { redirect('/messages?compose=1&err=' + encodeURIComponent(`Email failed: ${(e as Error).message}`)); }
+  const db = admin();
+  const { data: c } = await db.from('portal_counselors').select('name').eq('email', to).maybeSingle();
+  await db.from('portal_messages').insert({ application_id: appId, counselor_name: c?.name || null, to_email: to, to_kind: c ? 'counselor' : appId ? 'student' : 'other', subject, body, sent_by: staff.email });
+  if (appId) await log(appId, staff.email, 'email_sent', { to, subject });
+  revalidatePath('/messages');
+  redirect(`/messages?msg=${encodeURIComponent(`Email sent to ${to}`)}`);
+}
+
+// Adds a student by hand: a new row in Sheet1, then a sync so the portal shows it.
+export async function createApplication(f: FormData) {
+  const staff = await requireTeam();
+  const name = s(f, 'name'), email = s(f, 'email').toLowerCase();
+  if (!name) redirect('/applications/new?err=Name+is+required');
+  if (email && !EMAIL_RE.test(email)) redirect('/applications/new?err=Invalid+email');
+  const status = s(f, 'status') || 'New Lead';
+  try {
+    const r = await callScript<{ exists: boolean }>('addMaster', {
+      date: new Date().toISOString(), name, email, phone: s(f, 'phone'), school: schoolShort(s(f, 'school')), programme: s(f, 'programme'),
+      country: s(f, 'country'), city: s(f, 'city'), gender: s(f, 'gender'), dob: dobForMaster(s(f, 'dob')), age: s(f, 'age'), counselor: s(f, 'counselor'), status,
+    });
+    await syncAll();
+    const db = admin();
+    const q = email ? db.from('portal_applications').select('application_id').ilike('email', email) : db.from('portal_applications').select('application_id').ilike('name', name);
+    const { data: hit } = await q.order('created_at', { ascending: false }).limit(1).maybeSingle();
+    if (hit) { await log(hit.application_id, staff.email, 'moved_to_master', { status, exists: r.exists }); redirect(`/applications/${hit.application_id}?msg=${encodeURIComponent(r.exists ? 'Already in Sheet1 — opened the existing record' : 'Student added to Sheet1')}`); }
+  } catch (e) {
+    if ((e as { digest?: string }).digest?.startsWith('NEXT_REDIRECT')) throw e;
+    redirect('/applications/new?err=' + encodeURIComponent((e as Error).message));
+  }
+  redirect('/applications?msg=Student+added');
+}
+
 export async function addStaff(f: FormData) {
-  const me = await requireStaff();
+  const me = await requireTeam();
   if (me.role !== 'admin') redirect('/settings?err=Admins+only');
   const email = s(f, 'email').toLowerCase();
   if (!EMAIL_RE.test(email)) redirect('/settings?err=Invalid+email');
-  await admin().from('portal_staff').upsert({ email, role: s(f, 'role') === 'admin' ? 'admin' : 'staff' });
+  const role = s(f, 'role') === 'admin' ? 'admin' : 'staff';
+  await admin().from('portal_staff').upsert({ email, role });
+  await audit(me.email, 'staff_added', email, { role });
   redirect('/settings?msg=Staff+added');
 }
 export async function removeStaff(f: FormData) {
-  const me = await requireStaff();
+  const me = await requireTeam();
   const email = s(f, 'email');
   if (me.role !== 'admin' || email === me.email) redirect('/settings?err=Not+allowed');
   await admin().from('portal_staff').delete().eq('email', email);
+  await audit(me.email, 'staff_removed', email);
   redirect('/settings?msg=Removed');
+}
+
+// Emails students their own list of missing documents (fixed wording, verified facts only).
+// Team: from the Applications bulk bar. Counselors: only their own students, from their board.
+export async function bulkRequestDocs(f: FormData) {
+  const staff = await requireStaff();
+  const asTeam = staff.role !== 'counselor';
+  const all = f.getAll('ids').map(String).filter(Boolean).slice(0, BULK_MAX);
+  const returnTo = s(f, 'returnTo');
+  const fail = (m: string): never => (asTeam ? bulkBack(f, m, true) : back('', m, true, returnTo || '/my'));
+  if (!all.length) fail('Pick at least one student first.');
+  const allowed: string[] = [];
+  for (const id of all) if (await canAccessApp(staff, id)) allowed.push(id);
+  const chosen = new Set(allowed);
+  const { rows } = await loadStudents();
+  let res;
+  try { res = await requestDocs(rows.filter((r) => chosen.has(r.a.application_id)), staff.email); }
+  catch (e) { rethrow(e); fail(`Could not send: ${(e as Error).message}`); return; }
+  revalidatePath('/messages');
+  const msg = summarise(res);
+  if (asTeam) bulkBack(f, msg, !res.sent);
+  back('', msg, !res.sent, returnTo || '/my');
+}
+
+// ---- profiles ----
+const clip = (v: string, n: number) => v.replace(/\s+/g, ' ').trim().slice(0, n);
+
+export async function saveProfile(f: FormData) {
+  const staff = await requireStaff();
+  const { COLORS } = await import('@/lib/profile');
+  const color = s(f, 'color');
+  const phone = clip(s(f, 'phone'), 30);
+  if (phone && !/^[+\d][\d\s().-]{5,}$/.test(phone)) redirect('/profile?err=' + encodeURIComponent('That phone number doesn’t look right.'));
+  const { error } = await admin().from('portal_staff').update({
+    display_name: clip(s(f, 'display_name'), 60) || null,
+    title: clip(s(f, 'title'), 80) || null,
+    phone: phone || null,
+    bio: s(f, 'bio').trim().slice(0, 400) || null,
+    color: COLORS[color] ? color : 'navy',
+    notify_email: f.get('notify_email') === 'on',
+    updated_at: new Date().toISOString(),
+  }).eq('email', staff.email);
+  if (error) redirect('/profile?err=' + encodeURIComponent(`Could not save: ${error.message}`));
+  revalidatePath('/', 'layout');
+  redirect('/profile?msg=' + encodeURIComponent('Profile saved.'));
+}
+
+export async function uploadAvatar(f: FormData) {
+  const staff = await requireStaff();
+  const file = f.get('photo');
+  if (!(file instanceof File) || !file.size) redirect('/profile?err=' + encodeURIComponent('Choose a photo first.'));
+  if (file.size > 1_000_000) redirect('/profile?err=' + encodeURIComponent('That photo is too large (max 1 MB).'));
+  const buf = Buffer.from(await file.arrayBuffer());
+  const kind = buf[0] === 0xff && buf[1] === 0xd8 ? ['jpg', 'image/jpeg'] : buf.subarray(1, 4).toString() === 'PNG' ? ['png', 'image/png'] : buf.subarray(8, 12).toString() === 'WEBP' ? ['webp', 'image/webp'] : null;
+  if (!kind) redirect('/profile?err=' + encodeURIComponent('Please use a JPG, PNG or WebP photo.'));
+  const db = admin();
+  const path = `${staff.email.replace(/[^a-z0-9]/gi, '_')}-${Date.now()}.${kind![0]}`;
+  const up = await db.storage.from('avatars').upload(path, buf, { contentType: kind![1], upsert: true });
+  if (up.error) redirect('/profile?err=' + encodeURIComponent(`Upload failed: ${up.error.message}`));
+  const url = db.storage.from('avatars').getPublicUrl(path).data.publicUrl;
+  if (staff.avatar_url) { const old = staff.avatar_url.split('/avatars/')[1]; if (old) await db.storage.from('avatars').remove([old]); }
+  await db.from('portal_staff').update({ avatar_url: url, updated_at: new Date().toISOString() }).eq('email', staff.email);
+  revalidatePath('/', 'layout');
+  redirect('/profile?msg=' + encodeURIComponent('Photo updated.'));
+}
+
+export async function removeAvatar() {
+  const staff = await requireStaff();
+  const db = admin();
+  if (staff.avatar_url) { const old = staff.avatar_url.split('/avatars/')[1]; if (old) await db.storage.from('avatars').remove([old]); }
+  await db.from('portal_staff').update({ avatar_url: null, updated_at: new Date().toISOString() }).eq('email', staff.email);
+  revalidatePath('/', 'layout');
+  redirect('/profile?msg=' + encodeURIComponent('Photo removed.'));
+}
+
+// Sends the three sample emails to the signed-in person so they can see the real thing in their inbox.
+export async function sendTestEmails() {
+  const staff = await requireTeam();
+  const { sampleSpec } = await import('@/lib/emailSamples');
+  try {
+    for (const kind of ['student', 'digest', 'custom']) {
+      const { subject, body, ...spec } = sampleSpec(kind);
+      await sendMail({ to: staff.email, subject, body, replyTo: staff.email, from: staff.email, ...spec });
+    }
+  } catch (e) { rethrow(e); redirect('/settings?err=' + encodeURIComponent(`Test email failed: ${(e as Error).message}`)); }
+  redirect('/settings?msg=' + encodeURIComponent(`Three sample emails sent to ${staff.email}. Check your inbox (and spam).`));
+}
+
+// Pipeline board: move one student to a new stage (no redirect, so the board can update in place).
+export async function moveStatus(id: string, status: string): Promise<{ ok: boolean; error?: string; sheet?: boolean }> {
+  const staff = await requireStaff();
+  if (!(await canAccessApp(staff, id))) return { ok: false, error: 'That student isn’t assigned to you.' };
+  if (!(STATUSES as readonly string[]).includes(status)) return { ok: false, error: 'Unknown stage.' };
+  const db = admin();
+  const { data: cur } = await db.from('portal_applications').select('status').eq('application_id', id).single();
+  if (cur?.status === status) return { ok: true };
+  await db.from('portal_applications').update({ status }).eq('application_id', id);
+  await log(id, staff.email, 'status_change', { from: cur?.status ?? null, to: status });
+  let sheet = true;
+  try { await writeBack(id, { status }); } catch { sheet = false; }
+  revalidatePath('/'); revalidatePath('/applications');
+  return { ok: true, sheet };
+}
+
+// Intake month + application deadline (kept in the portal; the Google Sheet has no column for them).
+export async function saveDates(f: FormData) {
+  const staff = await requireStaff();
+  const id = s(f, 'id'), ret = s(f, 'returnTo');
+  await guardApp(staff, id);
+  const intake = s(f, 'intake'), deadline = s(f, 'deadline');
+  if (intake && !/^\d{4}-\d{2}$/.test(intake)) return back(id, 'Intake should be a month.', true, ret);
+  if (deadline && !/^\d{4}-\d{2}-\d{2}$/.test(deadline)) return back(id, 'Deadline should be a date.', true, ret);
+  await admin().from('portal_applications').update({ intake: intake || null, deadline: deadline || null }).eq('application_id', id);
+  await log(id, staff.email, 'dates_updated', { intake, deadline });
+  revalidatePath('/calendar'); revalidatePath('/');
+  back(id, 'Dates saved', false, ret);
+}
+
+// Payments page: remind selected unpaid students.
+export async function bulkPaymentReminders(f: FormData) {
+  const staff = await requireTeam();
+  const ids = f.getAll('ids').map(String).filter(Boolean).slice(0, BULK_MAX);
+  if (!ids.length) redirect('/payments?err=' + encodeURIComponent('Tick at least one student first.'));
+  const chosen = new Set(ids);
+  const { rows } = await loadStudents();
+  let res;
+  try { res = await sendPaymentReminders(rows.filter((r) => chosen.has(r.a.application_id)), staff.email); }
+  catch (e) { rethrow(e); redirect('/payments?err=' + encodeURIComponent(`Could not send: ${(e as Error).message}`)); }
+  revalidatePath('/messages');
+  redirect(`/payments?${res.sent ? 'msg' : 'err'}=${encodeURIComponent(summariseReminders(res))}`);
+}
+
+// Student page: send one student a document request or payment reminder again (ignores the "asked recently" pause).
+export async function sendStudentReminder(f: FormData) {
+  const staff = await requireStaff();
+  const id = s(f, 'id'), kind = s(f, 'kind'), ret = s(f, 'returnTo') || `/applications/${encodeURIComponent(id)}?tab=messages`;
+  await guardApp(staff, id);
+  const { rows } = await loadStudents();
+  const row = rows.find((r) => r.a.application_id === id);
+  if (!row) return back(id, 'Student not found', true, ret);
+  let res;
+  try { res = kind === 'payment' ? await sendPaymentReminders([row], staff.email, true) : await requestDocs([row], staff.email, true); }
+  catch (e) { rethrow(e); return back(id, `Could not send: ${(e as Error).message}`, true, ret); }
+  revalidatePath('/messages');
+  back(id, res.sent ? (kind === 'payment' ? 'Payment reminder sent.' : 'Document request sent.') : `Not sent: ${res.skipped.map((x) => x.why).join('; ') || 'nothing to send'}.`, !res.sent, ret);
+}
+
+export async function backupNow() {
+  const me = await requireTeam();
+  if (me.role !== 'admin') redirect('/settings?err=Admins+only');
+  try { const r = await runBackup(me.email); redirect('/settings?msg=' + encodeURIComponent(`Backup saved: ${r.name}${r.failed.length ? ` (some tables failed: ${r.failed.join('; ')})` : ''}.`)); }
+  catch (e) { rethrow(e); redirect('/settings?err=' + encodeURIComponent(`Backup failed: ${(e as Error).message}`)); }
+}
+
+// Extracted text page: read one document's full text out through Drive OCR and keep it. Called one file at a time so the page can show progress.
+export async function extractFile(fileId: string): Promise<{ ok: boolean; chars?: number; error?: string }> {
+  const staff = await requireStaff();
+  const db = admin();
+  const { data: doc } = await db.from('portal_documents').select('drive_file_id, application_id').eq('drive_file_id', fileId).maybeSingle();
+  if (!doc || !(await canAccessApp(staff, doc.application_id))) return { ok: false, error: 'Not found' };
+  const row = { drive_file_id: fileId, application_id: doc.application_id, extracted_by: staff.email, extracted_at: new Date().toISOString() };
+  try {
+    const r = await callScript<{ text: string; chars: number; truncated: boolean; method: string }>('extractFull', { fileId });
+    await db.from('portal_doc_text').upsert({ ...row, text: r.text, chars: r.chars, truncated: r.truncated, method: r.method, error: r.chars < 5 ? 'No readable text was found. The scan may be too faint, rotated, or a picture without writing.' : null });
+    return { ok: true, chars: r.chars };
+  } catch (e) {
+    const msg = (e as Error).message.replace(/^Apps Script:\s*/, '').slice(0, 300);
+    await db.from('portal_doc_text').upsert({ ...row, text: '', chars: 0, truncated: false, method: null, error: /unknown action/i.test(msg) ? 'Your Apps Script needs the newest PortalApi.gs (it is missing “extractFull”).' : msg });
+    return { ok: false, error: msg };
+  }
+}
+
+// ================= Student portal =================
+const STUDENT_CODE_LIMIT = 5;   // sign-in codes per email per hour
+
+/** Step 1: email a sign-in code (its length is set in Supabase, so nothing here assumes 6 or 8 digits). Same reply whether or not the address is on file, so nobody can probe who has applied. */
+export async function requestStudentCode(f: FormData) {
+  const email = s(f, 'email').toLowerCase();
+  if (!EMAIL_RE.test(email)) redirect('/student/login?error=' + encodeURIComponent('Enter a valid email address.'));
+  const db = admin();
+  const known = await isStudentEmail(email);
+  if (known) {
+    const since = new Date(Date.now() - 3600_000).toISOString();
+    const { count } = await db.from('portal_notify_log').select('id', { count: 'exact', head: true }).eq('email', email).eq('kind', 'student_code').gte('created_at', since);
+    if ((count || 0) >= STUDENT_CODE_LIMIT) redirect('/student/login?error=' + encodeURIComponent('Too many codes requested. Please wait a little and try again.'));
+    await db.auth.admin.createUser({ email, email_confirm: true }).catch(() => null);   // no-op if they already exist
+    const { data, error } = await db.auth.admin.generateLink({ type: 'magiclink', email });
+    const code = data?.properties?.email_otp;
+    if (error || !code) redirect('/student/login?error=' + encodeURIComponent('Could not create a code. Please try again in a minute.'));
+    try {
+      const apps = await appsForEmail(email);
+      await sendMail({
+        to: email, subject: `${code} is your sign-in code`, body: `Your sign-in code is ${code}. It expires in 60 minutes.`, eyebrow: 'Student portal', title: 'Your sign-in code', greeting: `Hi ${apps[0].name.split(/[\s,]+/)[0]},`, preheader: `Your code is ${code}`,
+        blocks: [{ type: 'p', text: 'Use this code to sign in to your student portal.' }, { type: 'code', code: code!, note: 'It expires in 60 minutes and works once.' }, { type: 'note', text: 'If you didn’t ask for this, you can ignore this email. Nobody can sign in without the code.' }],
+        sign: { name: 'WhiteRock Admissions', title: 'Student portal' }, footerNote: 'This is an automatic message about your student portal sign-in.',
+      });
+      await db.from('portal_notify_log').insert({ email, kind: 'student_code', ref: null });
+    } catch { redirect('/student/login?error=' + encodeURIComponent('We couldn’t send the email right now. Please try again shortly.')); }
+  }
+  redirect(`/student/login?step=code&email=${encodeURIComponent(email)}`);
+}
+
+/** Step 2: check the code and sign them in. */
+export async function verifyStudentCode(f: FormData) {
+  const email = s(f, 'email').toLowerCase(), code = s(f, 'code').replace(/\D/g, '');
+  const back2 = (m: string): never => redirect(`/student/login?step=code&email=${encodeURIComponent(email)}&error=${encodeURIComponent(m)}`);
+  if (code.length < 6 || code.length > 10) back2('Enter the code from your email.');
+  if (!(await isStudentEmail(email))) back2('That code didn’t work. Request a new one.');
+  const { error } = await (await sessionClient()).auth.verifyOtp({ email, token: code, type: 'email' });
+  if (error) back2('That code didn’t work or has expired. Request a new one.');
+  redirect('/student');
+}
+
+export async function studentSignOut() {
+  await (await sessionClient()).auth.signOut();
+  redirect('/student/login');
+}
+
+const ALLOWED_EXT = /\.(pdf|jpe?g|png|webp|docx?)$/i;
+const sniff = (b: Buffer) => (b.subarray(0, 4).toString() === '%PDF' ? 'pdf' : b[0] === 0xff && b[1] === 0xd8 ? 'jpg' : b.subarray(1, 4).toString() === 'PNG' ? 'png' : b.subarray(8, 12).toString() === 'WEBP' ? 'webp' : b.subarray(0, 2).toString() === 'PK' ? 'docx' : b[0] === 0xd0 && b[1] === 0xcf ? 'doc' : null);
+
+/** A student uploads one document into their own Drive folder. Returns a result instead of redirecting so the page can update in place. */
+export async function studentUpload(f: FormData): Promise<{ ok: boolean; error?: string }> {
+  const me = await currentStudent();
+  if (!me) return { ok: false, error: 'Please sign in again.' };
+  const appId = s(f, 'appId'), docType = s(f, 'docType'), file = f.get('file');
+  if (!me.ids.includes(appId)) return { ok: false, error: 'That application isn’t yours.' };
+  if (!(ALL_DOC_TYPES as readonly string[]).includes(docType)) return { ok: false, error: 'Choose what kind of document this is.' };
+  if (!(file instanceof File) || !file.size) return { ok: false, error: 'Choose a file first.' };
+  if (!ALLOWED_EXT.test(file.name)) return { ok: false, error: 'Please upload a PDF, photo (JPG/PNG) or Word file.' };
+  if (file.size > 4 * 1024 * 1024) return { ok: false, error: 'That file is over 4 MB. Please send a smaller or compressed copy.' };
+  const buf = Buffer.from(await file.arrayBuffer());
+  if (!sniff(buf)) return { ok: false, error: 'That doesn’t look like a PDF, photo or Word file.' };
+  const db = admin();
+  const { data: app } = await db.from('portal_applications').select('name, drive_folder_id, student_key').eq('application_id', appId).single();
+  let folder = app?.drive_folder_id || null;
+  if (!folder && app) { const { data: sib } = await db.from('portal_applications').select('drive_folder_id').eq('student_key', app.student_key).not('drive_folder_id', 'is', null).limit(1); folder = sib?.[0]?.drive_folder_id || null; }
+  if (!folder || !app) return { ok: false, error: 'Uploads aren’t switched on for your application yet. Please message your counselor.' };
+  const day = new Date(Date.now() - 864e5).toISOString();
+  const { count } = await db.from('portal_documents').select('drive_file_id', { count: 'exact', head: true }).eq('uploaded_by', me.email).gte('created_at', day);
+  if ((count || 0) >= 25) return { ok: false, error: 'You’ve reached today’s upload limit. Please try again tomorrow.' };
+  const ext = (file.name.match(/\.[^.]+$/) || ['.pdf'])[0].toLowerCase();
+  let label: ReturnType<typeof resolveLabel> | null = null;
+  if (docType === 'Other') { const l = cleanLabel(s(f, 'docLabel')); if (!l) return { ok: false, error: 'Please name the kind of document, for example “Bank statement”.' }; label = resolveLabel(l); }
+  const name = `${app.name} - ${label ? label.override || label.docType : docType}${ext}`;
+  try {
+    const up = await callScript<DriveFile>('uploadFile', { applicationId: appId, folderId: folder, name, mimeType: file.type || 'application/octet-stream', base64: buf.toString('base64') });
+    await db.from('portal_documents').upsert({ drive_file_id: up.id, application_id: appId, name: up.name, doc_type: label ? label.docType : docType, type_override: label?.override ?? null, mime_type: up.mimeType, size_bytes: up.size, drive_url: up.url, source: 'portal', uploaded_by: me.email });
+    await log(appId, me.email, 'doc_uploaded', { name: up.name, by: 'student' });
+  } catch (e) { return { ok: false, error: `Upload failed. Please try again. (${(e as Error).message.slice(0, 120)})` }; }
+  revalidatePath('/student'); revalidatePath('/');
+  return { ok: true };
+}
+
+/** A student writes to their counselor. Delivered as an email to the counselor (replies go straight to the student) and kept in the message history. */
+export async function studentMessage(f: FormData): Promise<{ ok: boolean; error?: string }> {
+  const me = await currentStudent();
+  if (!me) return { ok: false, error: 'Please sign in again.' };
+  const appId = s(f, 'appId'), body = s(f, 'body').slice(0, 1500);
+  if (!me.ids.includes(appId)) return { ok: false, error: 'That application isn’t yours.' };
+  if (body.length < 3) return { ok: false, error: 'Write your message first.' };
+  const db = admin();
+  const since = new Date(Date.now() - 864e5).toISOString();
+  const { count } = await db.from('portal_messages').select('id', { count: 'exact', head: true }).eq('sent_by', me.email).gte('created_at', since);
+  if ((count || 0) >= 5) return { ok: false, error: 'You’ve sent a few messages today already. Your counselor will reply soon.' };
+  const { data: app } = await db.from('portal_applications').select('name, school, programme, counselor').eq('application_id', appId).single();
+  const { data: c } = app?.counselor ? await db.from('portal_counselors').select('name, email').eq('name_key', counselorKey(app.counselor)).maybeSingle() : { data: null };
+  let to = c?.email || null;
+  if (!to) { const { data: a } = await db.from('portal_staff').select('email').eq('role', 'admin').limit(1); to = a?.[0]?.email || null; }
+  if (!to) return { ok: false, error: 'We couldn’t find who to send this to. Please try again later.' };
+  const subject = `Message from ${app!.name}${app!.school ? ` (${schoolShort(app!.school)})` : ''}`;
+  try {
+    await sendMail({ to, subject, body: `${app!.name} wrote:\n\n${body}`, eyebrow: 'Student message', title: `${app!.name.split(/[\s,]+/)[0]} sent you a message`, greeting: c ? `Hi ${c.name.replace(/^(mr|mrs|ms|miss|dr)\.?\s+/i, '')},` : 'Hello,', preheader: body.slice(0, 100), replyTo: me.email, sign: { name: app!.name, title: [schoolShort(app!.school), app!.programme].filter(Boolean).join(' · ') || 'Student', email: me.email },
+      blocks: [{ type: 'p', text: `A student wrote to you through the student portal. Replying to this email goes straight to them.` }, { type: 'quote', from: `${app!.name} · ${me.email}`, text: body }], cta: { label: 'Open their file', href: `${site()}/applications/${encodeURIComponent(appId)}?tab=messages` } });
+  } catch { return { ok: false, error: 'We couldn’t send that just now. Please try again.' }; }
+  await db.from('portal_messages').insert({ application_id: appId, counselor_name: c?.name || null, to_email: to, to_kind: 'counselor', subject, body, sent_by: me.email });
+  await log(appId, me.email, 'email_sent', { to, subject });
+  return { ok: true };
+}
+
+/** Team: invite students to the student portal (one branded email each; paused for a week after an invite). */
+async function inviteStudentsCore(rowsIn: { id: string }[], actor: string, force = false) {
+  const db = admin(), out = { sent: 0, skipped: [] as { name: string; why: string }[] };
+  const since = new Date(Date.now() - 7 * 864e5).toISOString();
+  const ids = rowsIn.map((r) => r.id);
+  const { data: apps } = await db.from('portal_applications').select('application_id, name, email, school, counselor').in('application_id', ids);
+  const { data: recent } = force ? { data: [] } : await db.from('portal_messages').select('application_id').like('subject', 'Your student portal%').gte('created_at', since).in('application_id', ids);
+  const asked = new Set((recent || []).map((m) => m.application_id));
+  const done = new Set<string>();
+  for (const a of apps || []) {
+    const skip = (why: string) => out.skipped.push({ name: a.name, why });
+    if (!a.email || !EMAIL_RE.test(a.email)) { skip('no email address'); continue; }
+    if (done.has(a.email.toLowerCase())) { skip('same email already invited'); continue; }
+    if (asked.has(a.application_id)) { skip('invited in the last 7 days'); continue; }
+    const { data: c } = a.counselor ? await db.from('portal_counselors').select('name, email').eq('name_key', counselorKey(a.counselor)).maybeSingle() : { data: null };
+    const subject = 'Your student portal is ready';
+    const body = `Hi ${a.name.split(/[\s,]+/)[0]},\n\nYour student portal is ready. Sign in with ${a.email} to see where your application is, upload your documents and message your counselor.\n\n${studentSite()}/student/login`;
+    try {
+      await sendMail({ to: a.email, subject, body, eyebrow: 'Student portal', title: 'Your student portal is ready', greeting: `Hi ${a.name.split(/[\s,]+/)[0]},`, preheader: 'See your application progress and upload your documents.', replyTo: c?.email || actor, from: c?.email || actor,
+        blocks: [{ type: 'p', text: 'You can now follow your application online. In your portal you can:' }, { type: 'steps', items: ['See exactly where your application is', 'Upload any documents we still need', 'Message your counselor directly'] }, { type: 'note', text: `Sign in with this email address: ${a.email}. We’ll email you a sign-in code, so there is no password to remember.` }], cta: { label: 'Open my student portal', href: `${studentSite()}/student/login` } });
+      await db.from('portal_messages').insert({ application_id: a.application_id, counselor_name: c?.name || null, to_email: a.email, to_kind: 'student', subject, body, sent_by: actor });
+      await log(a.application_id, actor, 'email_sent', { to: a.email, subject });
+      done.add(a.email.toLowerCase()); out.sent++;
+    } catch { skip('send failed'); }
+  }
+  return out;
+}
+
+export async function bulkInviteStudents(f: FormData) {
+  const staff = await requireTeam();
+  const { ids, left } = pickIds(f);
+  let res;
+  try { res = await inviteStudentsCore(ids.map((id) => ({ id })), staff.email); }
+  catch (e) { rethrow(e); bulkBack(f, `Could not send: ${(e as Error).message}`, true); }
+  revalidatePath('/messages');
+  const why = new Map<string, string[]>(); res.skipped.forEach((x) => why.set(x.why, [...(why.get(x.why) || []), x.name]));
+  const parts = [...why].map(([w, n]) => `${n.length} ${w}${n.length <= 3 ? ` (${n.join(', ')})` : ''}`);
+  bulkBack(f, `${res.sent ? `Invited ${res.sent} student${res.sent === 1 ? '' : 's'} to the student portal.` : 'No invitations sent.'}${parts.length ? ` Skipped: ${parts.join('; ')}.` : ''}${leftNote(left)}`, !res.sent);
+}
+
+export async function inviteOneStudent(f: FormData) {
+  const staff = await requireStaff();
+  const id = s(f, 'id'), ret = s(f, 'returnTo') || `/applications/${encodeURIComponent(id)}?tab=messages`;
+  await guardApp(staff, id);
+  let res;
+  try { res = await inviteStudentsCore([{ id }], staff.email, true); }
+  catch (e) { rethrow(e); return back(id, `Could not send: ${(e as Error).message}`, true, ret); }
+  revalidatePath('/messages');
+  back(id, res.sent ? 'Invitation sent.' : `Not sent: ${res.skipped.map((x) => x.why).join('; ')}.`, !res.sent, ret);
+}
+
+/** A student updates the few details they own: phone, city and what they like to be called. Written to the portal and to your Google Sheet. */
+export async function studentSaveDetails(f: FormData): Promise<{ ok: boolean; error?: string; sheet?: boolean }> {
+  const me = await currentStudent();
+  if (!me) return { ok: false, error: 'Please sign in again.' };
+  const clean = (v: string, n: number) => v.replace(/\s+/g, ' ').trim().slice(0, n);
+  const phone = clean(s(f, 'phone'), 30), city = clean(s(f, 'city'), 60), preferred = clean(s(f, 'preferred'), 40);
+  if (phone && !/^[+\d][\d\s().-]{6,}$/.test(phone)) return { ok: false, error: 'That phone number doesn’t look right. Include your country code, like +234…' };
+  if (city && !/^[\p{L}\p{M}][\p{L}\p{M}\s'.,-]*$/u.test(city)) return { ok: false, error: 'City should only contain letters.' };
+  if (preferred && !/^[\p{L}\p{M}][\p{L}\p{M}\s'.-]*$/u.test(preferred)) return { ok: false, error: 'Preferred name should only contain letters.' };
+  const db = admin();
+  let sheet = true;
+  for (const a of me.apps) {
+    const { data: cur } = await db.from('portal_applications').select('phone, city').eq('application_id', a.application_id).single();
+    await db.from('portal_applications').update({ phone: phone || null, city: city || null, preferred_name: preferred || null }).eq('application_id', a.application_id);
+    const fields: Record<string, string> = {};
+    if ((cur?.phone || '') !== phone) fields.phone = phone;
+    if ((cur?.city || '') !== city) fields.city = city;
+    if (Object.keys(fields).length) { try { await writeBack(a.application_id, fields); } catch { sheet = false; } }
+  }
+  await log(me.apps[0].application_id, me.email, 'details_updated', { fields: 'contact details', by: 'student' });
+  revalidatePath('/student'); revalidatePath('/applications');
+  return { ok: true, sheet };
+}
+
+// ================= Offer & visa tracking =================
+export async function saveOffer(f: FormData) {
+  const staff = await requireStaff();
+  const id = s(f, 'id'), ret = `/applications/${encodeURIComponent(id)}?tab=offer`;
+  await guardApp(staff, id);
+  const date = (k: string) => { const v = s(f, k); return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null; };
+  const pick = (k: string, ok: readonly string[]) => { const v = s(f, k); return ok.includes(v) ? v : null; };
+  let conditions: { text: string; met: boolean; due?: string | null }[] = [];
+  try { const raw = JSON.parse(s(f, 'conditions') || '[]'); if (Array.isArray(raw)) conditions = raw.slice(0, 20).map((c) => ({ text: String(c.text || '').replace(/\s+/g, ' ').trim().slice(0, 200), met: !!c.met, due: /^\d{4}-\d{2}-\d{2}$/.test(c.due || '') ? c.due : null })).filter((c) => c.text); } catch { /* ignore bad json */ }
+  const docId = s(f, 'offer_doc_id') || null;
+  const row = {
+    application_id: id, offer_type: pick('offer_type', ['Conditional', 'Unconditional']), offer_date: date('offer_date'), offer_doc_id: docId, conditions, deposit_due: date('deposit_due'),
+    cas_status: pick('cas_status', CAS_STATUSES), cas_applied_date: date('cas_applied_date'), cas_received_date: date('cas_received_date'),
+    visa_status: pick('visa_status', VISA_STATUSES), visa_applied_date: date('visa_applied_date'), visa_biometrics_date: date('visa_biometrics_date'), visa_decision_date: date('visa_decision_date'),
+    student_note: s(f, 'student_note').slice(0, 600) || null, visible_to_student: f.get('visible') === 'on', updated_by: staff.email, updated_at: new Date().toISOString(),
+  };
+  const db = admin();
+  const { error } = await db.from('portal_offers').upsert(row);
+  if (error) return back(id, `Could not save: ${error.message}`, true, ret);
+  await log(id, staff.email, 'offer_updated', { offer: row.offer_type || '', cas: row.cas_status || '', visa: row.visa_status || '' });
+  let extra = '';
+  if (f.get('notify') === 'on') {
+    const { data: a } = await db.from('portal_applications').select('name, email, preferred_name, counselor').eq('application_id', id).single();
+    if (a?.email && EMAIL_RE.test(a.email) && row.visible_to_student) {
+      try {
+        const first = (a.preferred_name || a.name).split(/[\s,]+/)[0];
+        const bits = [row.offer_type ? `${row.offer_type} offer` : '', row.cas_status && row.cas_status !== 'Not started' ? `CAS: ${row.cas_status}` : '', row.visa_status && row.visa_status !== 'Not started' ? `Visa: ${row.visa_status}` : ''].filter(Boolean);
+        await sendMail({ to: a.email, subject: 'An update on your application', body: `Hi ${first},\n\nThere is an update on your application${bits.length ? `: ${bits.join(' · ')}` : ''}.\n\nSign in to your student portal to see the details: ${studentSite()}/student/login`, replyTo: staff.email, from: staff.email, eyebrow: 'Application update', title: 'There’s an update on your application', greeting: `Hi ${first},`, preheader: bits.join(' · ') || 'See the latest in your student portal.',
+          blocks: [{ type: 'p', text: 'Your counselor has updated your offer and visa progress.' }, ...(bits.length ? [{ type: 'list' as const, items: bits }] : []), ...(row.student_note ? [{ type: 'quote' as const, from: 'Note from your counselor', text: row.student_note }] : [])], cta: { label: 'See my progress', href: `${studentSite()}/student/login` } });
+        await addNotice({ email: a.email, applicationId: id, kind: 'offer', title: 'An update on your offer and visa', body: bits.join(' · ') || 'Your counselor updated your progress.', href: '/student#offer', by: staff.email });
+        await db.from('portal_messages').insert({ application_id: id, to_email: a.email, to_kind: 'student', subject: 'An update on your application', body: bits.join(' · ') || 'Offer & visa update', sent_by: staff.email });
+        extra = ' The student was emailed.';
+      } catch { extra = ' (The email to the student could not be sent.)'; }
+    }
+  }
+  revalidatePath('/student');
+  back(id, `Offer & visa saved.${extra}`, false, ret);
+}
+
+// ================= Interview training =================
+const backTo = (path: string, msg: string, err = false): never => redirect(`${path}${path.includes('?') ? '&' : '?'}${err ? 'err' : 'msg'}=${encodeURIComponent(msg)}`);
+
+/** Books one student into a session, then emails the student and their counselor (and the trainer). */
+async function inviteToSlot(staff: { email: string; role: string; counselor_key: string | null }, slotId: string, appId: string): Promise<{ ok: boolean; name?: string; error?: string }> {
+  const db = admin();
+  if (!(await canAccessApp(staff as never, appId))) return { ok: false, error: 'not your student' };
+  const { data: a } = await db.from('portal_applications').select('application_id, name, email, school, programme, status, counselor, preferred_name').eq('application_id', appId).single();
+  if (!a) return { ok: false, error: 'student not found' };
+  if (!a.email || !EMAIL_RE.test(a.email)) return { ok: false, name: a.name, error: 'no email address' };
+  const r = await bookSlotCore({ slotId, applicationId: appId, studentEmail: a.email, bookedBy: staff.email, asStudent: false });
+  if (!r.ok) return { ok: false, name: a.name, error: r.error };
+  await log(appId, staff.email, 'interview_booked', { when: r.slot!.starts_at });
+  try { await emailBooking(r.slot!, { name: a.name, email: a.email, preferred: a.preferred_name }, staff.email, 'booked'); } catch { /* booking stands */ }
+  await emailCounselorBooking(r.slot!, a, staff.email).catch(() => []);
+  return { ok: true, name: a.name };
+}
+
+export async function createInterviewSlots(f: FormData) {
+  const staff = await requireStaff();
+  let starts: string[] = [];
+  try { const raw = JSON.parse(s(f, 'starts') || '[]'); if (Array.isArray(raw)) starts = raw.map(String); } catch { /* ignore */ }
+  starts = starts.map((x) => new Date(x)).filter((d) => !isNaN(d.getTime()) && d.getTime() > Date.now()).map((d) => d.toISOString()).slice(0, 12);
+  if (!starts.length) backTo('/interviews', 'Pick a date and time in the future.', true);
+  const duration = Math.max(10, Math.min(240, Number(s(f, 'duration')) || 45)), capacity0 = Math.max(1, Math.min(20, Number(s(f, 'capacity')) || 1));
+  const invites = [...new Set(f.getAll('invite').map(String).filter(Boolean))].slice(0, 20);
+  const trainer = s(f, 'trainer') || staff.email, notes = s(f, 'notes').slice(0, 300) || null;
+  const auto = s(f, 'link_mode') !== 'paste';
+  let pasted: string | null = null;
+  if (!auto) { pasted = checkMeetingUrl(s(f, 'teams_url')); if (!pasted) backTo('/interviews', 'Paste a Google Meet link (like https://meet.google.com/abc-defg-hij) or a Microsoft Teams link.', true); }
+  const rows: { starts_at: string; teams_url: string; calendar_event_id: string | null }[] = [];
+  for (const starts_at of starts) {
+    if (!auto) { rows.push({ starts_at, teams_url: pasted!, calendar_event_id: null }); continue; }
+    try {
+      const m = await callScript<{ url: string; eventId: string }>('createMeet', { startsAt: starts_at, durationMin: duration, summary: 'Interview training (WhiteRock Admissions)', description: 'Interview practice session for a student.' });
+      rows.push({ starts_at, teams_url: m.url, calendar_event_id: m.eventId });
+    } catch (e) {
+      rethrow(e);
+      const msg = (e as Error).message;
+      for (const r of rows) if (r.calendar_event_id) { try { await callScript('deleteMeet', { eventId: r.calendar_event_id }); } catch { /* best effort */ } }
+      backTo('/interviews', /unknown action/i.test(msg) ? 'Your Apps Script needs the newest PortalApi.gs (it is missing “createMeet”). Or choose “Paste a link” instead.' : /Calendar is not defined|Calendar\.Events/i.test(msg) ? 'Switch on the Google Calendar service in Apps Script (Services → + → Google Calendar API), then try again. Or choose “Paste a link” instead.' : `Could not create a Google Meet link: ${msg.replace(/^Apps Script:\s*/, '').slice(0, 160)}`, true);
+    }
+  }
+  const capacity = Math.max(capacity0, invites.length);
+  const { data: made, error } = await admin().from('portal_interview_slots').insert(rows.map((r) => ({ ...r, duration_min: duration, trainer, capacity, notes, created_by: staff.email }))).select('id, starts_at').order('starts_at');
+  if (error) backTo('/interviews', `Could not create the sessions: ${error.message}`, true);
+  const invited: string[] = [], skipped: string[] = [];
+  if (invites.length && made?.length) for (const appId of invites) { const r = await inviteToSlot(staff, made[0].id, appId); if (r.ok) invited.push(r.name!); else skipped.push(`${r.name || 'a student'} (${r.error})`); }
+  await audit(staff.email, 'interview_slots_created', `${starts.length} session(s)`, { first: starts[0] });
+  revalidatePath('/interviews'); revalidatePath('/student');
+  backTo('/interviews', `${starts.length} session${starts.length === 1 ? '' : 's'} created.${invited.length ? ` Invited ${invited.join(', ')}: they and their counselors have been emailed.` : ' Students can book them now.'}${skipped.length ? ` Not invited: ${skipped.join('; ')}.` : ''}`, skipped.length > 0 && !invited.length);
+}
+
+export async function cancelInterviewSlot(f: FormData) {
+  const staff = await requireStaff();
+  const id = s(f, 'slotId'), db = admin();
+  const { data: slot } = await db.from('portal_interview_slots').select('*').eq('id', id).maybeSingle();
+  if (!slot) backTo('/interviews', 'Session not found.', true);
+  if (staff.role === 'counselor' && slot!.created_by !== staff.email && slot!.trainer !== staff.email) backTo('/interviews', 'You can only cancel your own sessions.', true);
+  await db.from('portal_interview_slots').update({ cancelled_at: new Date().toISOString() }).eq('id', id);
+  if (slot!.calendar_event_id) { try { await callScript('deleteMeet', { eventId: slot!.calendar_event_id }); } catch { /* the session is cancelled either way */ } }
+  const { data: bs } = await db.from('portal_interview_bookings').select('id, student_email, portal_applications(name, preferred_name)').eq('slot_id', id).eq('status', 'booked');
+  await db.from('portal_interview_bookings').update({ status: 'cancelled', cancelled_at: new Date().toISOString() }).eq('slot_id', id).eq('status', 'booked');
+  let told = 0;
+  for (const b of bs || []) { const a = b.portal_applications as unknown as { name: string; preferred_name: string | null } | null; try { await emailBooking(slot as never, { name: a?.name || 'there', email: b.student_email, preferred: a?.preferred_name }, staff.email, 'slot_cancelled'); told++; } catch { /* ignore */ } }
+  revalidatePath('/interviews'); revalidatePath('/student');
+  backTo('/interviews', `Session cancelled${told ? `, and ${told} student${told === 1 ? ' was' : 's were'} emailed` : ''}.`);
+}
+
+export async function staffBookStudent(f: FormData) {
+  const staff = await requireStaff();
+  const slotId = s(f, 'slotId'), appId = s(f, 'appId');
+  if (!appId) backTo('/interviews', 'Choose a student first.', true);
+  const r = await inviteToSlot(staff, slotId, appId);
+  revalidatePath('/interviews'); revalidatePath('/student');
+  if (!r.ok) backTo('/interviews', `${r.name ? `${r.name}: ` : ''}${r.error}`, true);
+  backTo('/interviews', `${r.name} is booked. They and their counselor have been emailed the meeting link.`);
+}
+
+export async function setBookingStatus(f: FormData) {
+  const staff = await requireStaff();
+  const id = s(f, 'bookingId'), status = s(f, 'status'), db = admin();
+  const { data: b } = await db.from('portal_interview_bookings').select('id, application_id').eq('id', id).maybeSingle();
+  if (!b) backTo('/interviews', 'Booking not found.', true);
+  await guardApp(staff, b!.application_id);
+  if (!['booked', 'completed', 'no_show', 'cancelled'].includes(status)) backTo('/interviews', 'Unknown status.', true);
+  await db.from('portal_interview_bookings').update({ status, feedback: s(f, 'feedback').slice(0, 1000) || null, feedback_visible: f.get('visible') === 'on', ...(status === 'cancelled' ? { cancelled_at: new Date().toISOString() } : {}) }).eq('id', id);
+  await log(b!.application_id, staff.email, 'interview_updated', { status });
+  revalidatePath('/interviews'); revalidatePath('/student');
+  backTo(s(f, 'tab') === 'past' ? '/interviews?tab=past' : '/interviews', 'Saved.');
+}
+
+export async function studentBookSlot(slotId: string): Promise<{ ok: boolean; error?: string }> {
+  const me = await currentStudent();
+  if (!me) return { ok: false, error: 'Please sign in again.' };
+  const app = me.apps[0];
+  const r = await bookSlotCore({ slotId, applicationId: app.application_id, studentEmail: me.email, bookedBy: me.email, asStudent: true });
+  if (!r.ok) return { ok: false, error: r.error };
+  await log(app.application_id, me.email, 'interview_booked', { when: r.slot!.starts_at, by: 'student' });
+  try { await emailBooking(r.slot!, { name: app.name, email: me.email, preferred: app.preferred_name }, r.slot!.trainer || r.slot!.created_by, 'booked'); } catch { /* the booking stands */ }
+  revalidatePath('/student'); revalidatePath('/interviews');
+  return { ok: true };
+}
+
+export async function studentCancelBooking(bookingId: string): Promise<{ ok: boolean; error?: string }> {
+  const me = await currentStudent();
+  if (!me) return { ok: false, error: 'Please sign in again.' };
+  const db = admin();
+  const { data: b } = await db.from('portal_interview_bookings').select('id, application_id, status, portal_interview_slots(starts_at)').eq('id', bookingId).maybeSingle();
+  if (!b || !me.ids.includes(b.application_id) || b.status !== 'booked') return { ok: false, error: 'Booking not found.' };
+  const start = (b.portal_interview_slots as unknown as { starts_at: string } | null)?.starts_at;
+  if (!start || new Date(start).getTime() - Date.now() < MIN_NOTICE_H * 3600_000) return { ok: false, error: `Sessions can only be cancelled up to ${MIN_NOTICE_H} hours before they start. Please message your counselor.` };
+  await db.from('portal_interview_bookings').update({ status: 'cancelled', cancelled_at: new Date().toISOString() }).eq('id', bookingId);
+  await log(b.application_id, me.email, 'interview_cancelled', { when: start, by: 'student' });
+  revalidatePath('/student'); revalidatePath('/interviews');
+  return { ok: true };
+}
+
+// ================= Student checklist =================
+export async function studentToggleChecklist(id: string): Promise<{ ok: boolean }> {
+  const me = await currentStudent();
+  if (!me) return { ok: false };
+  const db = admin();
+  const { data: it } = await db.from('portal_checklist').select('id, application_id, done').eq('id', id).maybeSingle();
+  if (!it || !me.ids.includes(it.application_id)) return { ok: false };
+  await db.from('portal_checklist').update({ done: !it.done, done_at: !it.done ? new Date().toISOString() : null }).eq('id', id);
+  await log(it.application_id, me.email, !it.done ? 'checklist_done' : 'checklist_undone', { by: 'student' });
+  revalidatePath('/student'); revalidatePath('/applications');
+  return { ok: true };
+}
+
+/** In-portal chat: the student writes; saved to the thread, and the counselor gets one email at most every 3 hours. */
+export async function studentSend(f: FormData): Promise<{ ok: boolean; error?: string }> {
+  const me = await currentStudent();
+  if (!me) return { ok: false, error: 'Please sign in again.' };
+  const appId = s(f, 'appId'), body = s(f, 'body').trim().slice(0, 2000);
+  if (!me.ids.includes(appId)) return { ok: false, error: 'That application isn’t yours.' };
+  if (body.length < 1) return { ok: false, error: 'Write your message first.' };
+  const db = admin();
+  const { count } = await db.from('portal_student_msgs').select('id', { count: 'exact', head: true }).eq('student_email', me.email).eq('from_student', true).gte('created_at', new Date(Date.now() - 864e5).toISOString());
+  if ((count || 0) >= 40) return { ok: false, error: 'That’s a lot of messages for one day. Your counselor will reply soon.' };
+  const { data: last } = await db.from('portal_student_msgs').select('created_at').eq('student_email', me.email).eq('from_student', true).order('created_at', { ascending: false }).limit(1);
+  const { error } = await db.from('portal_student_msgs').insert({ student_email: me.email, application_id: appId, from_student: true, sender_email: me.email, body, student_read_at: new Date().toISOString() });
+  if (error) return { ok: false, error: 'Could not send. Please try again.' };
+  const quiet = !last?.[0] || Date.now() - new Date(last[0].created_at).getTime() > 3 * 3600_000;
+  if (quiet) { const fd = new FormData(); fd.set('appId', appId); fd.set('body', body); try { await studentMessage(fd); } catch { /* the message is saved either way */ } }
+  revalidatePath('/student/messages');
+  return { ok: true };
+}
+
+export async function studentMarkRead(): Promise<void> {
+  const me = await currentStudent();
+  if (!me) return;
+  await admin().from('portal_student_msgs').update({ student_read_at: new Date().toISOString() }).eq('student_email', me.email).eq('from_student', false).is('student_read_at', null);
+}
+
+/** Staff reply in the student's chat. Email only if the student hasn't been active for 5 minutes, and at most every 3 hours. */
+export async function staffReplyStudent(f: FormData): Promise<{ ok: boolean; error?: string }> {
+  const st = await requireStaff();
+  await guardApp(st, s(f, 'appId'));
+  const appId = s(f, 'appId'), body = s(f, 'body').trim().slice(0, 2000);
+  if (!body) return { ok: false, error: 'Write your reply first.' };
+  const db = admin();
+  const { data: app } = await db.from('portal_applications').select('name, email, school').eq('application_id', appId).single();
+  if (!app?.email) return { ok: false, error: 'No student email on file.' };
+  const to = app.email.toLowerCase();
+  const { error } = await db.from('portal_student_msgs').insert({ student_email: to, application_id: appId, from_student: false, sender_email: st.email, body, staff_read_at: new Date().toISOString() });
+  if (error) return { ok: false, error: 'Could not send.' };
+  await db.from('portal_student_msgs').update({ staff_read_at: new Date().toISOString() }).eq('student_email', to).eq('from_student', true).is('staff_read_at', null);
+  const [{ data: seen }, { data: prev }] = await Promise.all([
+    db.from('portal_student_seen').select('last_active_at').eq('email', to).maybeSingle(),
+    db.from('portal_student_msgs').select('created_at').eq('student_email', to).eq('from_student', false).order('created_at', { ascending: false }).range(1, 1),
+  ]);
+  const away = !seen || Date.now() - new Date(seen.last_active_at).getTime() > 5 * 60_000;
+  const quiet = !prev?.[0] || Date.now() - new Date(prev[0].created_at).getTime() > 3 * 3600_000;
+  try { await addNotice({ email: to, applicationId: appId, kind: 'message', title: 'New message from your counselor', body: body.slice(0, 140), href: '/student/messages', by: st.email }); } catch { /* optional */ }
+  if (away && quiet) {
+    try { await sendMail({ to, subject: 'New message from your counselor', body: `${shownName(st) || 'Your counselor'} wrote:\n\n${body}`, eyebrow: 'Message', title: 'You have a new message', greeting: `Hi ${app.name.split(/[\s,]+/).filter(Boolean)[0] || 'there'},`, preheader: body.slice(0, 100), sign: { name: shownName(st) || 'Admissions', title: 'Admissions Counselor', email: st.email }, blocks: [{ type: 'quote', from: shownName(st) || 'Your counselor', text: body.slice(0, 600) }], cta: { label: 'Open your messages', href: `${studentSite()}/student/messages` } }); } catch { /* chat still has it */ }
+  }
+  revalidatePath(`/applications/${appId}`);
+  return { ok: true };
+}
+
+export async function staffAddChecklist(f: FormData): Promise<{ ok: boolean; error?: string }> {
+  const st = await requireStaff();
+  const appId = s(f, 'appId'), text = s(f, 'text').trim().slice(0, 140), due = s(f, 'due') || null;
+  await guardApp(st, appId);
+  if (text.length < 3) return { ok: false, error: 'Describe the task first.' };
+  const db = admin();
+  const { error } = await db.from('portal_checklist').insert({ application_id: appId, text, due, created_by: st.email });
+  if (error) return { ok: false, error: 'Could not add it.' };
+  const { data: app } = await db.from('portal_applications').select('email').eq('application_id', appId).maybeSingle();
+  if (app?.email) { try { await addNotice({ email: app.email.toLowerCase(), applicationId: appId, kind: 'message', title: 'New item on your checklist', body: text, href: '/student', by: st.email }); } catch { /* optional */ } }
+  await log(appId, st.email, 'checklist_add', { text });
+  revalidatePath(`/applications/${appId}`); revalidatePath('/student');
+  return { ok: true };
+}
+
+export async function staffRemoveChecklist(id: string): Promise<{ ok: boolean }> {
+  const st = await requireStaff();
+  const db = admin();
+  const { data: row } = await db.from('portal_checklist').select('application_id').eq('id', id).maybeSingle();
+  if (!row) return { ok: false };
+  await guardApp(st, row.application_id);
+  await db.from('portal_checklist').delete().eq('id', id);
+  revalidatePath(`/applications/${row.application_id}`); revalidatePath('/student');
+  return { ok: true };
 }

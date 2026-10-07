@@ -17,8 +17,23 @@ export async function middleware(req: NextRequest) {
   });
   const { data } = await sb.auth.getUser();
   const { pathname } = req.nextUrl;
-  if (!data.user && pathname !== '/login' && !pathname.startsWith('/api/sync')) {
-    return NextResponse.redirect(new URL('/login', req.url));
+  const pwa = pathname === '/sw.js' || pathname === '/manifest.webmanifest' || pathname.startsWith('/pwa/');
+  const isStudentArea = pathname === '/student' || pathname.startsWith('/student/');
+  const host = (req.headers.get('host') || '').toLowerCase();
+  const studentHost = (process.env.STUDENT_HOST || '').toLowerCase();
+
+  // Optional separate address for students (set STUDENT_HOST): that address only ever serves the student portal.
+  if (studentHost && host === studentHost) {
+    const ok = isStudentArea || pathname.startsWith('/auth/') || pathname.startsWith('/api/files/') || pathname === '/api/email/logo' || pathname === '/icon.svg' || pwa;
+    if (pathname === '/') return NextResponse.redirect(new URL(data.user ? '/student' : '/student/login', req.url));
+    if (!ok) return NextResponse.redirect(new URL('/student', req.url));
+  }
+
+  const open = pathname === '/login' || pathname === '/student/login' || pathname.startsWith('/auth/') || pathname.startsWith('/api/sync') || pathname === '/api/email/logo' || pwa;
+  if (!data.user && !open) {
+    // The front door (/) and anything under /student is for students; every staff page sends you to the team sign-in.
+    const toStudent = isStudentArea || pathname === '/' || (!!studentHost && host === studentHost);
+    return NextResponse.redirect(new URL(toStudent ? '/student/login' : '/login', req.url));
   }
   return res;
 }
