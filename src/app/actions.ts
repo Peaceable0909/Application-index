@@ -1328,3 +1328,11 @@ export async function staffRemoveChecklist(id: string): Promise<{ ok: boolean }>
   revalidatePath(`/applications/${row.application_id}`); revalidatePath('/student');
   return { ok: true };
 }
+
+/** Marks a student's messages as read once staff open their conversation. */
+export async function staffMarkChatRead(appId: string): Promise<void> {
+  const st = await requireStaff();
+  await guardApp(st, appId);
+  await admin().from('portal_student_msgs').update({ staff_read_at: new Date().toISOString() }).eq('application_id', appId).eq('from_student', true).is('staff_read_at', null);
+  revalidatePath('/inbox');
+}

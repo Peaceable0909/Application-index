@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { studentSend, studentMarkRead, staffReplyStudent } from '@/app/actions';
+import { studentSend, studentMarkRead, staffReplyStudent, staffMarkChatRead } from '@/app/actions';
 import Icon from './Icon';
 
 export type Msg = { id: string; mine: boolean; body: string; at: string };
@@ -14,7 +14,7 @@ export default function ChatThread({ appId, msgs, as, other }: { appId: string; 
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => setList(msgs), [msgs]);
   useEffect(() => { end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [list.length]);
-  useEffect(() => { if (as === 'student') studentMarkRead().then(() => router.refresh()); const t = setInterval(() => { if (document.visibilityState === 'visible') router.refresh(); }, 15000); return () => clearInterval(t); }, [as, router]);
+  useEffect(() => { (as === 'student' ? studentMarkRead() : staffMarkChatRead(appId)).then(() => router.refresh()); const t = setInterval(() => { if (document.visibilityState === 'visible') router.refresh(); }, 15000); return () => clearInterval(t); }, [as, appId, router]);
   async function send() {
     const body = text.trim(); if (!body || busy) return;
     setBusy(true); setErr('');
