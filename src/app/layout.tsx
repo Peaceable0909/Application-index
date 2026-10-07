@@ -16,16 +16,19 @@ import { unreadTotal } from '@/lib/chat';
 import { currentStudent } from '@/lib/student';
 import StudentShell from '@/components/StudentShell';
 import { noticesFor } from '@/lib/notices';
+import './student.css';
 
 const ui = Inter({ subsets: ['latin'], variable: '--font-ui', display: 'swap' });
 const display = Instrument_Serif({ subsets: ['latin'], weight: '400', style: ['normal', 'italic'], variable: '--font-display', display: 'swap' });
 
-export const metadata = { title: 'Admissions Portal', description: 'Applications, documents and counselors in one place.' };
+export const metadata = { title: 'Admissions Portal', description: 'Applications, documents and counselors in one place.', manifest: '/manifest.webmanifest', appleWebApp: { capable: true, title: 'WhiteRock', statusBarStyle: 'default' as const }, icons: { apple: '/pwa/icon-192.png' } };
+export const viewport = { themeColor: '#0d1f4d' };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const staff = await currentStaff();
   const student = staff ? null : await currentStudent();
   const studentNotices = student ? await noticesFor(student) : [];
+  const studentUnread = student ? ((await admin().from('portal_student_msgs').select('id', { count: 'exact', head: true }).eq('student_email', student.email).eq('from_student', false).is('student_read_at', null)).count || 0) : 0;
   let taskCount = 0, chatCount = 0;
   if (staff) {
     const q = admin().from('portal_tasks').select('id', { count: 'exact', head: true }).eq('status', 'open');
@@ -52,7 +55,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <main>{children}</main>
             </div>
           </div>
-        ) : student ? <StudentShell me={student} notices={studentNotices}>{children}</StudentShell> : <main style={{ maxWidth: 'none' }}>{children}</main>}
+        ) : student ? <StudentShell me={student} notices={studentNotices} unread={studentUnread}>{children}</StudentShell> : <main style={{ maxWidth: 'none' }}>{children}</main>}
       </body>
     </html>
   );

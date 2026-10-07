@@ -56,7 +56,7 @@ export async function requestDocs(rows: SRow[], actor: string, force = false): P
     const { subject, body, html } = docRequestEmail(r, reply);
     try {
       await sendMail({ to: a.email, subject, body, replyTo: reply, from: reply, ...html });
-      await addNotice({ email: a.email, applicationId: a.application_id, kind: 'docs', title: `Documents needed: ${r.missing.join(', ')}`, body: 'Please upload them in the Documents section of your student portal.', href: '/student#documents', by: actor });
+      await addNotice({ email: a.email, applicationId: a.application_id, kind: 'docs', title: `Documents needed: ${r.missing.join(', ')}`, body: 'Please upload them in the Documents section of your student portal.', href: '/student/documents', by: actor });
       await db.from('portal_messages').insert({ application_id: a.application_id, counselor_name: c?.name || null, to_email: a.email, to_kind: 'student', subject, body, sent_by: actor });
       await db.from('portal_activity').insert({ application_id: a.application_id, actor, kind: 'email_sent', detail: { to: a.email, subject } });
       out.sent++;
@@ -153,7 +153,7 @@ export async function sendPaymentReminders(rows: SRow[], actor: string, force = 
     const reply = c?.email || actor, { subject, body, html } = paymentReminderEmail(r, reply);
     try {
       await sendMail({ to: a.email, subject, body, replyTo: reply, from: reply, ...html });
-      await addNotice({ email: a.email, applicationId: a.application_id, kind: 'payment', title: 'Payment reminder', body: 'We haven’t received the payment for your application yet. Reply to the email with your proof of payment.', href: '/student#application', by: actor });
+      await addNotice({ email: a.email, applicationId: a.application_id, kind: 'payment', title: 'Payment reminder', body: 'We haven’t received the payment for your application yet. Reply to the email with your proof of payment.', href: '/student/messages', by: actor });
       await db.from('portal_messages').insert({ application_id: a.application_id, counselor_name: c?.name || null, to_email: a.email, to_kind: 'student', subject, body, sent_by: actor });
       await db.from('portal_activity').insert({ application_id: a.application_id, actor, kind: 'email_sent', detail: { to: a.email, subject } });
       out.sent++;

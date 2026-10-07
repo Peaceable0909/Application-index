@@ -21,6 +21,7 @@ import OfferForm from '@/components/OfferForm';
 import DocTypeSelect from '@/components/DocTypeSelect';
 import { getOffer, milestones } from '@/lib/offer';
 import { saveOffer, inviteOneStudent, sendStudentReminder, saveDates, addNote, addReminder, addToMaster, completeReminder, createDraft, scanDocs, setDocType, dismissSuggestion, generateSummary, linkFolder, refreshDocuments, scanStudent, sendCounselorEmail, unlinkFolder, updateCounselor, updateRegent, updateStatus, uploadDocument } from '../../actions';
+import StaffStudentPanel from '@/components/StaffStudentPanel';
 
 type SP = { msg?: string; err?: string; preview?: string; tab?: string; compose?: string; draft?: string };
 const TABS = ['overview', 'documents', 'offer', 'notes', 'activity', 'messages', 'regent', 'sources'] as const;
@@ -50,6 +51,10 @@ export default async function ApplicationPage({ params, searchParams }: { params
     db.from('portal_reminders').select('*').eq('application_id', id).eq('status', 'pending').order('due_on'),
   ]);
   const offerRow = await getOffer(id);
+  const [{ data: chatRows }, { data: checkRows }] = await Promise.all([
+    db.from('portal_student_msgs').select('id, from_student, body, created_at').eq('application_id', id).order('created_at').limit(200),
+    db.from('portal_checklist').select('id, text, due, done').eq('application_id', id).order('created_at'),
+  ]);
   const { data: docs } = await db.from('portal_documents').select('*').in('application_id', (siblings || []).map((s) => s.application_id)).order('created_at', { ascending: false });
 
   const judged = isFormSubmission(app) || !!app.drive_folder_id;
@@ -451,7 +456,8 @@ export default async function ApplicationPage({ params, searchParams }: { params
           </div>
         )}
 
-        {tab === 'messages' && (
+        {tab === 'messages' && (<>
+          <StaffStudentPanel appId={id} studentName={app.name} msgs={(chatRows || []).map((m) => ({ id: m.id, mine: !m.from_student, body: m.body, at: m.created_at }))} items={(checkRows || []) as { id: string; text: string; due: string | null; done: boolean }[]} />
           <div className="grid g2" style={{ alignItems: 'start' }}>
             <div>
             <div className="card ai">
@@ -514,7 +520,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
               {!(messages || []).length && <p className="muted" style={{ margin: 0 }}>Nothing sent from the portal yet.</p>}
             </div>
           </div>
-        )}
+        </>)}
 
         {tab === 'regent' && app.in_regent && (
           <div className="grid g2">

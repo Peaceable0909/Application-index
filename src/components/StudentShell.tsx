@@ -1,21 +1,24 @@
 import Link from 'next/link';
 import Mark from './Mark';
-import Icon from './Icon';
-import { studentSignOut } from '@/app/actions';
+import Avatar from './Avatar';
 import StudentBell from './StudentBell';
+import StudentNav from './StudentNav';
+import SwRegister from './SwRegister';
+import StudentPing from './StudentPing';
 import type { StudentView } from '@/lib/student';
 import type { Notice } from '@/lib/notices';
 
-export default function StudentShell({ me, notices, children }: { me: StudentView; notices: Notice[]; children: React.ReactNode }) {
+export default function StudentShell({ me, notices, unread, children }: { me: StudentView; notices: Notice[]; unread: number; children: React.ReactNode }) {
   return (
     <div className="stu-shell">
-      <header className="stu-top">
-        <Link href="/student" className="brand"><Mark size={34} /><span><b>WhiteRock <em>Admissions</em></b><small>Student Portal</small></span></Link>
-        <div className="stu-me"><StudentBell initial={notices} /><span className="pic" style={{ width: 36, height: 36, fontSize: 13, background: 'linear-gradient(135deg,#0f2a63,#2b5fb8)' }}>{me.name.split(/[\s,]+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase()}</span>
-          <div><b>{me.name.split(/[\s,]+/)[0]}</b><small>{me.email}</small></div>
-          <form action={studentSignOut}><button className="iconbtn" aria-label="Sign out" title="Sign out"><Icon n="logout" size={17} /></button></form></div>
+      <header className="st-top">
+        <Link href="/student" className="st-brand"><Mark size={36} /><span><b>WhiteRock <em>Admissions</em></b><small>Student portal</small></span></Link>
+        <StudentNav variant="top" unread={unread} />
+        <div className="st-me"><StudentBell initial={notices} /><Link href="/student/me" aria-label="My profile"><Avatar name={me.name} size={38} /></Link></div>
       </header>
-      <main className="stu-main">{children}</main>
+      <main className="st-main">{children}</main>
+      <StudentNav variant="bottom" unread={unread} />
+      <StudentPing /><SwRegister />
     </div>
   );
 }

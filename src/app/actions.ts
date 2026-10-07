@@ -14,6 +14,7 @@ import { sendMail } from '@/lib/mail';
 import { site, studentSite } from '@/lib/emailTemplate';
 import { audit } from '@/lib/audit';
 import { addNotice } from '@/lib/notices';
+import { shownName } from '@/lib/profile';
 import { cleanLabel, resolveLabel } from '@/lib/docLabel';
 import { bookSlotCore, emailBooking, emailCounselorBooking, MIN_NOTICE_H } from '@/lib/interviews';
 import { checkMeetingUrl } from '@/lib/meet';
@@ -1234,5 +1235,96 @@ export async function studentCancelBooking(bookingId: string): Promise<{ ok: boo
   await db.from('portal_interview_bookings').update({ status: 'cancelled', cancelled_at: new Date().toISOString() }).eq('id', bookingId);
   await log(b.application_id, me.email, 'interview_cancelled', { when: start, by: 'student' });
   revalidatePath('/student'); revalidatePath('/interviews');
+  return { ok: true };
+}
+
+// ================= Student checklist =================
+export async function studentToggleChecklist(id: string): Promise<{ ok: boolean }> {
+  const me = await currentStudent();
+  if (!me) return { ok: false };
+  const db = admin();
+  const { data: it } = await db.from('portal_checklist').select('id, application_id, done').eq('id', id).maybeSingle();
+  if (!it || !me.ids.includes(it.application_id)) return { ok: false };
+  await db.from('portal_checklist').update({ done: !it.done, done_at: !it.done ? new Date().toISOString() : null }).eq('id', id);
+  await log(it.application_id, me.email, !it.done ? 'checklist_done' : 'checklist_undone', { by: 'student' });
+  revalidatePath('/student'); revalidatePath('/applications');
+  return { ok: true };
+}
+
+/** In-portal chat: the student writes; saved to the thread, and the counselor gets one email at most every 3 hours. */
+export async function studentSend(f: FormData): Promise<{ ok: boolean; error?: string }> {
+  const me = await currentStudent();
+  if (!me) return { ok: false, error: 'Please sign in again.' };
+  const appId = s(f, 'appId'), body = s(f, 'body').trim().slice(0, 2000);
+  if (!me.ids.includes(appId)) return { ok: false, error: 'That application isn’t yours.' };
+  if (body.length < 1) return { ok: false, error: 'Write your message first.' };
+  const db = admin();
+  const { count } = await db.from('portal_student_msgs').select('id', { count: 'exact', head: true }).eq('student_email', me.email).eq('from_student', true).gte('created_at', new Date(Date.now() - 864e5).toISOString());
+  if ((count || 0) >= 40) return { ok: false, error: 'That’s a lot of messages for one day. Your counselor will reply soon.' };
+  const { data: last } = await db.from('portal_student_msgs').select('created_at').eq('student_email', me.email).eq('from_student', true).order('created_at', { ascending: false }).limit(1);
+  const { error } = await db.from('portal_student_msgs').insert({ student_email: me.email, application_id: appId, from_student: true, sender_email: me.email, body, student_read_at: new Date().toISOString() });
+  if (error) return { ok: false, error: 'Could not send. Please try again.' };
+  const quiet = !last?.[0] || Date.now() - new Date(last[0].created_at).getTime() > 3 * 3600_000;
+  if (quiet) { const fd = new FormData(); fd.set('appId', appId); fd.set('body', body); try { await studentMessage(fd); } catch { /* the message is saved either way */ } }
+  revalidatePath('/student/messages');
+  return { ok: true };
+}
+
+export async function studentMarkRead(): Promise<void> {
+  const me = await currentStudent();
+  if (!me) return;
+  await admin().from('portal_student_msgs').update({ student_read_at: new Date().toISOString() }).eq('student_email', me.email).eq('from_student', false).is('student_read_at', null);
+}
+
+/** Staff reply in the student's chat. Email only if the student hasn't been active for 5 minutes, and at most every 3 hours. */
+export async function staffReplyStudent(f: FormData): Promise<{ ok: boolean; error?: string }> {
+  const st = await requireStaff();
+  await guardApp(st, s(f, 'appId'));
+  const appId = s(f, 'appId'), body = s(f, 'body').trim().slice(0, 2000);
+  if (!body) return { ok: false, error: 'Write your reply first.' };
+  const db = admin();
+  const { data: app } = await db.from('portal_applications').select('name, email, school').eq('application_id', appId).single();
+  if (!app?.email) return { ok: false, error: 'No student email on file.' };
+  const to = app.email.toLowerCase();
+  const { error } = await db.from('portal_student_msgs').insert({ student_email: to, application_id: appId, from_student: false, sender_email: st.email, body, staff_read_at: new Date().toISOString() });
+  if (error) return { ok: false, error: 'Could not send.' };
+  await db.from('portal_student_msgs').update({ staff_read_at: new Date().toISOString() }).eq('student_email', to).eq('from_student', true).is('staff_read_at', null);
+  const [{ data: seen }, { data: prev }] = await Promise.all([
+    db.from('portal_student_seen').select('last_active_at').eq('email', to).maybeSingle(),
+    db.from('portal_student_msgs').select('created_at').eq('student_email', to).eq('from_student', false).order('created_at', { ascending: false }).range(1, 1),
+  ]);
+  const away = !seen || Date.now() - new Date(seen.last_active_at).getTime() > 5 * 60_000;
+  const quiet = !prev?.[0] || Date.now() - new Date(prev[0].created_at).getTime() > 3 * 3600_000;
+  try { await addNotice({ email: to, applicationId: appId, kind: 'message', title: 'New message from your counselor', body: body.slice(0, 140), href: '/student/messages', by: st.email }); } catch { /* optional */ }
+  if (away && quiet) {
+    try { await sendMail({ to, subject: 'New message from your counselor', body: `${shownName(st) || 'Your counselor'} wrote:\n\n${body}`, eyebrow: 'Message', title: 'You have a new message', greeting: `Hi ${app.name.split(/[\s,]+/).filter(Boolean)[0] || 'there'},`, preheader: body.slice(0, 100), sign: { name: shownName(st) || 'Admissions', title: 'Admissions Counselor', email: st.email }, blocks: [{ type: 'quote', from: shownName(st) || 'Your counselor', text: body.slice(0, 600) }], cta: { label: 'Open your messages', href: `${studentSite()}/student/messages` } }); } catch { /* chat still has it */ }
+  }
+  revalidatePath(`/applications/${appId}`);
+  return { ok: true };
+}
+
+export async function staffAddChecklist(f: FormData): Promise<{ ok: boolean; error?: string }> {
+  const st = await requireStaff();
+  const appId = s(f, 'appId'), text = s(f, 'text').trim().slice(0, 140), due = s(f, 'due') || null;
+  await guardApp(st, appId);
+  if (text.length < 3) return { ok: false, error: 'Describe the task first.' };
+  const db = admin();
+  const { error } = await db.from('portal_checklist').insert({ application_id: appId, text, due, created_by: st.email });
+  if (error) return { ok: false, error: 'Could not add it.' };
+  const { data: app } = await db.from('portal_applications').select('email').eq('application_id', appId).maybeSingle();
+  if (app?.email) { try { await addNotice({ email: app.email.toLowerCase(), applicationId: appId, kind: 'message', title: 'New item on your checklist', body: text, href: '/student', by: st.email }); } catch { /* optional */ } }
+  await log(appId, st.email, 'checklist_add', { text });
+  revalidatePath(`/applications/${appId}`); revalidatePath('/student');
+  return { ok: true };
+}
+
+export async function staffRemoveChecklist(id: string): Promise<{ ok: boolean }> {
+  const st = await requireStaff();
+  const db = admin();
+  const { data: row } = await db.from('portal_checklist').select('application_id').eq('id', id).maybeSingle();
+  if (!row) return { ok: false };
+  await guardApp(st, row.application_id);
+  await db.from('portal_checklist').delete().eq('id', id);
+  revalidatePath(`/applications/${row.application_id}`); revalidatePath('/student');
   return { ok: true };
 }
