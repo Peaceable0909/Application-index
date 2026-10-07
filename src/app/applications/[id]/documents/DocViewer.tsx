@@ -40,7 +40,7 @@ export default function DocViewer({ appId, docs, missing, initial, canUpload, sc
 
   return (
     <div className="viewer">
-      <div className="card" style={{ position: 'sticky', top: 12, maxHeight: '85vh', overflow: 'auto' }}>
+      <div className="card viewer-list">
         {types.map((t) => (
           <div key={t} style={{ marginBottom: 12 }}>
             <div className="muted" style={{ fontSize: 12, textTransform: 'uppercase' }}>{t}</div>
