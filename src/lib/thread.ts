@@ -5,6 +5,9 @@ import { addNotice } from './notices';
 import { sendMail } from './mail';
 import { studentSite } from './emailTemplate';
 import { shownName } from './profile';
+import { callScript, type DriveFile } from './appsScript';
+import { ALL_DOC_TYPES } from './constants';
+import { cleanLabel, resolveLabel } from './docLabel';
 
 export type Role = 'student' | 'staff';
 export type Actor = { role: Role; email: string; appId: string; studentEmail: string; staff?: Staff };
@@ -60,7 +63,7 @@ export function shape(rows: Row[], a: Actor): ThreadMsg[] {
   });
 }
 
-export async function loadThread(a: Actor, markRead: boolean): Promise<{ msgs: ThreadMsg[]; other: { name: string; online: boolean; lastSeen: string | null } }> {
+export async function loadThread(a: Actor, markRead: boolean): Promise<{ msgs: ThreadMsg[]; typing: boolean; other: { name: string; online: boolean; lastSeen: string | null } }> {
   const db = admin();
   if (markRead) {
     const col = a.role === 'student' ? 'student_read_at' : 'staff_read_at';
@@ -79,7 +82,10 @@ export async function loadThread(a: Actor, markRead: boolean): Promise<{ msgs: T
     const { data: s } = await db.from('portal_student_seen').select('last_active_at').eq('email', a.studentEmail).maybeSingle();
     name = 'Student'; lastSeen = s?.last_active_at || null;
   }
-  return { msgs, other: { name, lastSeen, online: !!lastSeen && Date.now() - new Date(lastSeen).getTime() < 90_000 } };
+  const { data: ty } = await db.from('portal_thread_typing').select('student_typing_at, staff_typing_at').eq('student_email', a.studentEmail).maybeSingle();
+  const theirs = a.role === 'student' ? ty?.staff_typing_at : ty?.student_typing_at;
+  const typing = !!theirs && Date.now() - new Date(theirs).getTime() < 6000;
+  return { msgs, typing, other: { name, lastSeen, online: !!lastSeen && Date.now() - new Date(lastSeen).getTime() < 90_000 } };
 }
 
 export async function postMessage(a: Actor, o: { body: string; replyTo?: string | null; file?: File | null; durationMs?: number | null }): Promise<{ ok: boolean; error?: string; id?: string }> {
@@ -145,4 +151,37 @@ export async function unsend(a: Actor, id: string): Promise<boolean> {
   if (r.att_path) await db.storage.from('chat-files').remove([r.att_path]);
   await db.from('portal_student_msgs').update({ deleted_at: new Date().toISOString(), body: '', att_path: null }).eq('id', id);
   return true;
+}
+
+/** Called while someone is typing; the other side sees "typing…" for the next few seconds. */
+export async function setTyping(a: Actor): Promise<void> {
+  const col = a.role === 'student' ? 'student_typing_at' : 'staff_typing_at';
+  await admin().from('portal_thread_typing').upsert({ student_email: a.studentEmail, [col]: new Date().toISOString() });
+}
+
+/** Staff: file a chat attachment straight into the student's Drive folder and documents list. */
+export async function saveToDocuments(a: Actor, id: string, docType: string, docLabel: string): Promise<{ ok: boolean; error?: string }> {
+  if (a.role !== 'staff') return { ok: false, error: 'Only staff can file documents.' };
+  if (!(ALL_DOC_TYPES as readonly string[]).includes(docType)) return { ok: false, error: 'Choose what kind of document this is.' };
+  const db = admin();
+  const { data: m } = await db.from('portal_student_msgs').select('att_path, att_name, att_mime, deleted_at').eq('id', id).eq('student_email', a.studentEmail).maybeSingle();
+  if (!m?.att_path || m.deleted_at) return { ok: false, error: 'That attachment is no longer available.' };
+  if (!/\.(pdf|jpe?g|png|webp|docx?)$/i.test(m.att_name || '')) return { ok: false, error: 'Only PDFs, photos and Word files can be filed as documents.' };
+  let label: ReturnType<typeof resolveLabel> | null = null;
+  if (docType === 'Other') { const l = cleanLabel(docLabel); if (!l) return { ok: false, error: 'Name the kind of document, for example “Bank statement”.' }; label = resolveLabel(l); }
+  const { data: app } = await db.from('portal_applications').select('name, drive_folder_id, student_key').eq('application_id', a.appId).single();
+  let folder = app?.drive_folder_id || null;
+  if (!folder && app) { const { data: sib } = await db.from('portal_applications').select('drive_folder_id').eq('student_key', app.student_key).not('drive_folder_id', 'is', null).limit(1); folder = sib?.[0]?.drive_folder_id || null; }
+  if (!folder || !app) return { ok: false, error: 'This student has no Drive folder linked yet. Link one on the Documents tab first.' };
+  const file = await db.storage.from('chat-files').download(m.att_path);
+  if (file.error || !file.data) return { ok: false, error: 'Could not read the attachment.' };
+  const buf = Buffer.from(await file.data.arrayBuffer());
+  const ext = ((m.att_name || '').match(/\.[^.]+$/) || ['.pdf'])[0].toLowerCase();
+  const name = `${app.name} - ${label ? label.override || label.docType : docType}${ext}`;
+  try {
+    const up = await callScript<DriveFile>('uploadFile', { applicationId: a.appId, folderId: folder, name, mimeType: m.att_mime || 'application/octet-stream', base64: buf.toString('base64') });
+    await db.from('portal_documents').upsert({ drive_file_id: up.id, application_id: a.appId, name: up.name, doc_type: label ? label.docType : docType, type_override: label?.override ?? null, mime_type: up.mimeType, size_bytes: up.size, drive_url: up.url, source: 'portal', uploaded_by: a.email });
+    await db.from('portal_activity').insert({ application_id: a.appId, actor: a.email, kind: 'doc_uploaded', detail: { name: up.name, by: 'chat' } });
+  } catch (e) { return { ok: false, error: `Could not save it. (${(e as Error).message.slice(0, 100)})` }; }
+  return { ok: true };
 }

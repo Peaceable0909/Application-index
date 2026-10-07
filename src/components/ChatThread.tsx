@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Icon from './Icon';
 import type { ThreadMsg } from '@/lib/thread';
+import { ALL_DOC_TYPES } from '@/lib/constants';
 
 type Other = { name: string; online: boolean; lastSeen: string | null };
 type Local = ThreadMsg & { sending?: boolean; failed?: boolean; localUrl?: string };
@@ -12,8 +13,14 @@ const kb = (n: number) => (n > 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(
 const mmss = (ms: number) => { const s = Math.round(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 const ago = (iso: string) => { const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000); return m < 2 ? 'a moment ago' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); };
 
-function linkify(t: string) {
-  return t.split(/(https?:\/\/[^\s]+)/g).map((p, i) => /^https?:\/\//.test(p) ? <a key={i} href={p} target="_blank" rel="noreferrer">{p.replace(/^https?:\/\/(www\.)?/, '').slice(0, 42)}{p.length > 50 ? '…' : ''}</a> : p);
+function hl(t: string, q: string): React.ReactNode {
+  if (!q) return t;
+  const re = new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'ig');
+  return t.split(re).map((p, i) => (i % 2 ? <mark key={i}>{p}</mark> : p));
+}
+
+function linkify(t: string, q = '') {
+  return t.split(/(https?:\/\/[^\s]+)/g).map((p, i) => /^https?:\/\//.test(p) ? <a key={i} href={p} target="_blank" rel="noreferrer">{p.replace(/^https?:\/\/(www\.)?/, '').slice(0, 42)}{p.length > 50 ? '…' : ''}</a> : hl(p, q));
 }
 
 async function shrink(f: File): Promise<File> {
@@ -55,6 +62,11 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
   const [err, setErr] = useState('');
   const [rec, setRec] = useState<{ ms: number } | null>(null);
   const [away, setAway] = useState(0);
+  const [typing, setTyping] = useState(false);
+  const [search, setSearch] = useState<{ q: string; i: number } | null>(null);
+  const [save, setSave] = useState<{ id: string; type: string; label: string; busy: boolean } | null>(null);
+  const [note, setNote] = useState('');
+  const lastTyping = useRef(0);
   const box = useRef<HTMLDivElement>(null), end = useRef<HTMLDivElement>(null), ta = useRef<HTMLTextAreaElement>(null), pick = useRef<HTMLInputElement>(null), cam = useRef<HTMLInputElement>(null);
   const near = useRef(true), seen = useRef(new Set(msgs.map((m) => m.id))), mr = useRef<{ rec: MediaRecorder; chunks: Blob[]; t0: number; cancel: boolean; timer: ReturnType<typeof setInterval> } | null>(null);
   const q = `app=${encodeURIComponent(appId)}`, draftKey = `chat-draft-${as}-${appId}`;
@@ -66,11 +78,11 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
     try {
       const r = await fetch(`/api/thread?${q}${markRead ? '&read=1' : ''}`, { cache: 'no-store' });
       if (!r.ok) return;
-      const d = (await r.json()) as { msgs: ThreadMsg[]; other: Other };
+      const d = (await r.json()) as { msgs: ThreadMsg[]; other: Other; typing: boolean };
       const fresh = d.msgs.filter((m) => !m.mine && !seen.current.has(m.id));
       d.msgs.forEach((m) => seen.current.add(m.id));
       setList((cur) => { const pending = cur.filter((m) => m.sending || m.failed); return [...d.msgs, ...pending]; });
-      setOther(d.other);
+      setOther(d.other); setTyping(d.typing);
       if (fresh.length) {
         if (document.visibilityState === 'visible') { beep(); if (!near.current) setAway((n) => n + fresh.length); }
         else { const base = document.title.replace(/^\(\d+\)\s*/, ''); document.title = `(${fresh.length}) ${base}`; }
@@ -80,7 +92,7 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
 
   useEffect(() => {
     void sync(document.visibilityState === 'visible');
-    const t = setInterval(() => { if (document.visibilityState === 'visible') void sync(true); }, 4000);
+    const t = setInterval(() => { if (document.visibilityState === 'visible') void sync(true); }, 3000);
     const v = () => { if (document.visibilityState === 'visible') { document.title = document.title.replace(/^\(\d+\)\s*/, ''); void sync(true); } };
     document.addEventListener('visibilitychange', v);
     return () => { clearInterval(t); document.removeEventListener('visibilitychange', v); };
@@ -150,17 +162,23 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
   }
 
   const status = other ? (other.online ? 'Active now' : other.lastSeen ? `Last seen ${ago(other.lastSeen)}` : '') : '';
+  const sq = search && search.q.trim().length > 1 ? search.q.trim() : '';
+  const hits = sq ? list.filter((m) => !m.deleted && `${m.body} ${m.att?.name || ''}`.toLowerCase().includes(sq.toLowerCase())).map((m) => m.id) : [];
+  const cur = hits.length ? hits[Math.min(search?.i || 0, hits.length - 1)] : null;
+  function step(d: number) { if (!hits.length || !search) return; setSearch({ ...search, i: (Math.min(search.i, hits.length - 1) + d + hits.length) % hits.length }); }
+  useEffect(() => { if (cur) document.getElementById(`msg-${cur}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, [cur]);
   let lastDay = '';
   return (
     <div className="st-chat">
-      <div className="st-chat-head"><b>{otherName}</b>{status && <small className={other?.online ? 'on' : ''}>{other?.online && <i />}{status}</small>}</div>
+      <div className="st-chat-head"><b>{otherName}</b>{typing ? <small className="on typing">typing…</small> : status && <small className={other?.online ? 'on' : ''}>{other?.online && <i />}{status}</small>}<button type="button" className="st-x srch" onClick={() => setSearch(search ? null : { q: '', i: 0 })} aria-label="Search this chat"><Icon n="search" size={18} /></button></div>
+      {search && <div className="st-search"><input autoFocus value={search.q} onChange={(e) => setSearch({ q: e.target.value, i: 0 })} placeholder="Search messages" onKeyDown={(e) => { if (e.key === 'Enter') step(e.shiftKey ? -1 : 1); if (e.key === 'Escape') setSearch(null); }} /><span>{search.q.trim().length > 1 ? (hits.length ? `${Math.min(search.i, hits.length - 1) + 1} of ${hits.length}` : 'No matches') : ''}</span><button type="button" onClick={() => step(-1)} aria-label="Previous match" disabled={!hits.length}>↑</button><button type="button" onClick={() => step(1)} aria-label="Next match" disabled={!hits.length}>↓</button><button type="button" onClick={() => setSearch(null)} aria-label="Close search">×</button></div>}
       <div className="st-chat-list" ref={box} onScroll={onScroll} aria-live="polite">
         {list.length === 0 && <div className="st-chat-empty"><Icon n="chat" size={28} /><b>Say hello to {otherName}</b><span>Ask a question, send a photo of a document, or record a voice note.</span></div>}
         {list.map((m, i) => {
           const d = dayLabel(m.at), sep = d !== lastDay; lastDay = d;
           const prev = list[i - 1], first = sep || !prev || prev.mine !== m.mine;
           return (
-            <div key={m.id} className="st-row-msg" data-mine={m.mine}>
+            <div key={m.id} id={`msg-${m.id}`} className={`st-row-msg ${cur === m.id ? 'hit' : ''}`} data-mine={m.mine}>
               {sep && <div className="st-day"><span>{d}</span></div>}
               <div className={`st-bub ${m.mine ? 'mine' : ''} ${m.deleted ? 'gone' : ''} ${first ? 'first' : ''} ${m.failed ? 'failed' : ''} ${menu === m.id ? 'menu-open' : ''}`} onClick={() => { if (!m.deleted && !m.sending) setMenu((cur) => (cur === m.id ? null : m.id)); }}>
                 {m.reply && <div className="st-quote"><b>{m.reply.who === 'me' ? 'You' : otherName}</b><span>{m.reply.preview}</span></div>}
@@ -168,7 +186,7 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
                   {m.kind === 'image' && m.att && /* eslint-disable-next-line @next/next/no-img-element */ <img className="st-img" src={m.localUrl || m.att.url} alt={m.att.name} loading="lazy" onClick={(e) => { e.stopPropagation(); setLightbox(m.localUrl || m.att!.url); }} />}
                   {m.kind === 'voice' && <Voice m={m} />}
                   {m.kind === 'file' && m.att && <a className="st-file" href={m.att.url ? `${m.att.url}${m.att.url.includes('?') ? '&' : '?'}download=1` : '#'} onClick={(e) => e.stopPropagation()}><span className="ic"><Icon n="file" size={20} /></span><span className="tx"><b>{m.att.name}</b><small>{kb(m.att.size)}</small></span><Icon n="download" size={16} /></a>}
-                  {m.body && <p>{linkify(m.body)}</p>}
+                  {m.body && <p>{linkify(m.body, sq)}</p>}
                 </>}
                 <small className="meta">{clock(m.at)}{m.mine && !m.deleted && <span className={`tick ${m.read ? 'read' : ''}`}>{m.sending ? '◷' : m.failed ? '!' : m.read ? '✓✓' : '✓'}</span>}</small>
                 {Object.keys(m.reactions).length > 0 && <div className="st-rx">{Object.entries(m.reactions).map(([e, v]) => <span key={e} className={v.me ? 'me' : ''}>{e}{v.n > 1 ? ` ${v.n}` : ''}</span>)}</div>}
@@ -177,6 +195,7 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
                   <div className="st-menu" onClick={(e) => e.stopPropagation()}>
                     <div className="em">{REACTIONS.map((e) => <button key={e} onClick={() => doReact(m, e)}>{e}</button>)}</div>
                     <button onClick={() => { setReply(m); setMenu(null); ta.current?.focus(); }}>Reply</button>
+                    {as === 'staff' && m.att && m.kind !== 'voice' && /\.(pdf|jpe?g|png|webp|docx?)$/i.test(m.att.name) && <button onClick={() => { setSave({ id: m.id, type: 'Other', label: '', busy: false }); setMenu(null); }}>Save to documents</button>}
                     {m.body && <button onClick={() => { void navigator.clipboard?.writeText(m.body); setMenu(null); }}>Copy</button>}
                     {m.mine && <button className="danger" onClick={() => doDelete(m)}>Delete for everyone</button>}
                   </div>
@@ -185,8 +204,10 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
             </div>
           );
         })}
+        {typing && <div className="st-row-msg" data-mine="false"><div className="st-bub st-typing"><i /><i /><i /></div></div>}
         <div ref={end} />
       </div>
+      {note && <div className="st-note">{note}</div>}
       {away > 0 && <button className="st-jump" onClick={toBottom}>↓ {away} new</button>}
       {err && <div className="st-err" style={{ margin: '0 12px 8px' }}>{err}</div>}
       {reply && <div className="st-replybar"><div><b>{reply.mine ? 'You' : otherName}</b><span>{reply.body.slice(0, 90) || (reply.kind === 'image' ? '📷 Photo' : reply.kind === 'voice' ? '🎤 Voice note' : '📎 File')}</span></div><button onClick={() => setReply(null)} aria-label="Cancel reply">×</button></div>}
@@ -197,12 +218,26 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
         <form className="st-compose" onSubmit={(e) => { e.preventDefault(); send(); }}>
           <button type="button" className="st-x" onClick={(e) => { e.stopPropagation(); pick.current?.click(); }} aria-label="Attach a file"><Icon n="upload" size={19} /></button>
           <button type="button" className="st-x cam" onClick={() => cam.current?.click()} aria-label="Take a photo"><Icon n="camera" size={19} /></button>
-          <textarea ref={ta} value={text} rows={1} maxLength={2000} placeholder="Message" onChange={(e) => { setText(e.target.value); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 130) + 'px'; }} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && window.matchMedia('(min-width:700px)').matches) { e.preventDefault(); send(); } }} onPaste={(e) => { const f = Array.from(e.clipboardData.files)[0]; if (f) { e.preventDefault(); setFile({ f, url: URL.createObjectURL(f) }); } }} />
+          <textarea ref={ta} value={text} rows={1} maxLength={2000} placeholder="Message" onChange={(e) => { setText(e.target.value); if (e.target.value && Date.now() - lastTyping.current > 2500) { lastTyping.current = Date.now(); void fetch('/api/thread/typing', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ app: appId }) }).catch(() => {}); } e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 130) + 'px'; }} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && window.matchMedia('(min-width:700px)').matches) { e.preventDefault(); send(); } }} onPaste={(e) => { const f = Array.from(e.clipboardData.files)[0]; if (f) { e.preventDefault(); setFile({ f, url: URL.createObjectURL(f) }); } }} />
           {text.trim() || file ? <button className="st-send" aria-label="Send"><Icon n="send" size={18} /></button> : <button type="button" className="st-send mic" onClick={startRec} aria-label="Record a voice note">🎤</button>}
         </form>
       )}
       <input ref={pick} type="file" hidden accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" onChange={(e) => { const f = e.target.files?.[0]; if (f) setFile({ f, url: URL.createObjectURL(f) }); e.target.value = ''; }} />
       <input ref={cam} type="file" hidden accept="image/*" capture="environment" onChange={(e) => { const f = e.target.files?.[0]; if (f) setFile({ f, url: URL.createObjectURL(f) }); e.target.value = ''; }} />
+      {save && (
+        <div className="st-lightbox" style={{ cursor: 'default' }} onClick={() => !save.busy && setSave(null)}>
+          <div className="st-save" onClick={(e) => e.stopPropagation()}>
+            <h3>Save to documents</h3><p>Files this attachment into the student’s Drive folder.</p>
+            <select value={save.type} onChange={(e) => setSave({ ...save, type: e.target.value })}>{ALL_DOC_TYPES.map((t) => <option key={t} value={t}>{t === 'Other' ? 'Other (name it)' : t}</option>)}</select>
+            {save.type === 'Other' && <input value={save.label} onChange={(e) => setSave({ ...save, label: e.target.value })} maxLength={40} placeholder="e.g. Bank statement" />}
+            <div><button type="button" className="st-btn ghost sm" onClick={() => setSave(null)} disabled={save.busy}>Cancel</button><button type="button" className="st-btn sm" disabled={save.busy || (save.type === 'Other' && save.label.trim().length < 2)} onClick={async () => {
+              setSave({ ...save, busy: true });
+              const r = await fetch(`/api/thread/${save.id}/save`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ app: appId, docType: save.type, docLabel: save.label }) }).then((x) => x.json()).catch(() => ({ ok: false, error: 'Network error' })) as { ok: boolean; error?: string };
+              setSave(null); setNote(r.ok ? 'Saved to documents ✓' : r.error || 'Could not save'); setTimeout(() => setNote(''), 4000);
+            }}>{save.busy ? 'Saving…' : 'Save'}</button></div>
+          </div>
+        </div>
+      )}
       {lightbox && <div className="st-lightbox" onClick={() => setLightbox(null)}>{/* eslint-disable-next-line @next/next/no-img-element */}<img src={lightbox} alt="" /><button aria-label="Close">×</button></div>}
     </div>
   );
