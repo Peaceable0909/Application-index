@@ -204,6 +204,8 @@ body.is-busy main { opacity:.55; pointer-events:none; transition:opacity .25s; }
 
 /* ---- responsive hardening ---- */
 .viewer { display:grid; grid-template-columns:320px minmax(0,1fr); gap:16px; align-items:start; }
+.viewer-list { position:sticky; top:12px; max-height:85vh; overflow:auto; }
+.viewer > .card { min-width:0; }
 .kv { grid-template-columns:150px minmax(0,1fr); } .kv.narrow-k { grid-template-columns:130px minmax(0,1fr); } .kv.wide-k { grid-template-columns:180px minmax(0,1fr); }
 .kv dd, .head > div { overflow-wrap:anywhere; }
 img, video, iframe, svg { max-width:100%; }
@@ -212,6 +214,7 @@ textarea, input, select { max-width:100%; }
 @media (max-width:1280px){ .g5 { grid-template-columns:repeat(3,1fr); } .g4 { grid-template-columns:repeat(2,1fr); } }
 @media (max-width:980px){
   .viewer { grid-template-columns:1fr; }
+  .viewer-list { position:static; max-height:42vh; }
   .g3 { grid-template-columns:repeat(2,1fr); }
   .topbar { gap:10px; }
   .topsearch kbd { display:none; } .topsearch input { padding-right:12px; }
