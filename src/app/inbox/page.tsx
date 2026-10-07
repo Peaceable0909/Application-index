@@ -10,7 +10,7 @@ export default async function Inbox({ searchParams }: { searchParams: Promise<{ 
   const staff = await requireStaff();
   const sp = await searchParams, onlyUnread = sp.f === 'unread';
   const scope = await inboxScope(staff);
-  let q = admin().from('portal_student_msgs').select('id, application_id, from_student, body, created_at, staff_read_at').order('created_at', { ascending: false }).limit(1500);
+  let q = admin().from('portal_student_msgs').select('id, application_id, from_student, body, created_at, staff_read_at, att_mime, att_name, deleted_at').order('created_at', { ascending: false }).limit(1500);
   if (scope) q = scope.length ? q.in('application_id', scope) : q.eq('application_id', '__none__');
   const { data: rows } = await q;
   const threads = new Map<string, { last: NonNullable<typeof rows>[number]; unread: number }>();
@@ -35,7 +35,7 @@ export default async function Inbox({ searchParams }: { searchParams: Promise<{ 
             <Avatar name={t.app!.name} size={42} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between' }}><b style={{ fontWeight: t.unread ? 700 : 600 }}>{t.app!.name}</b><small className="muted">{ago(t.last.created_at)}</small></div>
-              <div className="muted" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: t.unread ? 600 : 400 }}>{t.last.from_student ? '' : 'You: '}{t.last.body}</div>
+              <div className="muted" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: t.unread ? 600 : 400 }}>{t.last.from_student ? '' : 'You: '}{t.last.deleted_at ? 'Message deleted' : t.last.body || (t.last.att_mime?.startsWith('image/') ? '📷 Photo' : t.last.att_mime?.startsWith('audio/') ? '🎤 Voice note' : `📎 ${t.last.att_name || 'File'}`)}</div>
             </div>
             {t.unread > 0 && <span className="n">{t.unread}</span>}
           </Link>

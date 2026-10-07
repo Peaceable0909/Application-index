@@ -2,13 +2,14 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { staffAddChecklist, staffRemoveChecklist } from '@/app/actions';
-import ChatThread, { type Msg } from './ChatThread';
+import ChatThread from './ChatThread';
+import type { ThreadMsg } from '@/lib/thread';
 
 const TEMPLATES = ['Book your IELTS test', 'Pay your tuition deposit', 'Book your biometrics appointment', 'Complete your TB test', 'Send your updated bank statement'];
 export type Item = { id: string; text: string; due: string | null; done: boolean };
 
 /** What the counselor sees of the student's in-portal chat and checklist. */
-export default function StaffStudentPanel({ appId, studentName, msgs, items }: { appId: string; studentName: string; msgs: Msg[]; items: Item[] }) {
+export default function StaffStudentPanel({ appId, studentName, msgs, otherInit, items }: { appId: string; studentName: string; msgs: ThreadMsg[]; otherInit?: { name: string; online: boolean; lastSeen: string | null }; items: Item[] }) {
   const router = useRouter();
   const [text, setText] = useState(''), [due, setDue] = useState(''), [busy, setBusy] = useState(false), [err, setErr] = useState('');
   async function add(t = text) {
@@ -21,7 +22,7 @@ export default function StaffStudentPanel({ appId, studentName, msgs, items }: {
   return (
     <div className="grid g2" style={{ alignItems: 'start', marginBottom: 16 }}>
       <div className="card"><h2>Chat with {studentName.split(/[\s,]+/)[0]}</h2><p className="muted" style={{ marginTop: 0 }}>Replies appear in their student portal. We only email them if they’re away.</p>
-        <ChatThread as="staff" appId={appId} msgs={msgs} other={studentName.split(/[\s,]+/)[0]} /></div>
+        <ChatThread as="staff" appId={appId} msgs={msgs} otherInit={otherInit} other={studentName.split(/[\s,]+/)[0]} /></div>
       <div className="card"><h2>Student checklist</h2><p className="muted" style={{ marginTop: 0 }}>Small to-dos shown on the student’s home screen.</p>
         {items.length === 0 && <p className="muted">Nothing yet.</p>}
         <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 12px', display: 'grid', gap: 6 }}>
