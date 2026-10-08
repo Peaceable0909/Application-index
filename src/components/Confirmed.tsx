@@ -1,5 +1,6 @@
 'use client';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 /** A full-screen "it worked" moment: a ring that draws itself, a check that ticks in, and a little burst. Closes itself, or on tap / Esc. */
 export default function Confirmed({ title, lines = [], action, onClose, seconds = 6 }: { title: string; lines?: string[]; action?: { label: string; href: string }; onClose: () => void; seconds?: number }) {
@@ -9,7 +10,11 @@ export default function Confirmed({ title, lines = [], action, onClose, seconds 
     window.addEventListener('keydown', k);
     return () => { clearTimeout(t); window.removeEventListener('keydown', k); };
   }, [onClose, seconds]);
-  return (
+  // drawn straight on <body>: inside a card that has a transform/filter, "fixed" would be relative to that card and the pop-up lands off to the side
+  const [host, setHost] = useState<HTMLElement | null>(null);
+  useEffect(() => setHost(document.body), []);
+  if (!host) return null;
+  return createPortal(
     <div className="cf-bg" role="dialog" aria-live="polite" aria-label={title} onClick={onClose}>
       <div className="cf-card" onClick={(e) => e.stopPropagation()}>
         <div className="cf-burst" aria-hidden>{Array.from({ length: 14 }).map((_, i) => <i key={i} style={{ '--a': `${i * (360 / 14)}deg`, '--d': `${70 + (i % 3) * 18}px`, '--c': ['#2458d6', '#e2c566', '#16a34a', '#8b5cf6', '#f59e0b'][i % 5], animationDelay: `${0.45 + (i % 4) * 0.04}s` } as React.CSSProperties} />)}</div>
@@ -26,6 +31,7 @@ export default function Confirmed({ title, lines = [], action, onClose, seconds 
         </div>
         <div className="cf-bar" style={{ animationDuration: `${seconds}s` }} aria-hidden />
       </div>
-    </div>
+    </div>,
+    host,
   );
 }
