@@ -47,6 +47,11 @@ export async function sendPush(o: PushOpts): Promise<{ sent: number }> {
       for (const e of targets) if (mode.get(e) === 'every') every.add(e);
     }
     if (!targets.length) return { sent: 0 };
+    // only people with a device turned on count: otherwise the calm window would be used up by messages nobody could receive
+    const { data: subs } = await db.from('portal_push_subs').select('id, email, endpoint, p256dh, auth').in('email', targets);
+    if (!subs?.length) return { sent: 0 };
+    const withDevice = new Set(subs.map((x) => x.email as string));
+    targets = targets.filter((e) => withDevice.has(e));
     // calm mode: after one notification for a conversation, further ones wait until `calmMs` has passed
     const extra = new Map<string, number>();
     if (o.calmMs && o.tag) {
@@ -62,14 +67,13 @@ export async function sendPush(o: PushOpts): Promise<{ sent: number }> {
       if (targets.length) await db.from('portal_push_throttle').upsert(targets.filter((e) => !every.has(e)).map((e) => ({ email: e, tag: o.tag!, last_sent_at: new Date().toISOString(), suppressed: 0 })), { onConflict: 'email,tag' });
     }
     if (!targets.length) return { sent: 0 };
-    const { data: subs } = await db.from('portal_push_subs').select('id, endpoint, p256dh, auth').in('email', targets);
-    if (!subs?.length) return { sent: 0 };
+    const send = subs.filter((x) => targets.includes(x.email as string));
     const k = await vapid();
     webpush.setVapidDetails(process.env.PUSH_SUBJECT || site(), k.publicKey, k.privateKey);
     const more = Math.max(0, ...[...extra.values()]);
     const payload = JSON.stringify({ title: o.title.slice(0, 80), body: (more ? `${more + 1} new messages. Latest: ${o.body || ''}` : o.body || '').slice(0, 160), url: o.url || '/', tag: o.tag || 'portal' });
     let sent = 0; const dead: string[] = [], ok: string[] = [];
-    await Promise.all(subs.map(async (s) => {
+    await Promise.all(send.map(async (s) => {
       try { await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload, { TTL: 3600, urgency: 'normal' }); sent++; ok.push(s.id); }
       catch (e) { const code = (e as { statusCode?: number }).statusCode; if (code === 404 || code === 410) dead.push(s.id); }
     }));
