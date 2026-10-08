@@ -11,6 +11,7 @@ export default function PushToggle({ banner = false }: { banner?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const [hidden, setHidden] = useState(false);
+  const [mode, setMode] = useState<'first' | 'every' | 'off'>('first');
 
   useEffect(() => {
     (async () => {
@@ -48,6 +49,12 @@ export default function PushToggle({ banner = false }: { banner?: boolean }) {
     } catch { setMsg('Could not turn notifications off.'); }
     setBusy(false);
   }
+  useEffect(() => { if (state === 'on') fetch('/api/push/prefs', { cache: 'no-store' }).then((r) => r.json()).then((j) => j.mode && setMode(j.mode)).catch(() => {}); }, [state]);
+  async function pick(m: 'first' | 'every' | 'off') {
+    const prev = mode; setMode(m); setMsg('');
+    const r = (await fetch('/api/push/prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: m }) }).then((x) => x.json()).catch(() => ({ ok: false }))) as { ok: boolean };
+    if (!r.ok) { setMode(prev); setMsg('Could not save that setting.'); }
+  }
   async function test() {
     setBusy(true); setMsg('');
     const r = (await fetch('/api/push/test', { method: 'POST' }).then((x) => x.json()).catch(() => ({ ok: false, error: 'Network error' }))) as { ok: boolean; error?: string };
@@ -74,7 +81,11 @@ export default function PushToggle({ banner = false }: { banner?: boolean }) {
       {state === 'install' && <p className="st-sub" style={{ margin: 0 }}>On iPhone, first add this app to your home screen (Share, then <b>Add to Home Screen</b>), open it from there, then come back here to turn notifications on.</p>}
       {state === 'denied' && <p className="st-sub" style={{ margin: 0 }}>Notifications are blocked for this site. Allow them in your browser or phone settings for this site, then reload this page.</p>}
       {state === 'off' && <button className="st-btn" onClick={enable} disabled={busy}><Icon n="bell" size={16} /> {busy ? 'Turning on…' : 'Turn on notifications'}</button>}
-      {state === 'on' && <div className="pn-on"><span className="ok"><i /> Notifications are on for this device</span><div className="row"><button className="st-btn ghost sm" onClick={test} disabled={busy}>Send me a test</button><button className="st-btn ghost sm" onClick={disable} disabled={busy}>Turn off</button></div></div>}
+      {state === 'on' && <div className="pn-on"><span className="ok"><i /> Notifications are on for this device</span><div className="pn-modes" role="radiogroup" aria-label="How often to notify me">
+          {([['first', 'First message only', 'One alert, then quiet for 6 hours'], ['every', 'Every message', 'An alert for each new message'], ['off', 'Off', 'No phone alerts']] as const).map(([k, t, d]) => (
+            <button key={k} role="radio" aria-checked={mode === k} className={mode === k ? 'on' : ''} onClick={() => pick(k)}><b>{t}</b><small>{d}</small></button>
+          ))}
+        </div><div className="row"><button className="st-btn ghost sm" onClick={test} disabled={busy}>Send me a test</button><button className="st-btn ghost sm" onClick={disable} disabled={busy}>Turn off</button></div></div>}
       {msg && <p className="pn-msg">{msg}</p>}
     </div>
   );
