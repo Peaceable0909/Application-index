@@ -14,6 +14,7 @@ const ITEMS = [
   { href: '/reports', label: 'Reports', icon: 'note' },
   { href: '/tasks', label: 'Tasks', icon: 'tasks', badge: 'tasks' },
   { href: '/inbox', label: 'Student inbox', icon: 'mail', badge: 'inbox' },
+  { href: '/credibility', label: 'Credibility training', icon: 'spark' },
   { href: '/chat', label: 'Chat', icon: 'chat', badge: 'chat' },
   { href: '/documents', label: 'Documents', icon: 'folder' },
   { href: '/extracted', label: 'Extracted text', icon: 'note' },
@@ -26,7 +27,7 @@ const ITEMS = [
   { href: '/settings', label: 'Settings', icon: 'settings' },
 ];
 
-const COUNSELOR_ITEMS: typeof ITEMS = [{ href: '/my', label: 'My students', icon: 'users' }, { href: '/pipeline', label: 'Pipeline', icon: 'bolt' }, { href: '/calendar', label: 'Deadlines', icon: 'clock' }, { href: '/interviews', label: 'Interviews', icon: 'video' }, { href: '/extracted', label: 'Extracted text', icon: 'note' }, { href: '/inbox', label: 'Student inbox', icon: 'mail', badge: 'inbox' }, { href: '/chat', label: 'Chat', icon: 'chat', badge: 'chat' }, { href: '/team', label: 'Team', icon: 'user' }];
+const COUNSELOR_ITEMS: typeof ITEMS = [{ href: '/my', label: 'My students', icon: 'users' }, { href: '/pipeline', label: 'Pipeline', icon: 'bolt' }, { href: '/calendar', label: 'Deadlines', icon: 'clock' }, { href: '/interviews', label: 'Interviews', icon: 'video' }, { href: '/extracted', label: 'Extracted text', icon: 'note' }, { href: '/inbox', label: 'Student inbox', icon: 'mail', badge: 'inbox' }, { href: '/credibility', label: 'Credibility training', icon: 'spark' }, { href: '/chat', label: 'Chat', icon: 'chat', badge: 'chat' }, { href: '/team', label: 'Team', icon: 'user' }];
 
 export default function Nav({ taskCount = 0, chatCount = 0, inboxCount = 0, mobile = false, role = 'staff' }: { taskCount?: number; chatCount?: number; inboxCount?: number; mobile?: boolean; role?: string }) {
   const p = usePathname();

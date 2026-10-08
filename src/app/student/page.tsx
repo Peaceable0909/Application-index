@@ -54,6 +54,14 @@ export default async function StudentHome() {
         <Link href={nu.href} className="st-btn light">{nu.cta} <Icon n="arrow" size={16} /></Link>
       </section>
 
+      {me.apps.some((a) => a.in_regent) && (
+        <Link href="/student/interview/credibility" className="st-card cr-entry" style={{ ['--i' as string]: i++ }}>
+          <span className="ic"><Icon n="video" size={24} /></span>
+          <span className="tx"><b>Credibility Test Training</b><small>Watch the video and practise your interview answers.</small></span>
+          <Icon n="right" size={20} />
+        </Link>
+      )}
+
       {up && (
         <section className="st-card" style={{ ['--i' as string]: i++ }}>
           <div className="st-row" style={{ boxShadow: 'none', background: '#f3f7ff' }}>
