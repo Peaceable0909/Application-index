@@ -11,7 +11,10 @@
 .st-links .pill { position:absolute; top:5px; bottom:5px; left:5px; border-radius:99px; background:linear-gradient(135deg,#0d1f4d,#1d3f94); transition:transform .45s var(--st-ease), width .45s var(--st-ease); box-shadow:0 8px 18px -8px rgba(13,31,77,.6); }
 .st-links .dotn, .st-tabs .dotn { min-width:18px; height:18px; padding:0 5px; border-radius:99px; background:#ef4444; color:#fff; font:700 10.5px/18px var(--font-ui); text-align:center; }
 .st-me { display:flex; align-items:center; gap:10px; }
-.st-me .iconbtn { background:#fff; border:none; box-shadow:0 1px 2px rgba(13,31,77,.06), 0 8px 20px -12px rgba(13,31,77,.25); }
+.st-me .iconbtn svg { flex:none; }
+.st-me .spanel { right:-48px; width:min(380px,calc(100vw - 24px)); color:#0d1f4d; }
+@media (max-width:640px) { .st-me .sbell { position:static; } .st-me .spanel { position:fixed; left:12px; right:12px; top:72px; width:auto; max-height:calc(100vh - 160px); } }
+.st-me .iconbtn { padding:0; color:#0d1f4d; flex:none; background:#fff; border:none; box-shadow:0 1px 2px rgba(13,31,77,.06), 0 8px 20px -12px rgba(13,31,77,.25); }
 
 /* bottom tab bar (phones) */
 .st-tabs { display:none; position:fixed; left:12px; right:12px; bottom:max(10px, env(safe-area-inset-bottom)); z-index:60; background:rgba(255,255,255,.88); backdrop-filter:saturate(1.8) blur(18px); border-radius:22px; padding:6px; box-shadow:0 18px 40px -14px rgba(13,31,77,.35), 0 0 0 1px rgba(13,31,77,.05); grid-template-columns:repeat(5,1fr); position:fixed; }
