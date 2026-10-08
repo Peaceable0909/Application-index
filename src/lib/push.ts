@@ -19,7 +19,7 @@ export async function vapid(): Promise<{ publicKey: string; privateKey: string }
   return (cached = { publicKey: data.public_key, privateKey: data.private_key });
 }
 
-export type PushOpts = { emails: string[]; title: string; body?: string; url?: string; tag?: string; skipIfActiveMs?: number; calmMs?: number };
+export type PushOpts = { emails: string[]; title: string; body?: string; url?: string; tag?: string; skipIfActiveMs?: number; calmMs?: number; ignorePrefs?: boolean };
 
 /** Sends a notification to every device the given people have turned on. Best effort: never throws, and removes devices that have gone away. */
 export async function sendPush(o: PushOpts): Promise<{ sent: number }> {
@@ -38,18 +38,28 @@ export async function sendPush(o: PushOpts): Promise<{ sent: number }> {
       const active = new Set([...(st || []).filter((r) => r.last_seen_at && new Date(r.last_seen_at).getTime() > since).map((r) => r.email), ...(stu || []).filter((r) => new Date(r.last_active_at).getTime() > since).map((r) => r.email)]);
       targets = emails.filter((e) => !active.has(e));
     }
+    // each person's own setting: 'off' = nothing, 'every' = every message, 'first' (default) = calm
+    const every = new Set<string>();
+    if (!o.ignorePrefs && targets.length) {
+      const { data: prefs } = await db.from('portal_push_prefs').select('email, mode').in('email', targets);
+      const mode = new Map((prefs || []).map((p) => [p.email as string, p.mode as string]));
+      targets = targets.filter((e) => mode.get(e) !== 'off');
+      for (const e of targets) if (mode.get(e) === 'every') every.add(e);
+    }
+    if (!targets.length) return { sent: 0 };
     // calm mode: after one notification for a conversation, further ones wait until `calmMs` has passed
     const extra = new Map<string, number>();
     if (o.calmMs && o.tag) {
-      const { data: rows } = await db.from('portal_push_throttle').select('email, last_sent_at, suppressed').eq('tag', o.tag).in('email', targets);
-      const now = Date.now(), quiet: string[] = [];
-      for (const e of targets) {
+      const calm = targets.filter((e) => !every.has(e));
+      const { data: rows } = await db.from('portal_push_throttle').select('email, last_sent_at, suppressed').eq('tag', o.tag).in('email', calm);
+      const now = Date.now(), quiet: string[] = targets.filter((e) => every.has(e));
+      for (const e of calm) {
         const r = (rows || []).find((x) => x.email === e);
         if (r && now - new Date(r.last_sent_at).getTime() < o.calmMs) { await db.from('portal_push_throttle').update({ suppressed: r.suppressed + 1 }).eq('email', e).eq('tag', o.tag); }
         else { quiet.push(e); if (r?.suppressed) extra.set(e, r.suppressed); }
       }
       targets = quiet;
-      if (targets.length) await db.from('portal_push_throttle').upsert(targets.map((e) => ({ email: e, tag: o.tag!, last_sent_at: new Date().toISOString(), suppressed: 0 })), { onConflict: 'email,tag' });
+      if (targets.length) await db.from('portal_push_throttle').upsert(targets.filter((e) => !every.has(e)).map((e) => ({ email: e, tag: o.tag!, last_sent_at: new Date().toISOString(), suppressed: 0 })), { onConflict: 'email,tag' });
     }
     if (!targets.length) return { sent: 0 };
     const { data: subs } = await db.from('portal_push_subs').select('id, endpoint, p256dh, auth').in('email', targets);
