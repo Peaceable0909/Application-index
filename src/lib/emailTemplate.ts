@@ -51,7 +51,7 @@ function block(b: Block): string {
 export function renderEmail(s: EmailSpec): string {
   const logo = `${site()}/api/email/logo`, year = new Date().getFullYear();
   const sign = s.sign;
-  const signHtml = sign ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:28px 0 0;border-top:1px solid ${LINE};padding-top:22px;width:100%"><tr>
+  const signHtml = sign ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:20px 0 0;border-top:1px solid ${LINE};padding-top:12px;width:100%"><tr>
       <td valign="top" style="width:60px;padding:20px 16px 0 0">${sign.avatar
         ? `<img src="${esc(sign.avatar)}" width="48" height="48" alt="" style="display:block;border-radius:50%;object-fit:cover;width:48px;height:48px">`
         : `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="48" height="48" align="center" style="width:48px;height:48px;border-radius:50%;background:${NAVY};color:${GOLD_L};font:700 16px/48px ${SANS}">${esc(initials(sign.name))}</td></tr></table>`}</td>
@@ -66,7 +66,7 @@ export function renderEmail(s: EmailSpec): string {
 <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;mso-hide:all">${esc(s.preheader || '')}${'&nbsp;&zwnj;'.repeat(40)}</div>
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="${BG}" style="background:${BG}"><tr><td align="center" style="padding:28px 12px 36px">
   <table role="presentation" class="wrap" cellpadding="0" cellspacing="0" border="0" width="600" style="width:600px;max-width:600px">
-    <tr><td style="background:${NAVY};background-image:linear-gradient(135deg,#0a1840 0%,#1b3f8f 100%);border-radius:18px 18px 0 0;padding:26px 36px" class="px">
+    <tr><td style="background:${NAVY};background-image:linear-gradient(135deg,#0a1840 0%,#1b3f8f 100%);border-radius:18px 18px 0 0;padding:20px 32px" class="px">
       <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
         <td valign="middle"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
           <td valign="middle" style="padding-right:12px"><img src="${logo}" width="42" height="42" alt="W" style="display:block;border-radius:11px;border:0"></td>
@@ -74,18 +74,16 @@ export function renderEmail(s: EmailSpec): string {
         <td valign="middle" align="right" style="font:700 10.5px ${SANS};letter-spacing:.16em;text-transform:uppercase;color:${GOLD_L}">${esc(s.eyebrow || '')}</td></tr></table>
     </td></tr>
     <tr><td style="background:${GOLD};height:3px;font-size:0;line-height:0">&nbsp;</td></tr>
-    <tr><td class="px" style="background:#ffffff;padding:38px 40px 34px;border-left:1px solid ${LINE};border-right:1px solid ${LINE}">
-      ${s.title ? `<h1 class="h1" style="margin:0 0 20px;font:400 29px/1.2 ${SERIF};color:${NAVY};letter-spacing:-.2px">${esc(s.title)}</h1>` : ''}
+    <tr><td class="px" style="background:#ffffff;padding:30px 36px 26px;border-left:1px solid ${LINE};border-right:1px solid ${LINE}">
+      ${s.title ? `<h1 class="h1" style="margin:0 0 16px;font:400 25px/1.25 ${SERIF};color:${NAVY};letter-spacing:-.2px">${esc(s.title)}</h1>` : ''}
       ${s.greeting ? `<p style="margin:0 0 16px;font:650 16px/1.6 ${SANS};color:${NAVY}">${esc(s.greeting)}</p>` : ''}
       ${s.blocks.map(block).join('\n')}
       ${cta}
       ${signHtml}
     </td></tr>
-    <tr><td class="px" style="background:${PAPER};border:1px solid ${LINE};border-top:0;border-radius:0 0 18px 18px;padding:26px 40px;text-align:center">
-      <div style="font:italic 400 16px/1.4 ${SERIF};color:${NAVY}">More opportunities. Brighter futures.</div>
-      <div style="width:28px;height:2px;background:${GOLD};margin:12px auto"></div>
-      <div style="font:400 12.5px/1.7 ${SANS};color:${MUTED}">${esc(s.footerNote || 'You can reply directly to this email. A real person reads every message.')}</div>
-      <div style="font:400 12px/1.7 ${SANS};color:#94a3b8;margin-top:8px">© ${year} WhiteRock Admissions · <a href="${site()}" style="color:#94a3b8;text-decoration:underline">${esc(site().replace(/^https?:\/\//, ''))}</a></div>
+    <tr><td class="px" style="background:${PAPER};border:1px solid ${LINE};border-top:0;border-radius:0 0 18px 18px;padding:16px 36px;text-align:center">
+      <div style="font:400 12.5px/1.6 ${SANS};color:${MUTED}">${esc(s.footerNote || 'Reply to this email to reach us directly.')}</div>
+      <div style="font:400 12px/1.6 ${SANS};color:#94a3b8;margin-top:4px">© ${year} WhiteRock Admissions · <a href="${site()}" style="color:#94a3b8;text-decoration:underline">${esc(site().replace(/^https?:\/\//, ''))}</a></div>
     </td></tr>
   </table>
 </td></tr></table></body></html>`;

@@ -19,14 +19,12 @@ export function docRequestEmail(r: SRow, replyTo: string) {
   const uni = [schoolShort(a.school), tidy(a.programme)].filter(Boolean).join(' · ');
   const n = r.missing.length, total = REQUIRED_DOCS.length;
   const subject = `Documents needed for your application${a.school ? ` — ${schoolShort(a.school)}` : ''}`;
-  const body = `Hi ${firstName(a.preferred_name || a.name)},\n\nWe're preparing your application${uni ? ` (${uni})` : ''} and still need the following ${n === 1 ? 'document' : 'documents'}:\n\n${r.missing.map((d) => `• ${d}`).join('\n')}\n\nYou can upload ${n === 1 ? 'it' : 'them'} in your student portal (${studentSite()}/student/login, sign in with this email address) or reply to this email with clear scans or photos attached.\n\nIf you've already sent any of these, just let us know and we'll check.`;
+  const body = `Hi ${firstName(a.preferred_name || a.name)},\n\nWe still need ${n === 1 ? 'this document' : 'these documents'}${uni ? ` for ${uni}` : ''}:\n\n${r.missing.map((d) => `• ${d}`).join('\n')}\n\nUpload ${n === 1 ? 'it' : 'them'} here (sign in with this email): ${studentSite()}/student/login, or reply with scans attached.`;
   const html = {
-    eyebrow: 'Documents needed', title: n === 1 ? 'One document to go' : `${n} documents to go`, greeting: `Hi ${firstName(a.preferred_name || a.name)},`, preheader: `We still need ${r.missing.join(', ')} to move your application forward.`,
+    eyebrow: 'Documents needed', title: n === 1 ? 'One document needed' : `${n} documents needed`, greeting: `Hi ${firstName(a.preferred_name || a.name)},`, preheader: `Still needed: ${r.missing.join(', ')}`,
     blocks: [
-      { type: 'p' as const, text: `Thank you for applying${uni ? ` to ${uni}` : ''}. We’re preparing your application and need ${n === 1 ? 'one more document' : 'a few more documents'} from you before we can submit it.` },
-      { type: 'checklist' as const, title: n === 1 ? 'Still needed' : 'Still needed', items: r.missing, received: total - n, total },
-      { type: 'p' as const, text: 'The quickest way is to upload them in your student portal. Sign in with this email address (we’ll send you a code, there is no password). You can also reply to this email with clear scans or photos attached.' },
-      { type: 'note' as const, text: 'Already sent one of these? Just reply and tell us. We’ll check right away.' },
+      { type: 'checklist' as const, title: `Needed${uni ? ` for ${uni}` : ''}`, items: r.missing, received: total - n, total },
+      { type: 'p' as const, text: 'Upload them in your student portal (sign in with this email, no password), or reply with clear scans attached.' },
     ],
     cta: { label: 'Upload my documents', href: `${studentSite()}/student/login` },
   };
@@ -72,17 +70,17 @@ export const summarise = (r: Result) => {
   return r.sent ? `Asked ${r.sent} student${r.sent === 1 ? '' : 's'} for their missing documents.${parts.length ? ` Skipped: ${parts.join('; ')}.` : ''}` : `No requests sent.${parts.length ? ` Skipped: ${parts.join('; ')}.` : ''}`;
 };
 
-export function digestEmail(name: string, mine: SRow[], intro = 'Here are your students who need attention right now.') {
+const DEFAULT_INTRO = 'Here are your students who need attention right now.';
+export function digestEmail(name: string, mine: SRow[], intro = DEFAULT_INTRO) {
   const subject = `${mine.length} student${mine.length === 1 ? '' : 's'} need attention`;
   const lines = mine.slice(0, 40).map((r) => `• ${r.a.name} (${[schoolShort(r.a.school), r.a.status || 'no status'].filter(Boolean).join(', ')}): ${r.reasons.join('; ')}${r.missing.length ? ` — missing ${r.missing.join(', ')}` : ''}`);
-  const body = `Hi ${plain(name)},\n\n${intro}\n\n${lines.join('\n')}${mine.length > 40 ? `\n…and ${mine.length - 40} more.` : ''}\n\nPlease follow up where you can.\n\nOpen your students: ${site()}/my`;
+  const body = `Hi ${plain(name)},\n\n${intro}\n\n${lines.join('\n')}${mine.length > 40 ? `\n…and ${mine.length - 40} more.` : ''}\n\nOpen your students: ${site()}/my`;
   const html = {
     eyebrow: 'Weekly digest', title: `${mine.length} student${mine.length === 1 ? '' : 's'} need${mine.length === 1 ? 's' : ''} your attention`, greeting: `Hi ${plain(name)},`, preheader: `${mine.slice(0, 3).map((r) => r.a.name).join(', ')}${mine.length > 3 ? ` and ${mine.length - 3} more` : ''}`,
     blocks: [
-      { type: 'p' as const, text: intro },
+      ...(intro !== DEFAULT_INTRO ? [{ type: 'p' as const, text: intro }] : []),
       { type: 'students' as const, title: `Needs attention · ${mine.length}`, rows: mine.slice(0, 25).map((r) => ({ name: r.a.name, meta: [schoolShort(r.a.school), tidy(r.a.programme)].filter(Boolean).join(' · '), status: r.a.status || undefined, needs: [...r.reasons.filter((x) => !/Not in master|No counselor/.test(x)), ...(r.missing.length ? [`Missing: ${r.missing.join(', ')}`] : [])].join(' · ') || undefined })) },
       ...(mine.length > 25 ? [{ type: 'note' as const, text: `…and ${mine.length - 25} more in the portal.` }] : []),
-      { type: 'p' as const, text: 'Please follow up where you can. Everything is one tap away in the portal.' },
     ],
     cta: { label: 'Open my students', href: `${site()}/my` },
   };
@@ -120,14 +118,11 @@ export function paymentReminderEmail(r: SRow, replyTo: string) {
   const a = r.a, uni = [schoolShort(a.school), tidy(a.programme)].filter(Boolean).join(' · ');
   const ref = a.opp_id ? a.opp_id.replace(/^OPP ID-/i, '') : '';
   const subject = `Payment reminder${a.school ? ` — ${schoolShort(a.school)}` : ''}`;
-  const body = `Hi ${firstName(a.preferred_name || a.name)},\n\nOur records show the payment for your application${uni ? ` (${uni})` : ''} has not been received yet.${ref ? `\n\nReference: ${ref}` : ''}\n\nOnce you have paid, please reply to this email with your proof of payment so we can move your application forward. If you have already paid, just let us know and we'll check straight away.`;
+  const body = `Hi ${firstName(a.preferred_name || a.name)},\n\nWe haven't received the payment for ${uni || 'your application'} yet${ref ? ` (ref ${ref})` : ''}. Please reply with your proof of payment. If you've already paid, tell us and we'll check.`;
   const html = {
-    eyebrow: 'Payment reminder', title: 'Payment still pending', greeting: `Hi ${firstName(a.preferred_name || a.name)},`, preheader: 'We have not received the payment for your application yet.',
+    eyebrow: 'Payment reminder', title: 'Payment not received', greeting: `Hi ${firstName(a.preferred_name || a.name)},`, preheader: `${uni || 'Your application'}: payment still pending`,
     blocks: [
-      { type: 'p' as const, text: `Our records show the payment for your application${uni ? ` to ${uni}` : ''} has not been received yet.` },
-      ...(ref ? [{ type: 'students' as const, rows: [{ name: uni || 'Your application', meta: `Reference: ${ref}`, status: 'Payment pending' }] }] : []),
-      { type: 'p' as const, text: 'Once you have paid, please reply to this email with your proof of payment so we can move your application forward.' },
-      { type: 'note' as const, text: 'Already paid? Just reply and tell us. We’ll check straight away.' },
+      { type: 'p' as const, text: `We haven’t received the payment for ${uni || 'your application'} yet${ref ? ` (ref ${ref})` : ''}. Please reply with your proof of payment. If you’ve already paid, tell us and we’ll check.` },
     ],
     cta: replyTo ? { label: 'Send proof of payment', href: `mailto:${replyTo}?subject=${encodeURIComponent('Proof of payment — ' + a.name)}` } : undefined,
   };

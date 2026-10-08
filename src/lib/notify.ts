@@ -38,8 +38,8 @@ export async function notifyChat(roomId: string, senderEmail: string, preview: s
       await sendMail({
         to: m.email, subject: `New message from ${from}${where}`, body: `${from}${where}: ${preview || (hasFile ? 'sent an attachment' : '')}`,
         eyebrow: 'New message', title: `${from} messaged you`, greeting: `Hi ${shownName(p).split(' ')[0]},`, preheader: preview || 'Open the portal to read it.',
-        blocks: [{ type: 'p', text: `${from} sent a message${where}.` }, { type: 'students', rows: [{ name: from, meta: preview ? `“${preview.slice(0, 160)}”` : '📎 Sent an attachment' }] }, { type: 'note', text: 'You get this at most once every 3 hours per chat, and only when you are away from the portal. Turn these emails off any time in My profile.' }],
-        cta: { label: 'Open the chat', href: `${site()}/chat?room=${roomId}` }, footerNote: 'This is an automatic notification from the Admissions Portal.',
+        blocks: [{ type: 'quote', from: `${from}${where}`, text: preview ? preview.slice(0, 300) : '📎 Sent an attachment' }],
+        cta: { label: 'Open the chat', href: `${site()}/chat?room=${roomId}` }, footerNote: 'Automatic notification, sent at most every 3 hours per chat. Turn off in My profile.',
         sign: { name: 'Admissions Portal', title: 'Notification' },
       });
       await mark(m.email, 'chat', roomId);
@@ -63,7 +63,7 @@ export async function notifyAssigned(counselorName: string, students: { id: stri
       to: c.email, subject: students.length === 1 ? `New student assigned: ${students[0].name}` : `${students.length} new students assigned to you`,
       body: `${students.map((s) => s.name).join(', ')} assigned to you.`, eyebrow: 'New assignment', title: students.length === 1 ? 'A new student is yours' : `${students.length} new students are yours`,
       greeting: `Hi ${first},`, preheader: students.map((s) => s.name).slice(0, 3).join(', '), replyTo: by, from: by,
-      blocks: [{ type: 'p', text: 'You have been assigned the following to look after:' }, { type: 'students', rows: students.slice(0, 20).map((s) => ({ name: s.name, meta: [s.school, s.programme && s.programme.toUpperCase() !== 'N/A' ? s.programme : ''].filter(Boolean).join(' · ') })) }],
+      blocks: [{ type: 'students', rows: students.slice(0, 20).map((s) => ({ name: s.name, meta: [s.school, s.programme && s.programme.toUpperCase() !== 'N/A' ? s.programme : ''].filter(Boolean).join(' · ') })) }],
       cta: { label: 'Open my students', href: `${site()}/my` },
     });
     await mark(c.email.toLowerCase(), 'assign', ref);
