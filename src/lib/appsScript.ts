@@ -17,7 +17,9 @@ export async function callScript<T>(action: string, payload: unknown = {}): Prom
   try { json = JSON.parse(text); } catch {
     if (res.status === 404) throw new Error('Google says the Apps Script web app address no longer exists (404). Redeploy it, copy the new Web app URL, and update APPS_SCRIPT_URL in Vercel, then redeploy the portal.');
     if (/accounts\.google\.com|sign in/i.test(text)) throw new Error('The Apps Script web app asks for a Google sign-in. In Deploy → Manage deployments, set “Who has access” to Anyone.');
-    throw new Error(`Apps Script returned something unexpected (HTTP ${res.status}). Check the deployment and APPS_SCRIPT_URL.`);
+    // keep what Google actually said (tags stripped) so the cause is visible instead of a generic message
+    const said = text.replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&[a-z#0-9]+;/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+    throw new Error(`Apps Script returned something unexpected (HTTP ${res.status}${said ? `: "${said}"` : ', empty reply'}). Check the deployment and APPS_SCRIPT_URL.`);
   }
   if (!json.ok) throw new Error(`Apps Script: ${json.error}`);
   return json.data;
