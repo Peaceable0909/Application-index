@@ -5,6 +5,7 @@ import { loadStudentData } from '@/lib/studentData';
 import { studentSignOut } from '@/app/actions';
 import StudentDetails from '@/components/StudentDetails';
 import InstallApp from '@/components/InstallApp';
+import PushToggle from '@/components/PushToggle';
 
 const FAQ: [string, string][] = [
   ['How do I know my documents were received?', 'The Documents page shows a green tick next to each one, and your counselor is told straight away.'],
@@ -25,6 +26,7 @@ export default async function StudentMe() {
     <div className="st-page">
       <h1 className="st-h1">Me</h1>
       <StudentDetails locked={locked} phone={a0.phone || ''} city={a0.city || ''} preferred={a0.preferred_name || ''} />
+      <section className="st-card"><h2>Notifications</h2><p className="st-sub">Get an alert on this device when your counselor replies or something needs your attention.</p><PushToggle /></section>
       <section className="st-card"><h2>Keep it on your phone</h2><p className="st-sub">Add the portal to your home screen so it opens like an app.</p><InstallApp /></section>
       <section className="st-card"><h2>Help</h2>
         {FAQ.map(([q, a]) => <details key={q} className="st-faq"><summary>{q}</summary><p>{a}</p></details>)}

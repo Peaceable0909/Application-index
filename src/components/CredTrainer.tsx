@@ -100,7 +100,7 @@ function Result({ a, onRetry }: { a: CAttempt; onRetry?: () => void }) {
   );
 }
 
-export default function CredTrainer({ video, questions: qs, attempts: initAttempts, stats: initStats, canPractise }: { video: Video; questions: CQuestion[]; attempts: CAttempt[]; stats: Stats; canPractise: boolean }) {
+export default function CredTrainer({ video, questions: qs, attempts: initAttempts, stats: initStats, canPractise, preview = false }: { video: Video; questions: CQuestion[]; attempts: CAttempt[]; stats: Stats; canPractise: boolean; preview?: boolean }) {
   const [attempts, setAttempts] = useState(initAttempts);
   const [stats, setStats] = useState(initStats);
   const [open, setOpen] = useState<string | null>(null);
@@ -165,7 +165,7 @@ export default function CredTrainer({ video, questions: qs, attempts: initAttemp
       </section>
 
       <div className="cr-qhead" style={{ ['--i' as string]: 4 }}><h2>Practice questions</h2><span>{qs.length} questions</span></div>
-      {!canPractise && <div className="st-card">Practice is available once your application is linked to Regent College London.</div>}
+      {!canPractise && <div className="st-card">{preview ? 'Preview mode: this is exactly what a Regent student sees. They type an answer under each question, press “Check my answer” and get a score with feedback.' : 'Practice is available once your application is linked to Regent College London.'}</div>}
       <div className="cr-qs">
         {qs.map((q, n) => {
           const list = forQ(q.id), last = list[0], isOpen = open === q.id, draft = drafts[q.id] || '', words = draft.trim() ? draft.trim().split(/\s+/).length : 0;
