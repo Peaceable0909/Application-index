@@ -5,7 +5,6 @@ import { loadStudentData } from '@/lib/studentData';
 import StudentInterviews from '@/components/StudentInterviews';
 import Link from 'next/link';
 import Icon from '@/components/Icon';
-import { regentApp } from '@/lib/credShared';
 
 const PREP = ['Quiet room, good light, and a stable connection', 'Passport and CV close by', 'Headphones if you have them', 'Join five minutes early and test your sound'];
 const QUESTIONS = ['Tell me about yourself and your background', 'Why this course, and why this university?', 'What are your plans after you graduate?', 'How will you pay for your studies?', 'Why do you want to study abroad rather than at home?', 'What do you know about the city you’ll be living in?'];
@@ -19,7 +18,7 @@ export default async function StudentInterview() {
     <div className="st-page">
       <h1 className="st-h1">Interview practice</h1>
       <p className="st-sub">A friendly mock interview with your counselor, so the real one feels familiar.</p>
-      {regentApp(me.apps) && (
+      {(
         <Link href="/student/interview/credibility" className="st-card cr-entry">
           <span className="ic"><Icon n="video" size={24} /></span>
           <span className="tx"><b>Credibility Test Training</b><small>Watch the video, practise real questions and get scored feedback.</small></span>
