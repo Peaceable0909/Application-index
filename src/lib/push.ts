@@ -38,13 +38,13 @@ export async function sendPush(o: PushOpts): Promise<{ sent: number }> {
       const active = new Set([...(st || []).filter((r) => r.last_seen_at && new Date(r.last_seen_at).getTime() > since).map((r) => r.email), ...(stu || []).filter((r) => new Date(r.last_active_at).getTime() > since).map((r) => r.email)]);
       targets = emails.filter((e) => !active.has(e));
     }
-    // each person's own setting: 'off' = nothing, 'every' = every message, 'first' (default) = calm
+    // each person's own setting: 'off' = nothing, 'every' = every message, 'every' (default, like WhatsApp) = every message, 'first' = calm
     const every = new Set<string>();
     if (!o.ignorePrefs && targets.length) {
       const { data: prefs } = await db.from('portal_push_prefs').select('email, mode').in('email', targets);
       const mode = new Map((prefs || []).map((p) => [p.email as string, p.mode as string]));
       targets = targets.filter((e) => mode.get(e) !== 'off');
-      for (const e of targets) if (mode.get(e) === 'every') every.add(e);
+      for (const e of targets) if (mode.get(e) !== 'first') every.add(e);
     }
     if (!targets.length) return { sent: 0 };
     // only people with a device turned on count: otherwise the calm window would be used up by messages nobody could receive

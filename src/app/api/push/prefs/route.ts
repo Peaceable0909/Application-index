@@ -6,9 +6,9 @@ const MODES = ['first', 'every', 'off'];
 
 export async function GET() {
   const u = await pushUser();
-  if (!u) return NextResponse.json({ mode: 'first' }, { status: 401 });
+  if (!u) return NextResponse.json({ mode: 'every' }, { status: 401 });
   const { data } = await admin().from('portal_push_prefs').select('mode').eq('email', u.email).maybeSingle();
-  return NextResponse.json({ mode: data?.mode || 'first' }, { headers: { 'Cache-Control': 'no-store' } });
+  return NextResponse.json({ mode: data?.mode || 'every' }, { headers: { 'Cache-Control': 'no-store' } });
 }
 
 export async function POST(req: Request) {
