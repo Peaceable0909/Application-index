@@ -5,7 +5,7 @@ import { addNotice } from './notices';
 import { sendMail } from './mail';
 import { studentSite } from './emailTemplate';
 import { shownName } from './profile';
-import { sendPush } from './push';
+import { sendPush, resetCalm } from './push';
 import { counselorKey } from './docs';
 import { callScript, type DriveFile } from './appsScript';
 import { ALL_DOC_TYPES } from './constants';
@@ -69,7 +69,9 @@ export async function loadThread(a: Actor, markRead: boolean): Promise<{ msgs: T
   const db = admin();
   if (markRead) {
     const col = a.role === 'student' ? 'student_read_at' : 'staff_read_at';
-    await db.from('portal_student_msgs').update({ [col]: new Date().toISOString() }).eq('student_email', a.studentEmail).eq('from_student', a.role === 'staff').is(col, null);
+    const { data: upd } = await db.from('portal_student_msgs').update({ [col]: new Date().toISOString() }).eq('student_email', a.studentEmail).eq('from_student', a.role === 'staff').is(col, null).select('id');
+    // they have now seen the conversation, so the next message may notify again
+    if (upd?.length) await resetCalm(a.role === 'student' ? a.studentEmail : a.email, a.role === 'student' ? 'n-message' : `chat-${a.studentEmail}`);
   }
   const { data } = await db.from('portal_student_msgs').select(COLS).eq('student_email', a.studentEmail).order('created_at').limit(400);
   const msgs = shape((data || []) as Row[], a);
@@ -125,7 +127,7 @@ export async function postMessage(a: Actor, o: { body: string; replyTo?: string 
       const { data: c } = ap?.counselor ? await db.from('portal_counselors').select('email').eq('name_key', counselorKey(ap.counselor)).maybeSingle() : { data: null };
       let to = c?.email ? [c.email] : [];
       if (!to.length) { const { data: ad } = await db.from('portal_staff').select('email').eq('role', 'admin'); to = (ad || []).map((x) => x.email); }
-      await sendPush({ emails: to, title: `${(ap?.name || 'A student').split(/[\s,]+/).filter(Boolean)[0]} sent a message`, body: text, url: `/applications/${encodeURIComponent(a.appId)}?tab=messages`, tag: `chat-${a.studentEmail}`, skipIfActiveMs: 30_000 });
+      await sendPush({ emails: to, title: `${(ap?.name || 'A student').split(/[\s,]+/).filter(Boolean)[0]} sent a message`, body: text, url: `/applications/${encodeURIComponent(a.appId)}?tab=messages`, tag: `chat-${a.studentEmail}`, skipIfActiveMs: 30_000, calmMs: 30 * 60_000 });
     } catch { /* alerts are best effort */ }
     if (quiet) { try { const { studentMessage } = await import('@/app/actions'); const fd = new FormData(); fd.set('appId', a.appId); fd.set('body', text); await studentMessage(fd); } catch { /* saved either way */ } }
   } else {
