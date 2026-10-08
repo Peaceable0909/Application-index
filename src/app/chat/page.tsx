@@ -23,8 +23,6 @@ export default async function Chat({ searchParams }: { searchParams: Promise<{ r
   const active = sp.room && rooms.some((r) => r.id === sp.room) ? sp.room : null;
   return (
     <>
-      <div className="head"><h1>Chat</h1></div>
-      <p className="sub">Messages between teammates and counselors: one-to-one or in groups.</p>
       <ChatApp me={me.email} people={people} initialRooms={rooms} initialActive={active} about={about} />
     </>
   );

@@ -19,6 +19,7 @@ import StudentShell from '@/components/StudentShell';
 import { noticesFor } from '@/lib/notices';
 import './student.css';
 import './themes.css';
+import './whatsapp.css';
 import { cookies } from 'next/headers';
 import { COOKIE, parseTheme } from '@/lib/theme';
 

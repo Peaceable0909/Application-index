@@ -1,6 +1,8 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import Icon from './Icon';
+import Avatar from './Avatar';
 import type { ThreadMsg } from '@/lib/thread';
 import { ALL_DOC_TYPES } from '@/lib/constants';
 
@@ -37,13 +39,35 @@ function beep() {
   try { const A = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext, c = new A(), o = c.createOscillator(), g = c.createGain(); o.type = 'sine'; o.frequency.value = 880; g.gain.value = 0.04; o.connect(g); g.connect(c.destination); o.start(); g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + 0.25); o.stop(c.currentTime + 0.26); } catch { /* sound is optional */ }
 }
 
+
+const EMOJI_TABS: { k: string; icon: string; list: string }[] = [
+  { k: 'smileys', icon: '😀', list: '😀😃😄😁😆😅😂🤣🥲😊😇🙂🙃😉😌😍🥰😘😗😙😚😋😛😝😜🤪🤨🧐🤓😎🥳😏😒😞😔😟😕🙁😣😖😫😩🥺😢😭😤😠😡🤯😳🥵🥶😱😨😰😥😓🤗🤔🤭🤫😶😐😑😬🙄😯😮😲🥱😴😪😵🥴🤢🤧😷' },
+  { k: 'hands', icon: '👍', list: '👍👎👌🤌✌️🤞🤟🤘🤙👈👉👆👇☝️👋🤚✋🖖👏🙌👐🤲🙏✍️💪🫶🫡🤝' },
+  { k: 'hearts', icon: '❤️', list: '❤️🧡💛💚💙💜🖤🤍🤎💔💕💞💓💗💖💘💝✨⭐🌟💫🔥🎉🎊🎈🏆🥇💯✅❌⚠️❓❗🔔' },
+  { k: 'things', icon: '📎', list: '📎📄📝📚🎓🏫✈️🛂🛫🌍📅⏰📞📱💻💬📧💳💷🏠🚆☕🍕🎁📸🎤' },
+];
+const hash = (s: string) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
+
+/** WhatsApp-style delivery marks: clock while sending, one grey tick sent, two blue ticks read. */
+function Ticks({ m }: { m: Local }) {
+  if (m.sending) return <svg className="wa-tk" width="14" height="14" viewBox="0 0 16 16" aria-label="Sending"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.5" /><path d="M8 4.5V8l2.2 1.4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>;
+  if (m.failed) return <span className="wa-tk bad" aria-label="Failed">!</span>;
+  return m.read
+    ? <svg className="wa-tk read" width="18" height="12" viewBox="0 0 18 12" aria-label="Read"><path d="M1 6.5l3.2 3.2L11 2.2M7 8.9l1 1L15.8 2.2" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+    : <svg className="wa-tk" width="14" height="12" viewBox="0 0 14 12" aria-label="Sent"><path d="M1.5 6.5l3.4 3.4 7.6-7.7" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+}
+
 function Voice({ m }: { m: Local }) {
   const a = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false), [p, setP] = useState(0);
+  const bars = Array.from({ length: 30 }, (_, i) => 5 + (hash(m.id + i) % 15));
   return (
     <div className="st-voice">
-      <button type="button" onClick={() => { const el = a.current; if (!el) return; if (el.paused) { void el.play(); } else el.pause(); }} aria-label={playing ? 'Pause' : 'Play'}>{playing ? '❚❚' : '▶'}</button>
-      <div className="bar" onClick={(e) => { const el = a.current; if (!el || !el.duration) return; const r = e.currentTarget.getBoundingClientRect(); el.currentTime = ((e.clientX - r.left) / r.width) * el.duration; }}><i style={{ width: `${p * 100}%` }} /></div>
+      <button type="button" onClick={() => { const el = a.current; if (!el) return; if (el.paused) { void el.play(); } else el.pause(); }} aria-label={playing ? 'Pause' : 'Play'}>{playing ? <svg width="16" height="16" viewBox="0 0 16 16"><rect x="3" y="2" width="3.5" height="12" rx="1" fill="currentColor" /><rect x="9.5" y="2" width="3.5" height="12" rx="1" fill="currentColor" /></svg> : <svg width="16" height="16" viewBox="0 0 16 16"><path d="M4 2.5v11l9-5.5z" fill="currentColor" /></svg>}</button>
+      <div className="wave" onClick={(e) => { const el = a.current; if (!el || !el.duration) return; const r = e.currentTarget.getBoundingClientRect(); el.currentTime = ((e.clientX - r.left) / r.width) * el.duration; }}>
+        {bars.map((h, i) => <i key={i} className={i / bars.length < p ? 'on' : ''} style={{ height: h }} />)}
+        <b className="knob" style={{ left: `${p * 100}%` }} />
+      </div>
       <span>{m.att?.ms ? mmss(m.att.ms) : '0:00'}</span>
       {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
       <audio ref={a} src={m.localUrl || m.att?.url || undefined} preload="none" onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => { setPlaying(false); setP(0); }} onTimeUpdate={(e) => setP(e.currentTarget.duration ? e.currentTarget.currentTime / e.currentTarget.duration : 0)} />
@@ -51,7 +75,7 @@ function Voice({ m }: { m: Local }) {
   );
 }
 
-export default function ChatThread({ appId, msgs, as, other: otherName, otherInit }: { appId: string; msgs: ThreadMsg[]; as: 'student' | 'staff'; other: string; otherInit?: Other }) {
+export default function ChatThread({ appId, msgs, as, other: otherName, otherInit, backHref, avatar, title }: { appId: string; msgs: ThreadMsg[]; as: 'student' | 'staff'; other: string; otherInit?: Other; backHref?: string; avatar?: { name: string; url: string | null; color: string | null }; title?: string }) {
   const [list, setList] = useState<Local[]>(msgs);
   const [other, setOther] = useState<Other | null>(otherInit || null);
   const [text, setText] = useState('');
@@ -66,6 +90,7 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
   const [search, setSearch] = useState<{ q: string; i: number } | null>(null);
   const [save, setSave] = useState<{ id: string; type: string; label: string; busy: boolean } | null>(null);
   const [note, setNote] = useState('');
+  const [emoji, setEmoji] = useState<number | null>(null);
   const lastTyping = useRef(0);
   const box = useRef<HTMLDivElement>(null), end = useRef<HTMLDivElement>(null), ta = useRef<HTMLTextAreaElement>(null), pick = useRef<HTMLInputElement>(null), cam = useRef<HTMLInputElement>(null);
   const near = useRef(true), seen = useRef(new Set(msgs.map((m) => m.id))), mr = useRef<{ rec: MediaRecorder; chunks: Blob[]; t0: number; cancel: boolean; timer: ReturnType<typeof setInterval> } | null>(null);
@@ -168,27 +193,35 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
   function step(d: number) { if (!hits.length || !search) return; setSearch({ ...search, i: (Math.min(search.i, hits.length - 1) + d + hits.length) % hits.length }); }
   useEffect(() => { if (cur) document.getElementById(`msg-${cur}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, [cur]);
   let lastDay = '';
+  const hasText = !!text.trim() || !!file;
+  const addEmoji = (e: string) => { setText((t) => t + e); ta.current?.focus(); };
   return (
-    <div className="st-chat">
-      <div className="st-chat-head"><b>{otherName}</b>{typing ? <small className="on typing">typing…</small> : status && <small className={other?.online ? 'on' : ''}>{other?.online && <i />}{status}</small>}<button type="button" className="st-x srch" onClick={() => setSearch(search ? null : { q: '', i: 0 })} aria-label="Search this chat"><Icon n="search" size={18} /></button></div>
-      {search && <div className="st-search"><input autoFocus value={search.q} onChange={(e) => setSearch({ q: e.target.value, i: 0 })} placeholder="Search messages" onKeyDown={(e) => { if (e.key === 'Enter') step(e.shiftKey ? -1 : 1); if (e.key === 'Escape') setSearch(null); }} /><span>{search.q.trim().length > 1 ? (hits.length ? `${Math.min(search.i, hits.length - 1) + 1} of ${hits.length}` : 'No matches') : ''}</span><button type="button" onClick={() => step(-1)} aria-label="Previous match" disabled={!hits.length}>↑</button><button type="button" onClick={() => step(1)} aria-label="Next match" disabled={!hits.length}>↓</button><button type="button" onClick={() => setSearch(null)} aria-label="Close search">×</button></div>}
+    <div className={`st-chat wa ${backHref ? 'wa-full' : ''}`} onClick={() => emoji !== null && setEmoji(null)}>
+      <header className="wa-head">
+        {backHref && <Link href={backHref} className="wa-back" aria-label="Back"><svg width="24" height="24" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg></Link>}
+        <Avatar name={avatar?.name || otherName} url={avatar?.url} color={avatar?.color} size={40} />
+        <div className="wa-who"><b>{title || otherName}</b>{typing ? <small className="typing">typing…</small> : status ? <small>{status === 'Active now' ? 'online' : status.toLowerCase()}</small> : null}</div>
+        <button type="button" className="wa-ic" onClick={(e) => { e.stopPropagation(); setSearch(search ? null : { q: '', i: 0 }); }} aria-label="Search this chat"><Icon n="search" size={20} /></button>
+      </header>
+      {search && <div className="wa-search"><input autoFocus value={search.q} onChange={(e) => setSearch({ q: e.target.value, i: 0 })} placeholder="Search messages" onKeyDown={(e) => { if (e.key === 'Enter') step(e.shiftKey ? -1 : 1); if (e.key === 'Escape') setSearch(null); }} /><span>{search.q.trim().length > 1 ? (hits.length ? `${Math.min(search.i, hits.length - 1) + 1}/${hits.length}` : 'No matches') : ''}</span><button type="button" onClick={() => step(-1)} aria-label="Previous match" disabled={!hits.length}>↑</button><button type="button" onClick={() => step(1)} aria-label="Next match" disabled={!hits.length}>↓</button><button type="button" onClick={() => setSearch(null)} aria-label="Close search">✕</button></div>}
       <div className="st-chat-list" ref={box} onScroll={onScroll} aria-live="polite">
-        {list.length === 0 && <div className="st-chat-empty"><Icon n="chat" size={28} /><b>Say hello to {otherName}</b><span>Ask a question, send a photo of a document, or record a voice note.</span></div>}
+        {list.length === 0 && <div className="st-chat-empty"><span className="wa-hello">👋</span><b>Say hello to {otherName}</b><span>Ask a question, send a photo of a document, or record a voice note.</span></div>}
         {list.map((m, i) => {
           const d = dayLabel(m.at), sep = d !== lastDay; lastDay = d;
           const prev = list[i - 1], first = sep || !prev || prev.mine !== m.mine;
+          const mediaOnly = !m.deleted && !m.body && m.kind === 'image' && !m.reply;
           return (
-            <div key={m.id} id={`msg-${m.id}`} className={`st-row-msg ${cur === m.id ? 'hit' : ''}`} data-mine={m.mine}>
+            <div key={m.id} id={`msg-${m.id}`} className={`st-row-msg ${cur === m.id ? 'hit' : ''} ${first ? 'gap' : ''}`} data-mine={m.mine}>
               {sep && <div className="st-day"><span>{d}</span></div>}
-              <div className={`st-bub ${m.mine ? 'mine' : ''} ${m.deleted ? 'gone' : ''} ${first ? 'first' : ''} ${m.failed ? 'failed' : ''} ${menu === m.id ? 'menu-open' : ''}`} onClick={() => { if (!m.deleted && !m.sending) setMenu((cur) => (cur === m.id ? null : m.id)); }}>
+              <div className={`st-bub ${m.mine ? 'mine' : ''} ${m.deleted ? 'gone' : ''} ${first ? 'first' : ''} ${m.failed ? 'failed' : ''} ${menu === m.id ? 'menu-open' : ''} ${mediaOnly ? 'media' : ''}`} onClick={() => { if (!m.deleted && !m.sending) setMenu((cur) => (cur === m.id ? null : m.id)); }}>
                 {m.reply && <div className="st-quote"><b>{m.reply.who === 'me' ? 'You' : otherName}</b><span>{m.reply.preview}</span></div>}
-                {m.deleted ? <p><em>This message was deleted</em></p> : <>
+                {m.deleted ? <p><em>🚫 This message was deleted</em></p> : <>
                   {m.kind === 'image' && m.att && /* eslint-disable-next-line @next/next/no-img-element */ <img className="st-img" src={m.localUrl || m.att.url} alt={m.att.name} loading="lazy" onClick={(e) => { e.stopPropagation(); setLightbox(m.localUrl || m.att!.url); }} />}
                   {m.kind === 'voice' && <Voice m={m} />}
                   {m.kind === 'file' && m.att && <a className="st-file" href={m.att.url ? `${m.att.url}${m.att.url.includes('?') ? '&' : '?'}download=1` : '#'} onClick={(e) => e.stopPropagation()}><span className="ic"><Icon n="file" size={20} /></span><span className="tx"><b>{m.att.name}</b><small>{kb(m.att.size)}</small></span><Icon n="download" size={16} /></a>}
                   {m.body && <p>{linkify(m.body, sq)}</p>}
                 </>}
-                <small className="meta">{clock(m.at)}{m.mine && !m.deleted && <span className={`tick ${m.read ? 'read' : ''}`}>{m.sending ? '◷' : m.failed ? '!' : m.read ? '✓✓' : '✓'}</span>}</small>
+                <span className="meta">{clock(m.at)}{m.mine && !m.deleted && <Ticks m={m} />}</span>
                 {Object.keys(m.reactions).length > 0 && <div className="st-rx">{Object.entries(m.reactions).map(([e, v]) => <span key={e} className={v.me ? 'me' : ''}>{e}{v.n > 1 ? ` ${v.n}` : ''}</span>)}</div>}
                 {m.failed && <button className="st-retry" onClick={(e) => { e.stopPropagation(); setList((l) => l.filter((x) => x.id !== m.id)); void post({ body: m.body }, undefined); }}>Tap to retry</button>}
                 {menu === m.id && (
@@ -204,22 +237,31 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
             </div>
           );
         })}
-        {typing && <div className="st-row-msg" data-mine="false"><div className="st-bub st-typing"><i /><i /><i /></div></div>}
+        {typing && <div className="st-row-msg gap" data-mine="false"><div className="st-bub first st-typing"><i /><i /><i /></div></div>}
         <div ref={end} />
       </div>
       {note && <div className="st-note">{note}</div>}
-      {away > 0 && <button className="st-jump" onClick={toBottom}>↓ {away} new</button>}
-      {err && <div className="st-err" style={{ margin: '0 12px 8px' }}>{err}</div>}
+      {away > 0 && <button className="st-jump" onClick={toBottom} aria-label="Jump to latest"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg><i>{away}</i></button>}
+      {err && <div className="st-err wa-err">{err}</div>}
       {reply && <div className="st-replybar"><div><b>{reply.mine ? 'You' : otherName}</b><span>{reply.body.slice(0, 90) || (reply.kind === 'image' ? '📷 Photo' : reply.kind === 'voice' ? '🎤 Voice note' : '📎 File')}</span></div><button onClick={() => setReply(null)} aria-label="Cancel reply">×</button></div>}
       {file && <div className="st-attach">{file.f.type.startsWith('image/') ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={file.url} alt="" /> : <span className="ic"><Icon n="file" size={20} /></span>}<div><b>{file.f.name}</b><small>{kb(file.f.size)}</small></div><button onClick={() => setFile(null)} aria-label="Remove">×</button></div>}
+      {emoji !== null && (
+        <div className="wa-emoji" onClick={(e) => e.stopPropagation()}>
+          <div className="tabs">{EMOJI_TABS.map((t, i) => <button key={t.k} type="button" className={emoji === i ? 'on' : ''} onClick={() => setEmoji(i)} aria-label={t.k}>{t.icon}</button>)}</div>
+          <div className="grid">{Array.from(new Intl.Segmenter('en', { granularity: 'grapheme' }).segment(EMOJI_TABS[emoji].list), (x) => x.segment).map((e, i) => <button key={i} type="button" onClick={() => addEmoji(e)}>{e}</button>)}</div>
+        </div>
+      )}
       {rec ? (
-        <div className="st-compose rec"><button className="st-x" onClick={() => stopRec(true)} aria-label="Cancel"><Icon n="trash" size={18} /></button><span className="dot" /><b>{mmss(rec.ms)}</b><span className="muted">Recording…</span><button className="st-send" onClick={() => stopRec(false)} aria-label="Send voice note"><Icon n="send" size={18} /></button></div>
+        <div className="wa-compose rec"><button type="button" className="wa-ic dark" onClick={() => stopRec(true)} aria-label="Cancel"><Icon n="trash" size={20} /></button><div className="wa-pill rec"><span className="dot" /><b>{mmss(rec.ms)}</b><span className="muted">Recording…</span></div><button type="button" className="wa-send" onClick={() => stopRec(false)} aria-label="Send voice note"><Icon n="send" size={20} /></button></div>
       ) : (
-        <form className="st-compose" onSubmit={(e) => { e.preventDefault(); send(); }}>
-          <button type="button" className="st-x" onClick={(e) => { e.stopPropagation(); pick.current?.click(); }} aria-label="Attach a file"><Icon n="upload" size={19} /></button>
-          <button type="button" className="st-x cam" onClick={() => cam.current?.click()} aria-label="Take a photo"><Icon n="camera" size={19} /></button>
-          <textarea ref={ta} value={text} rows={1} maxLength={2000} placeholder="Message" onChange={(e) => { setText(e.target.value); if (e.target.value && Date.now() - lastTyping.current > 2500) { lastTyping.current = Date.now(); void fetch('/api/thread/typing', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ app: appId }) }).catch(() => {}); } e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 130) + 'px'; }} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && window.matchMedia('(min-width:700px)').matches) { e.preventDefault(); send(); } }} onPaste={(e) => { const f = Array.from(e.clipboardData.files)[0]; if (f) { e.preventDefault(); setFile({ f, url: URL.createObjectURL(f) }); } }} />
-          {text.trim() || file ? <button className="st-send" aria-label="Send"><Icon n="send" size={18} /></button> : <button type="button" className="st-send mic" onClick={startRec} aria-label="Record a voice note">🎤</button>}
+        <form className="wa-compose" onClick={(e) => e.stopPropagation()} onSubmit={(e) => { e.preventDefault(); send(); }}>
+          <div className="wa-pill">
+            <button type="button" className="wa-ic dark" onClick={() => setEmoji(emoji === null ? 0 : null)} aria-label="Emoji"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><circle cx="12" cy="12" r="9.5" /><path d="M8 14.2c1 1.5 2.4 2.3 4 2.3s3-.8 4-2.3" /><circle cx="9" cy="9.8" r=".9" fill="currentColor" stroke="none" /><circle cx="15" cy="9.8" r=".9" fill="currentColor" stroke="none" /></svg></button>
+            <textarea ref={ta} value={text} rows={1} maxLength={2000} placeholder="Message" onFocus={() => setEmoji(null)} onChange={(e) => { setText(e.target.value); if (e.target.value && Date.now() - lastTyping.current > 2500) { lastTyping.current = Date.now(); void fetch('/api/thread/typing', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ app: appId }) }).catch(() => {}); } e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 130) + 'px'; }} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && window.matchMedia('(min-width:700px)').matches) { e.preventDefault(); send(); } }} onPaste={(e) => { const f = Array.from(e.clipboardData.files)[0]; if (f) { e.preventDefault(); setFile({ f, url: URL.createObjectURL(f) }); } }} />
+            <button type="button" className="wa-ic dark" onClick={(e) => { e.stopPropagation(); pick.current?.click(); }} aria-label="Attach a file"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20.5 11.5l-8.3 8.3a5.2 5.2 0 01-7.4-7.4l8.6-8.6a3.5 3.5 0 015 5l-8.6 8.6a1.8 1.8 0 01-2.5-2.5l7.9-7.9" /></svg></button>
+            {!hasText && <button type="button" className="wa-ic dark" onClick={() => cam.current?.click()} aria-label="Take a photo"><Icon n="camera" size={22} /></button>}
+          </div>
+          {hasText ? <button className="wa-send" aria-label="Send"><Icon n="send" size={20} /></button> : <button type="button" className="wa-send" onClick={startRec} aria-label="Record a voice note"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 15.5a3.5 3.5 0 003.5-3.5V6.5a3.5 3.5 0 00-7 0V12a3.5 3.5 0 003.5 3.5z" /><path d="M5.5 11.5a.9.9 0 011.8 0 4.7 4.7 0 009.4 0 .9.9 0 011.8 0 6.5 6.5 0 01-5.6 6.4V20h2a.9.9 0 010 1.8H9.1a.9.9 0 010-1.8h2v-2.1a6.5 6.5 0 01-5.6-6.4z" /></svg></button>}
         </form>
       )}
       <input ref={pick} type="file" hidden accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" onChange={(e) => { const f = e.target.files?.[0]; if (f) setFile({ f, url: URL.createObjectURL(f) }); e.target.value = ''; }} />
