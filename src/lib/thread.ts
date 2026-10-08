@@ -5,6 +5,8 @@ import { addNotice } from './notices';
 import { sendMail } from './mail';
 import { studentSite } from './emailTemplate';
 import { shownName } from './profile';
+import { sendPush } from './push';
+import { counselorKey } from './docs';
 import { callScript, type DriveFile } from './appsScript';
 import { ALL_DOC_TYPES } from './constants';
 import { cleanLabel, resolveLabel } from './docLabel';
@@ -117,6 +119,14 @@ export async function postMessage(a: Actor, o: { body: string; replyTo?: string 
   const quiet = !prev?.[0] || Date.now() - new Date(prev[0].created_at).getTime() > 3 * 3600_000;
   const text = body || (file?.type.startsWith('image/') ? '📷 Photo' : file?.type.startsWith('audio/') ? '🎤 Voice note' : `📎 ${file?.name || 'File'}`);
   if (a.role === 'student') {
+    // phone alert for the counselor (or the admins when nobody is assigned)
+    try {
+      const { data: ap } = await db.from('portal_applications').select('name, counselor').eq('application_id', a.appId).maybeSingle();
+      const { data: c } = ap?.counselor ? await db.from('portal_counselors').select('email').eq('name_key', counselorKey(ap.counselor)).maybeSingle() : { data: null };
+      let to = c?.email ? [c.email] : [];
+      if (!to.length) { const { data: ad } = await db.from('portal_staff').select('email').eq('role', 'admin'); to = (ad || []).map((x) => x.email); }
+      await sendPush({ emails: to, title: `${(ap?.name || 'A student').split(/[\s,]+/).filter(Boolean)[0]} sent a message`, body: text, url: `/applications/${encodeURIComponent(a.appId)}?tab=messages`, tag: `chat-${a.studentEmail}`, skipIfActiveMs: 30_000 });
+    } catch { /* alerts are best effort */ }
     if (quiet) { try { const { studentMessage } = await import('@/app/actions'); const fd = new FormData(); fd.set('appId', a.appId); fd.set('body', text); await studentMessage(fd); } catch { /* saved either way */ } }
   } else {
     const st = a.staff!;

@@ -18,7 +18,7 @@ export default async function StudentInterview() {
     <div className="st-page">
       <h1 className="st-h1">Interview practice</h1>
       <p className="st-sub">A friendly mock interview with your counselor, so the real one feels familiar.</p>
-      {me.apps.some((a) => a.in_regent) && (
+      {(
         <Link href="/student/interview/credibility" className="st-card cr-entry">
           <span className="ic"><Icon n="video" size={24} /></span>
           <span className="tx"><b>Credibility Test Training</b><small>Watch the video, practise real questions and get scored feedback.</small></span>

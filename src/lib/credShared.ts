@@ -35,3 +35,8 @@ export type Stats = {
 };
 
 export type Question = { id: string; position: number; question: string; category: string; guidance: string | null; model_answer: string | null; active: boolean };
+
+/** "Regent College London (RCL)" -> "Regent College London". */
+export const universityName = (school: string | null | undefined) => (school || '').replace(/\s*\([^)]*\)/g, '').trim() || 'your university';
+/** Questions and tips can contain {university}; each student sees their own university's name there. */
+export const fillUniversity = (text: string | null | undefined, school: string | null | undefined) => (text == null ? text : text.replace(/\{university\}/gi, universityName(school))) as string;

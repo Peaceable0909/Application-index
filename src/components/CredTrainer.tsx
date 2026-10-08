@@ -17,13 +17,13 @@ const TIP: Record<string, string> = {
   reasoning: 'Use “because” to explain each choice in your own words.',
   naturalVoice: 'Speak about yourself, not in general phrases. Say it aloud, then write what you said.',
   courseKnowledge: 'Read your module list again and note what each module covers.',
-  institutionKnowledge: 'Find reasons that belong to Regent specifically, not any university.',
+  institutionKnowledge: 'Find reasons that belong to your university specifically, not any university.',
   careerCoherence: 'Make your past, your course and your career plan read as one story.',
   financeKnowledge: 'Know your exact fees, living costs, sponsor and where the funds came from.',
   consistency: 'Check your answer against what is in your application and documents.',
 };
 const LEARN = [
-  { icon: 'link', t: 'Connect the dots', d: 'Your past study or work, the course, its modules, Regent, the UK and your career should read as one plan.' },
+  { icon: 'link', t: 'Connect the dots', d: 'Your past study or work, the course, its modules, your university, the UK and your career should read as one plan.' },
   { icon: 'user', t: 'Make it yours', d: 'Interviewers hear the same memorised answers again and again. Unique, personal reasons stand out.' },
   { icon: 'file', t: 'Know your course', d: 'Learn what each module really covers and which skills it gives you. Do not guess.' },
   { icon: 'trend', t: 'Know your money', d: 'Fees, living costs, your sponsor and where the funds came from. Be accurate and honest.' },
@@ -100,7 +100,7 @@ function Result({ a, onRetry }: { a: CAttempt; onRetry?: () => void }) {
   );
 }
 
-export default function CredTrainer({ video, questions: qs, attempts: initAttempts, stats: initStats, canPractise }: { video: Video; questions: CQuestion[]; attempts: CAttempt[]; stats: Stats; canPractise: boolean }) {
+export default function CredTrainer({ video, questions: qs, attempts: initAttempts, stats: initStats, canPractise, preview = false }: { video: Video; questions: CQuestion[]; attempts: CAttempt[]; stats: Stats; canPractise: boolean; preview?: boolean }) {
   const [attempts, setAttempts] = useState(initAttempts);
   const [stats, setStats] = useState(initStats);
   const [open, setOpen] = useState<string | null>(null);
@@ -137,7 +137,7 @@ export default function CredTrainer({ video, questions: qs, attempts: initAttemp
   return (
     <>
       <section className="cr-hero" style={{ ['--i' as string]: 0 }}>
-        <div><span className="eyebrow"><Icon n="spark" size={14} /> Regent College London</span><h1 className="st-h1">Credibility Test Training</h1>
+        <div><span className="eyebrow"><Icon n="spark" size={14} /> Interview preparation</span><h1 className="st-h1">Credibility Test Training</h1>
           <p className="st-sub">Learn what the interviewer looks for, then practise in your own words and see exactly how to improve.</p></div>
         <ol className="cr-flow" aria-label="How this works">{STEPS.map((s, i) => <li key={s} className={i === stage ? 'on' : i < stage ? 'done' : ''} style={{ ['--k' as string]: i }}><span>{i + 1}</span>{s}</li>)}</ol>
       </section>
@@ -165,7 +165,7 @@ export default function CredTrainer({ video, questions: qs, attempts: initAttemp
       </section>
 
       <div className="cr-qhead" style={{ ['--i' as string]: 4 }}><h2>Practice questions</h2><span>{qs.length} questions</span></div>
-      {!canPractise && <div className="st-card">Practice is available once your application is linked to Regent College London.</div>}
+      {!canPractise && <div className="st-card">{preview ? 'Preview mode: this is exactly what a student sees. They type an answer under each question, press “Check my answer” and get a score with feedback.' : 'Practice is available once your application is linked to Regent College London.'}</div>}
       <div className="cr-qs">
         {qs.map((q, n) => {
           const list = forQ(q.id), last = list[0], isOpen = open === q.id, draft = drafts[q.id] || '', words = draft.trim() ? draft.trim().split(/\s+/).length : 0;

@@ -8,7 +8,7 @@ import { CATEGORIES, CATEGORY_LABEL, type Question } from '@/lib/credShared';
 function Fields({ q }: { q?: Question }) {
   return (
     <div className="grid" style={{ gap: 10 }}>
-      <label>Question<textarea name="question" defaultValue={q?.question || ''} rows={2} maxLength={400} required placeholder="e.g. Why did you choose this course?" style={{ width: '100%', marginTop: 6 }} /></label>
+      <label>Question<small className="muted" style={{ display: 'block' }}>Tip: write {'{university}'} where the student’s own university name should appear.</small><textarea name="question" defaultValue={q?.question || ''} rows={2} maxLength={400} required placeholder="e.g. Why did you choose this course?" style={{ width: '100%', marginTop: 6 }} /></label>
       <label>Type of question
         <select name="category" defaultValue={q?.category || 'general'} style={{ width: '100%', marginTop: 6 }}>{CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_LABEL[c]}</option>)}</select>
         <small className="muted">The type decides which skills are marked. For example, “Finance” also checks funding knowledge.</small></label>

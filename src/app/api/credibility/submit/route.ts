@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { currentStudent } from '@/lib/student';
 import { admin } from '@/lib/supabase';
+import { fillUniversity } from '@/lib/credShared';
 import { answerHash, evaluateAnswer, loadQuestions, summarise, type Attempt } from '@/lib/credibility';
 
 export const maxDuration = 60;
@@ -9,16 +10,16 @@ const DAILY = 40;
 export async function POST(req: Request) {
   const me = await currentStudent();
   if (!me) return NextResponse.json({ ok: false, error: 'Please sign in again.' }, { status: 401 });
-  const reg = me.apps.find((a) => a.in_regent);
-  if (!reg) return NextResponse.json({ ok: false, error: 'This training is for Regent College London applicants.' }, { status: 403 });
+  const reg = me.apps[0];
   const b = (await req.json().catch(() => ({}))) as { questionId?: string; answer?: string };
   const answer = (b.answer || '').trim();
   if (answer.length < 10) return NextResponse.json({ ok: false, error: 'Write a little more so there is something to assess (at least a sentence).' }, { status: 400 });
   if (answer.length > 1500) return NextResponse.json({ ok: false, error: 'Please keep your answer under 1,500 characters. Interview answers should be focused.' }, { status: 400 });
   const db = admin();
   const questions = await loadQuestions(true);
-  const q = questions.find((x) => x.id === b.questionId);
-  if (!q) return NextResponse.json({ ok: false, error: 'That question is not available.' }, { status: 404 });
+  const base = questions.find((x) => x.id === b.questionId);
+  if (!base) return NextResponse.json({ ok: false, error: 'That question is not available.' }, { status: 404 });
+  const q = { ...base, question: fillUniversity(base.question, reg.school), guidance: base.guidance ? fillUniversity(base.guidance, reg.school) : null, model_answer: base.model_answer ? fillUniversity(base.model_answer, reg.school) : null };
   const { count } = await db.from('portal_cred_attempts').select('id', { count: 'exact', head: true }).eq('student_email', me.email).gte('created_at', new Date(Date.now() - 864e5).toISOString());
   if ((count || 0) >= DAILY) return NextResponse.json({ ok: false, error: 'You have reached today’s practice limit. Come back tomorrow, and use the time to improve your answers.' }, { status: 429 });
 
