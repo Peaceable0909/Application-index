@@ -185,7 +185,8 @@ tr.row td a { text-decoration:none; } tr.row td a b { color:var(--ink); transiti
 iframe.preview { width:100%; height:70vh; border:1px solid var(--line); border-radius:var(--r); background:var(--card); }
 
 /* ---- splash ---- */
-.splash { position:fixed; inset:0; z-index:100; display:grid; place-items:center; background:var(--navy); animation:splash-out .7s cubic-bezier(.7,0,.2,1) 1.5s forwards; }
+.splash { position:fixed; inset:0; z-index:100; display:grid; place-items:center; background:var(--navy); animation:splash-out .5s cubic-bezier(.7,0,.2,1) 1s forwards; }
+.no-splash .splash { display:none; }
 .splash-in { display:flex; flex-direction:column; align-items:center; gap:22px; } .splash-mark { width:84px; height:84px; }
 .splash-mark .ring { stroke-dasharray:100; stroke-dashoffset:100; animation:draw .9s var(--ease) .1s forwards; } .splash-mark .p { stroke-dasharray:50; stroke-dashoffset:50; animation:draw .8s var(--ease) .55s forwards; }
 .splash-word { font:400 30px/1 var(--font-display), Georgia, serif; color:#f4f6fb; opacity:0; animation:fade-up .7s var(--ease) .9s forwards; } .splash-word em { color:#e2c566; }

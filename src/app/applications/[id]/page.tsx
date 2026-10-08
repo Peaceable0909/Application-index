@@ -3,7 +3,7 @@ import Who from '@/components/Who';
 import Avatar from '@/components/Avatar';
 import { loadPeople, personFor } from '@/lib/people';
 import { notFound } from 'next/navigation';
-import { requireStaff, canAccessApp } from '@/lib/auth';
+import { requireStaff, canSee } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
 import { attentionReasons, AppRow, isFormSubmission } from '@/lib/attention';
 import { missingDocs, counselorKey, effType, schoolShort } from '@/lib/docs';
@@ -34,15 +34,14 @@ const ftClass = (e: string) => (e === 'pdf' ? '' : ['jpg', 'jpeg', 'png', 'webp'
 export const maxDuration = 60;
 
 export default async function ApplicationPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<SP> }) {
-  const people = await loadPeople();
-  const staff = await requireStaff();
-  const id = decodeId((await params).id);
-  const sp = await searchParams;
+  const [people, staff, rawParams, sp] = await Promise.all([loadPeople(), requireStaff(), params, searchParams]);
+  const id = decodeId(rawParams.id);
   const db = admin();
   const { data: app } = await db.from('portal_applications').select('*').eq('application_id', id).maybeSingle();
-  if (!app || !(await canAccessApp(staff, app.application_id))) notFound();
+  if (!app || !canSee(staff, app.counselor)) notFound();
 
-  const [{ data: siblings }, { data: notes }, { data: activity }, { data: counselors }, { data: suggestions }, { data: messages }, { data: reminders }] = await Promise.all([
+  // everything below only needs the application row, so it all loads at the same time
+  const [{ data: siblings }, { data: notes }, { data: activity }, { data: counselors }, { data: suggestions }, { data: messages }, { data: reminders }, offerRow, chatRows, { data: checkRows }, { data: cached }, { data: draftRow }] = await Promise.all([
     db.from('portal_applications').select('application_id,submitted_at').eq('student_key', app.student_key).order('submitted_at', { ascending: false }),
     db.from('portal_notes').select('*').eq('application_id', id).order('pinned', { ascending: false }).order('created_at', { ascending: false }),
     db.from('portal_activity').select('*').eq('application_id', id).order('created_at', { ascending: false }).limit(100),
@@ -50,11 +49,11 @@ export default async function ApplicationPage({ params, searchParams }: { params
     db.from('portal_folder_suggestions').select('*').eq('application_id', id).eq('status', 'new').order('score', { ascending: false }),
     db.from('portal_messages').select('*').eq('application_id', id).order('created_at', { ascending: false }).limit(50),
     db.from('portal_reminders').select('*').eq('application_id', id).eq('status', 'pending').order('due_on'),
-  ]);
-  const offerRow = await getOffer(id);
-  const [chatRows, { data: checkRows }] = await Promise.all([
+    getOffer(id),
     app.email ? loadThread({ role: 'staff', email: staff.email, appId: id, studentEmail: app.email.toLowerCase(), staff }, false) : Promise.resolve({ msgs: [], other: undefined }),
     db.from('portal_checklist').select('id, text, due, done').eq('application_id', id).order('created_at'),
+    db.from('portal_ai_cache').select('output,input_hash,created_at').eq('cache_key', `student:${id}`).maybeSingle(),
+    sp.draft ? db.from('portal_ai_cache').select('output').eq('cache_key', `draft:${id}:${staff.email}`).maybeSingle() : Promise.resolve({ data: null }),
   ]);
   const { data: docs } = await db.from('portal_documents').select('*').in('application_id', (siblings || []).map((s) => s.application_id)).order('created_at', { ascending: false });
 
@@ -74,7 +73,6 @@ export default async function ApplicationPage({ params, searchParams }: { params
   const previewDoc = sp.preview ? (docs || []).find((d) => d.drive_file_id === sp.preview) : null;
 
   const facts = studentFacts(app as AppFull, { have: new Set(types), docCount: (docs || []).length, missing, judged, submissions: (siblings || []).length });
-  const { data: cached } = await db.from('portal_ai_cache').select('output,input_hash,created_at').eq('cache_key', `student:${id}`).maybeSingle();
   const summary = cached?.output as StudentSummary | undefined;
   const summaryStale = !!cached && cached.input_hash !== hashOf(facts);
 
@@ -99,7 +97,6 @@ export default async function ApplicationPage({ params, searchParams }: { params
   const lastStatusChange = (activity || []).find((a) => a.kind === 'status_change');
   const step = stepIndex(app.status);
 
-  const { data: draftRow } = sp.draft ? await db.from('portal_ai_cache').select('output').eq('cache_key', `draft:${id}:${staff.email}`).maybeSingle() : { data: null };
   const draft = (draftRow?.output as Draft | undefined) || null;
 
   const first = niceName(app.name);

@@ -1,1 +1,1 @@
-{ "crons": [{ "path": "/api/sync", "schedule": "0 5 * * *" }] }
+{ "regions": ["dub1"], "crons": [{ "path": "/api/sync", "schedule": "0 5 * * *" }] }

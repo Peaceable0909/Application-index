@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { admin, sessionClient } from './supabase';
 import { counselorKey, effType } from './docs';
 
@@ -24,22 +25,20 @@ export async function appsForEmail(email: string) {
 export async function isStudentEmail(email: string) { return (await appsForEmail(email)).length > 0; }
 
 /** The signed-in student, or null. Staff are never students (staff access always wins). */
-export async function currentStudent(): Promise<StudentView | null> {
+export const currentStudent = cache(async (): Promise<StudentView | null> => {
   const { data } = await (await sessionClient()).auth.getUser();
   const email = data.user?.email?.toLowerCase();
   if (!email) return null;
   const db = admin();
-  const { data: st } = await db.from('portal_staff').select('email').eq('email', email).maybeSingle();
-  if (st) return null;
-  const apps = await appsForEmail(email);
-  if (!apps.length) return null;
+  const [{ data: st }, apps] = await Promise.all([db.from('portal_staff').select('email').eq('email', email).maybeSingle(), appsForEmail(email)]);
+  if (st || !apps.length) return null;
   const keys = [...new Set(apps.map((a) => a.student_key))];
   const { data: sibs } = await db.from('portal_applications').select('application_id, student_key').in('student_key', keys);
   const ids = (sibs || []).map((s) => s.application_id);
   const { data: rows } = ids.length ? await db.from('portal_documents').select('drive_file_id, application_id, name, doc_type, type_override, created_at, size_bytes, mime_type').in('application_id', ids).order('created_at', { ascending: false }) : { data: [] };
   const docs: StudentDoc[] = (rows || []).map((d) => ({ id: d.drive_file_id, application_id: d.application_id, name: d.name, type: effType(d), added: d.created_at, size: Number(d.size_bytes || 0), mime: d.mime_type || '' }));
   return { email, name: apps[0].name, apps, docs, ids };
-}
+});
 
 /** Can this signed-in student open this application / file? */
 export async function studentOwnsApp(s: StudentView, applicationId: string) { return s.ids.includes(applicationId); }

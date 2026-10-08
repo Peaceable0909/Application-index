@@ -36,9 +36,11 @@ export async function loadStudentData(me: StudentView) {
   });
 
   // interview training
-  const { data: openSlots } = await db.from('portal_interview_slots').select('*').is('cancelled_at', null).gt('starts_at', new Date(Date.now() + MIN_NOTICE_H * 3600_000).toISOString()).lt('starts_at', new Date(Date.now() + 28 * 864e5).toISOString()).order('starts_at').limit(40);
+  const [{ data: openSlots }, { data: myB }] = await Promise.all([
+    db.from('portal_interview_slots').select('*').is('cancelled_at', null).gt('starts_at', new Date(Date.now() + MIN_NOTICE_H * 3600_000).toISOString()).lt('starts_at', new Date(Date.now() + 28 * 864e5).toISOString()).order('starts_at').limit(40),
+    db.from('portal_interview_bookings').select('*, portal_interview_slots(*)').in('application_id', me.ids).neq('status', 'cancelled').order('created_at', { ascending: false }).limit(30),
+  ]);
   const { data: allB } = (openSlots || []).length ? await db.from('portal_interview_bookings').select('slot_id, status').in('slot_id', (openSlots || []).map((x) => x.id)).in('status', ['booked', 'completed', 'no_show']) : { data: [] };
-  const { data: myB } = await db.from('portal_interview_bookings').select('*, portal_interview_slots(*)').in('application_id', me.ids).neq('status', 'cancelled').order('created_at', { ascending: false }).limit(30);
   const mine = (myB || []).map((b): MyBooking | null => {
     const sl = b.portal_interview_slots as unknown as { id: string; starts_at: string; duration_min: number; teams_url: string; notes: string | null; cancelled_at: string | null } | null;
     return sl && !sl.cancelled_at ? { id: b.id, starts_at: sl.starts_at, duration_min: sl.duration_min, teams_url: sl.teams_url, provider: providerName(sl.teams_url), notes: sl.notes, status: b.status, feedback: b.feedback_visible ? b.feedback : null, canCancel: new Date(sl.starts_at).getTime() - Date.now() >= MIN_NOTICE_H * 3600_000, gcal: googleCalUrl(sl as never) } : null;
