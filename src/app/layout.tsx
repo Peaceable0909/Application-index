@@ -33,25 +33,27 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const staff = await currentStaff();
   const student = staff ? null : await currentStudent();
   // the person's look: cookie first (no flash), else what they saved on another device
-  let theme = parseTheme((await cookies()).get(COOKIE)?.value);
-  if (!(await cookies()).get(COOKIE)?.value && (staff || student)) {
-    const { data: tp } = await admin().from('portal_theme_prefs').select('mode, accent').eq('email', (staff?.email || student!.email).toLowerCase()).maybeSingle();
-    if (tp) theme = parseTheme(`${tp.mode}.${tp.accent}`);
-  }
-  const studentNotices = student ? await noticesFor(student) : [];
-  const studentUnread = student ? ((await admin().from('portal_student_msgs').select('id', { count: 'exact', head: true }).eq('student_email', student.email).eq('from_student', false).is('student_read_at', null)).count || 0) : 0;
-  let taskCount = 0, chatCount = 0, inboxCount = 0;
-  if (staff) {
-    const q = admin().from('portal_tasks').select('id', { count: 'exact', head: true }).eq('status', 'open');
-    inboxCount = await inboxUnread(staff).catch(() => 0);
-    chatCount = await unreadTotal(staff.email).catch(() => 0);
-    taskCount = (staff.role === 'counselor' ? await q.in('application_id', await appIdsFor(staff.counselor_key)) : await q).count || 0;
-  }
+  const email = (staff?.email || student?.email || '').toLowerCase();
+  const cookieTheme = (await cookies()).get(COOKIE)?.value;
+  const db = admin();
+  // these don't depend on each other, so they run side by side instead of one after another
+  const [themeRow, studentNotices, studentUnread, taskCount, chatCount, inboxCount] = await Promise.all([
+    !cookieTheme && email ? db.from('portal_theme_prefs').select('mode, accent').eq('email', email).maybeSingle().then((r) => r.data) : Promise.resolve(null),
+    student ? noticesFor(student) : Promise.resolve([]),
+    student ? db.from('portal_student_msgs').select('id', { count: 'exact', head: true }).eq('student_email', student.email).eq('from_student', false).is('student_read_at', null).then((r) => r.count || 0) : Promise.resolve(0),
+    staff ? (async () => {
+      const q = db.from('portal_tasks').select('id', { count: 'exact', head: true }).eq('status', 'open');
+      return (staff.role === 'counselor' ? await q.in('application_id', await appIdsFor(staff.counselor_key)) : await q).count || 0;
+    })() : Promise.resolve(0),
+    staff ? unreadTotal(staff.email).catch(() => 0) : Promise.resolve(0),
+    staff ? inboxUnread(staff).catch(() => 0) : Promise.resolve(0),
+  ]);
+  const theme = themeRow ? parseTheme(`${themeRow.mode}.${themeRow.accent}`) : parseTheme(cookieTheme);
   return (
     <html lang="en" className={`${ui.variable} ${display.variable}`} data-theme={theme.mode === 'system' ? 'light' : theme.mode} data-accent={theme.accent} {...(theme.mode === 'system' ? { 'data-pref': 'system' } : {})} suppressHydrationWarning>
       <head>
         {/* runs before first paint: "Auto" follows the phone/computer setting, and keeps following it */}
-        <script dangerouslySetInnerHTML={{ __html: "try{var e=document.documentElement;if(e.getAttribute('data-pref')==='system'){var m=matchMedia('(prefers-color-scheme: dark)'),f=function(){e.setAttribute('data-theme',m.matches?'dark':'light')};f();m.addEventListener('change',f)}}catch(x){}" }} />
+        <script dangerouslySetInnerHTML={{ __html: "try{var e=document.documentElement;var t=+localStorage.getItem('wr_splash')||0;if(Date.now()-t<108e5)e.classList.add('no-splash');else localStorage.setItem('wr_splash',String(Date.now()));if(e.getAttribute('data-pref')==='system'){var m=matchMedia('(prefers-color-scheme: dark)'),f=function(){e.setAttribute('data-theme',m.matches?'dark':'light')};f();m.addEventListener('change',f)}}catch(x){}" }} />
       </head>
       <body>
         <div className="splash" aria-hidden>

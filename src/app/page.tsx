@@ -1,5 +1,6 @@
 import { Suspense } from 'react';
 import Link from 'next/link';
+import { after } from 'next/server';
 import { requireTeam } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
 import { loadStudents } from '@/lib/overview';
@@ -20,7 +21,13 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const staff = await requireTeam();
   const sp = await searchParams;
   const db = admin();
-  const { rows, all } = await loadStudents();
+  const weekAgo = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
+  // three independent reads: run them together
+  const [{ rows, all }, { data: prev }, { data: activity }] = await Promise.all([
+    loadStudents(),
+    db.from('portal_snapshots').select('*').lte('day', weekAgo).order('day', { ascending: false }).limit(1).maybeSingle(),
+    db.from('portal_activity').select('id,kind,detail,created_at,application_id,portal_applications(name)').order('created_at', { ascending: false }).limit(6),
+  ]);
   const live = rows.filter((r) => !(r.a.status && FINAL_STATUSES.includes(r.a.status)));
 
   // Daily snapshot so each card can show "vs last 7 days" once there is history.
@@ -31,9 +38,8 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     in_progress: live.filter((r) => r.a.status && IN_PROGRESS.includes(r.a.status)).length,
   };
   const today = new Date().toISOString().slice(0, 10);
-  await db.from('portal_snapshots').upsert({ day: today, ...now }, { onConflict: 'day' });
-  const weekAgo = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
-  const { data: prev } = await db.from('portal_snapshots').select('*').lte('day', weekAgo).order('day', { ascending: false }).limit(1).maybeSingle();
+  // saved after the page is sent, so it doesn't hold the page up
+  after(async () => { await db.from('portal_snapshots').upsert({ day: today, ...now }, { onConflict: 'day' }); });
   const delta = (k: 'total' | 'awaiting' | 'missing' | 'in_progress', goodWhenDown = false) => {
     if (!prev || !prev[k]) return <div className="delta"><small>trend starts after 7 days of data</small></div>;
     const pct = Math.round(((now[k] - prev[k]) / prev[k]) * 100);
@@ -41,7 +47,6 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     return <div className={`delta ${good ? 'up' : 'down'}`}><Icon n="trend" size={14} /> {up ? '+' : ''}{pct}% <small>vs. last 7 days</small></div>;
   };
 
-  const { data: activity } = await db.from('portal_activity').select('id,kind,detail,created_at,application_id,portal_applications(name)').order('created_at', { ascending: false }).limit(6);
   // Real form submissions first (newest first), then anything else the sheets know about.
   const isForm = (r: (typeof rows)[number]) => isFormSubmission(r.a);
   const byDate = (k: 'submitted_at' | 'created_at') => (x: (typeof rows)[number], y: (typeof rows)[number]) => new Date(y.a[k] || 0).getTime() - new Date(x.a[k] || 0).getTime();
