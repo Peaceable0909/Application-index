@@ -5,6 +5,7 @@ import { currentStudent } from '@/lib/student';
 import { admin } from '@/lib/supabase';
 import { loadQuestions, loadSettings, summarise, type Attempt } from '@/lib/credibility';
 import CredTrainer, { type CAttempt, type CQuestion } from '@/components/CredTrainer';
+import { regentApp } from '@/lib/credShared';
 
 export const maxDuration = 60;
 
@@ -12,7 +13,7 @@ export default async function CredibilityTraining() {
   if (await currentStaff()) redirect('/credibility');
   const me = await currentStudent();
   if (!me) redirect('/student/login');
-  if (!me.apps.some((a) => a.in_regent)) {
+  if (!regentApp(me.apps)) {
     return (
       <div className="st-page">
         <h1 className="st-h1">Credibility Test Training</h1>

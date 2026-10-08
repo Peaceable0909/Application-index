@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { currentStudent } from '@/lib/student';
 import { admin } from '@/lib/supabase';
+import { regentApp } from '@/lib/credShared';
 import { answerHash, evaluateAnswer, loadQuestions, summarise, type Attempt } from '@/lib/credibility';
 
 export const maxDuration = 60;
@@ -9,7 +10,7 @@ const DAILY = 40;
 export async function POST(req: Request) {
   const me = await currentStudent();
   if (!me) return NextResponse.json({ ok: false, error: 'Please sign in again.' }, { status: 401 });
-  const reg = me.apps.find((a) => a.in_regent);
+  const reg = regentApp(me.apps);
   if (!reg) return NextResponse.json({ ok: false, error: 'This training is for Regent College London applicants.' }, { status: 403 });
   const b = (await req.json().catch(() => ({}))) as { questionId?: string; answer?: string };
   const answer = (b.answer || '').trim();
