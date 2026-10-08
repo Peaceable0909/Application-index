@@ -18,12 +18,10 @@ export function sampleSpec(kind: string): Omit<EmailSpec, 'sign'> & { subject: s
     return { subject: 'Sample: your offer is ready', body, eyebrow: 'Admissions update', ...plainToSpec(body) };
   }
   return {
-    subject: 'Sample: documents needed for your application', body: 'Sample request', eyebrow: 'Documents needed', title: '2 documents to go', greeting: 'Hi Bestman,', preheader: 'We still need SOP and Passport',
+    subject: 'Sample: documents needed for your application', body: 'Sample request', eyebrow: 'Documents needed', title: '2 documents needed', greeting: 'Hi Bestman,', preheader: 'Still needed: SOP, Passport',
     blocks: [
-      { type: 'p', text: 'Thank you for applying to CCCU · MBA International. We’re preparing your application and need a few more documents from you before we can submit it.' },
-      { type: 'checklist', title: 'Still needed', items: ['SOP', 'Passport'], received: 4, total: 6 },
-      { type: 'p', text: 'Please reply to this email with clear scans or photos attached (PDF preferred), and we’ll add them to your file straight away.' },
-      { type: 'note', text: 'Already sent one of these? Just reply and tell us. We’ll check right away.' }],
-    cta: { label: 'Reply with my documents', href: 'mailto:admissions@example.com' },
+      { type: 'checklist', title: 'Needed for CCCU · MBA International', items: ['SOP', 'Passport'], received: 4, total: 6 },
+      { type: 'p', text: 'Upload them in your student portal (sign in with this email, no password), or reply with clear scans attached.' }],
+    cta: { label: 'Upload my documents', href: 'mailto:admissions@example.com' },
   };
 }

@@ -59,10 +59,9 @@ export async function emailBooking(slot: Slot, student: { name: string; email: s
     return sendMail({
       to: student.email, subject: `Interview training booked · ${fmt(slot.starts_at, 'Africa/Lagos')}`, body: `Hi ${first},\n\nYour interview training is booked.\n\nWhen: ${whenText(slot.starts_at)}\nLength: ${slot.duration_min} minutes\nJoin on ${providerName(slot.teams_url)}: ${slot.teams_url}\n\nManage your booking: ${studentSite()}/student`,
       eyebrow: 'Interview training', title: 'Your session is booked', greeting: `Hi ${first},`, preheader: `${fmt(slot.starts_at, 'Africa/Lagos')} on ${providerName(slot.teams_url)}`, replyTo: by.includes('@') ? by : '', from: by.includes('@') ? by : undefined,
-      blocks: [{ type: 'p', text: 'Your interview training session is confirmed. We’ll practise real interview questions so you feel confident on the day.' },
+      blocks: [
         { type: 'checklist', title: 'Your session', items: [whenText(slot.starts_at), `${slot.duration_min} minutes on ${providerName(slot.teams_url)}`], tone: 'ok' },
-        { type: 'list', items: ['Join from a quiet place with a good connection', 'Have your passport and your CV with you', `Add it to your calendar: ${googleCalUrl(slot)}`] },
-        { type: 'note', text: `Need to change it? You can cancel in your student portal up to ${MIN_NOTICE_H} hours before the start.` }],
+        { type: 'note', text: `Bring your passport and CV. Add to calendar: ${googleCalUrl(slot)}. You can cancel in your portal up to ${MIN_NOTICE_H} hours before.` }],
       cta: { label: `Join on ${providerName(slot.teams_url)}`, href: slot.teams_url },
       attachments: [{ name: 'interview-training.ics', mime: 'text/calendar', base64: icsFile(slot, student.email) }],
     });
@@ -70,7 +69,7 @@ export async function emailBooking(slot: Slot, student: { name: string; email: s
   return sendMail({
     to: student.email, subject: 'Your interview training session was cancelled', body: `Hi ${first},\n\nYour interview training on ${whenText(slot.starts_at)} has been cancelled. Please book another time: ${studentSite()}/student`,
     eyebrow: 'Interview training', title: 'Session cancelled', greeting: `Hi ${first},`, preheader: 'Please pick another time.', replyTo: by.includes('@') ? by : '', from: by.includes('@') ? by : undefined,
-    blocks: [{ type: 'p', text: `We’re sorry. The session on ${whenText(slot.starts_at)} has been cancelled.` }, { type: 'p', text: 'You can pick another time in your student portal.' }], cta: { label: 'Choose a new time', href: `${studentSite()}/student/interview` },
+    blocks: [{ type: 'p', text: `The session on ${whenText(slot.starts_at)} has been cancelled. You can pick another time in your portal.` }], cta: { label: 'Choose a new time', href: `${studentSite()}/student/interview` },
   });
 }
 
@@ -86,7 +85,7 @@ export async function sendInterviewReminders() {
       const first = ((a?.preferred_name || a?.name) || 'there').split(/[\s,]+/)[0];
       try {
         await sendMail({ to: b.student_email, subject: `Reminder: interview training ${fmt(slot.starts_at, 'Africa/Lagos')}`, body: `Hi ${first},\n\nA reminder that your interview training is on ${whenText(slot.starts_at)}.\nJoin on ${providerName(slot.teams_url)}: ${slot.teams_url}`, eyebrow: 'Reminder', title: 'Your session is coming up', greeting: `Hi ${first},`, preheader: whenText(slot.starts_at),
-          blocks: [{ type: 'checklist', title: 'Coming up', items: [whenText(slot.starts_at), `${slot.duration_min} minutes on ${providerName(slot.teams_url)}`], tone: 'ok' }, { type: 'note', text: 'Please join a couple of minutes early. Have your passport and CV handy.' }], cta: { label: `Join on ${providerName(slot.teams_url)}`, href: slot.teams_url } });
+          blocks: [{ type: 'checklist', title: 'Coming up', items: [whenText(slot.starts_at), `${slot.duration_min} minutes on ${providerName(slot.teams_url)}`], tone: 'ok' }], cta: { label: `Join on ${providerName(slot.teams_url)}`, href: slot.teams_url } });
         await db.from('portal_interview_bookings').update({ reminded_at: new Date().toISOString() }).eq('id', b.id); sent++;
       } catch { /* try again tomorrow */ }
     }
@@ -112,10 +111,8 @@ export async function emailCounselorBooking(slot: Slot, app: { name: string; sch
         to: email, subject: `Interview training booked: ${app.name} · ${fmt(slot.starts_at, 'Africa/Lagos')}`, body: `Hi ${first},\n\n${app.name} has been booked for interview training.\n\nWhen: ${whenText(slot.starts_at)}\nLength: ${slot.duration_min} minutes\nJoin on ${provider}: ${slot.teams_url}`,
         eyebrow: 'Interview training', title: forTrainer ? `${app.name} is booked with you` : `${app.name} is booked for interview training`, greeting: `Hi ${first},`, preheader: `${fmt(slot.starts_at, 'Africa/Lagos')} · ${app.name}`, replyTo: actor.includes('@') ? actor : '', from: actor.includes('@') ? actor : undefined,
         blocks: [
-          { type: 'p', text: forTrainer ? 'A student has been booked into one of your interview-training sessions.' : 'Your student has been invited to an interview-training session and has been sent the details.' },
           { type: 'students', rows: [{ name: app.name, meta: [app.school, app.programme && app.programme.toUpperCase() !== 'N/A' ? app.programme : ''].filter(Boolean).join(' · '), status: app.status || undefined }] },
-          { type: 'checklist', title: 'The session', items: [whenText(slot.starts_at), `${slot.duration_min} minutes on ${provider}`], tone: 'ok' },
-          { type: 'note', text: 'A calendar invite is attached. Open the Interviews page in the portal to mark the session as done and leave feedback.' }],
+          { type: 'checklist', title: 'The session', items: [whenText(slot.starts_at), `${slot.duration_min} minutes on ${provider}`], tone: 'ok' }],
         cta: { label: `Join on ${provider}`, href: slot.teams_url },
         attachments: [{ name: 'interview-training.ics', mime: 'text/calendar', base64: icsFile(slot, email) }],
       });

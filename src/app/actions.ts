@@ -999,7 +999,7 @@ export async function studentMessage(f: FormData): Promise<{ ok: boolean; error?
   const subject = `Message from ${app!.name}${app!.school ? ` (${schoolShort(app!.school)})` : ''}`;
   try {
     await sendMail({ to, subject, body: `${app!.name} wrote:\n\n${body}`, eyebrow: 'Student message', title: `${app!.name.split(/[\s,]+/)[0]} sent you a message`, greeting: c ? `Hi ${c.name.replace(/^(mr|mrs|ms|miss|dr)\.?\s+/i, '')},` : 'Hello,', preheader: body.slice(0, 100), replyTo: me.email, sign: { name: app!.name, title: [schoolShort(app!.school), app!.programme].filter(Boolean).join(' · ') || 'Student', email: me.email },
-      blocks: [{ type: 'p', text: `A student wrote to you through the student portal. Replying to this email goes straight to them.` }, { type: 'quote', from: `${app!.name} · ${me.email}`, text: body }], cta: { label: 'Open their file', href: `${site()}/applications/${encodeURIComponent(appId)}?tab=messages` } });
+      blocks: [{ type: 'quote', from: `${app!.name} · ${me.email}`, text: body }], cta: { label: 'Open their file', href: `${site()}/applications/${encodeURIComponent(appId)}?tab=messages` } });
   } catch { return { ok: false, error: 'We couldn’t send that just now. Please try again.' }; }
   await db.from('portal_messages').insert({ application_id: appId, counselor_name: c?.name || null, to_email: to, to_kind: 'counselor', subject, body, sent_by: me.email });
   await log(appId, me.email, 'email_sent', { to, subject });
@@ -1025,7 +1025,7 @@ async function inviteStudentsCore(rowsIn: { id: string }[], actor: string, force
     const body = `Hi ${a.name.split(/[\s,]+/)[0]},\n\nYour student portal is ready. Sign in with ${a.email} to see where your application is, upload your documents and message your counselor.\n\n${studentSite()}/student/login`;
     try {
       await sendMail({ to: a.email, subject, body, eyebrow: 'Student portal', title: 'Your student portal is ready', greeting: `Hi ${a.name.split(/[\s,]+/)[0]},`, preheader: 'See your application progress and upload your documents.', replyTo: c?.email || actor, from: c?.email || actor,
-        blocks: [{ type: 'p', text: 'You can now follow your application online. In your portal you can:' }, { type: 'steps', items: ['See exactly where your application is', 'Upload any documents we still need', 'Message your counselor directly'] }, { type: 'note', text: `Sign in with this email address: ${a.email}. We’ll email you a sign-in code, so there is no password to remember.` }], cta: { label: 'Open my student portal', href: `${studentSite()}/student/login` } });
+        blocks: [{ type: 'p', text: `Track your application, upload documents and message your counselor. Sign in with ${a.email}; we’ll email you a code, there is no password.` }], cta: { label: 'Open my student portal', href: `${studentSite()}/student/login` } });
       await db.from('portal_messages').insert({ application_id: a.application_id, counselor_name: c?.name || null, to_email: a.email, to_kind: 'student', subject, body, sent_by: actor });
       await log(a.application_id, actor, 'email_sent', { to: a.email, subject });
       done.add(a.email.toLowerCase()); out.sent++;
@@ -1109,7 +1109,7 @@ export async function saveOffer(f: FormData) {
         const first = (a.preferred_name || a.name).split(/[\s,]+/)[0];
         const bits = [row.offer_type ? `${row.offer_type} offer` : '', row.cas_status && row.cas_status !== 'Not started' ? `CAS: ${row.cas_status}` : '', row.visa_status && row.visa_status !== 'Not started' ? `Visa: ${row.visa_status}` : ''].filter(Boolean);
         await sendMail({ to: a.email, subject: 'An update on your application', body: `Hi ${first},\n\nThere is an update on your application${bits.length ? `: ${bits.join(' · ')}` : ''}.\n\nSign in to your student portal to see the details: ${studentSite()}/student/login`, replyTo: staff.email, from: staff.email, eyebrow: 'Application update', title: 'There’s an update on your application', greeting: `Hi ${first},`, preheader: bits.join(' · ') || 'See the latest in your student portal.',
-          blocks: [{ type: 'p', text: 'Your counselor has updated your offer and visa progress.' }, ...(bits.length ? [{ type: 'list' as const, items: bits }] : []), ...(row.student_note ? [{ type: 'quote' as const, from: 'Note from your counselor', text: row.student_note }] : [])], cta: { label: 'See my progress', href: `${studentSite()}/student/login` } });
+          blocks: [...(!bits.length && !row.student_note ? [{ type: 'p' as const, text: 'Your counselor updated your offer and visa progress.' }] : []), ...(bits.length ? [{ type: 'list' as const, items: bits }] : []), ...(row.student_note ? [{ type: 'quote' as const, from: 'Note from your counselor', text: row.student_note }] : [])], cta: { label: 'See my progress', href: `${studentSite()}/student/login` } });
         await addNotice({ email: a.email, applicationId: id, kind: 'offer', title: 'An update on your offer and visa', body: bits.join(' · ') || 'Your counselor updated your progress.', href: '/student#offer', by: staff.email });
         await db.from('portal_messages').insert({ application_id: id, to_email: a.email, to_kind: 'student', subject: 'An update on your application', body: bits.join(' · ') || 'Offer & visa update', sent_by: staff.email });
         extra = ' The student was emailed.';
