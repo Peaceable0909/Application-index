@@ -35,3 +35,7 @@ export type Stats = {
 };
 
 export type Question = { id: string; position: number; question: string; category: string; guidance: string | null; model_answer: string | null; active: boolean };
+
+/** The training is for applicants to Regent College London (matched on the university name, e.g. "Regent College London (RCL)"). */
+export const isRegentCollege = (school: string | null | undefined) => /regent|\brcl\b/i.test(school || '');
+export const regentApp = <T extends { school: string | null }>(apps: T[]): T | undefined => apps.find((a) => isRegentCollege(a.school));
