@@ -14,7 +14,6 @@ import ProgressRing from '@/components/ProgressRing';
 import LocalTime from '@/components/LocalTime';
 import ChecklistPanel from '@/components/ChecklistPanel';
 import PushToggle from '@/components/PushToggle';
-import { regentApp } from '@/lib/credShared';
 
 export const maxDuration = 60;
 const fmtD = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -58,7 +57,7 @@ export default async function StudentHome() {
         <Link href={nu.href} className="st-btn light">{nu.cta} <Icon n="arrow" size={16} /></Link>
       </section>
 
-      {regentApp(me.apps) && (
+      {(
         <Link href="/student/interview/credibility" className="st-card cr-entry" style={{ ['--i' as string]: i++ }}>
           <span className="ic"><Icon n="video" size={24} /></span>
           <span className="tx"><b>Credibility Test Training</b><small>Watch the video and practise your interview answers.</small></span>

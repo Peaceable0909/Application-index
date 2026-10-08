@@ -36,6 +36,7 @@ export type Stats = {
 
 export type Question = { id: string; position: number; question: string; category: string; guidance: string | null; model_answer: string | null; active: boolean };
 
-/** The training is for applicants to Regent College London (matched on the university name, e.g. "Regent College London (RCL)"). */
-export const isRegentCollege = (school: string | null | undefined) => /regent|\brcl\b/i.test(school || '');
-export const regentApp = <T extends { school: string | null }>(apps: T[]): T | undefined => apps.find((a) => isRegentCollege(a.school));
+/** "Regent College London (RCL)" -> "Regent College London". */
+export const universityName = (school: string | null | undefined) => (school || '').replace(/\s*\([^)]*\)/g, '').trim() || 'your university';
+/** Questions and tips can contain {university}; each student sees their own university's name there. */
+export const fillUniversity = (text: string | null | undefined, school: string | null | undefined) => (text == null ? text : text.replace(/\{university\}/gi, universityName(school))) as string;

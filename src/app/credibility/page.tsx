@@ -39,7 +39,7 @@ export default async function Credibility({ searchParams }: { searchParams: Prom
   return (
     <>
       <div className="head" style={{ justifyContent: 'space-between' }}><h1>Credibility Test Training</h1><Link href="/credibility/preview" className="btn ghost sm"><Icon n="eye" size={14} /> Preview as student</Link></div>
-      <p className="sub">Manage the training video and practice questions Regent College London students see, and follow how they are doing.</p>
+      <p className="sub">Manage the training video and practice questions every student sees, and follow how they are doing. The questions are the same for everyone; only the video changes.</p>
       {sp.msg && <div className="card ok">{sp.msg}</div>}{sp.err && <div className="card err">{sp.err}</div>}
       <div className="grid g3" style={{ marginBottom: 6 }}>
         <div className="card"><div className="stat-l">Students practising</div><div className="stat">{rows.length}</div></div>
