@@ -16,7 +16,7 @@ export async function addNotice(o: { email: string | null | undefined; applicati
     if (dup?.length) return;
     await db.from('portal_student_notices').insert({ email, application_id: o.applicationId || null, kind: o.kind, title: o.title.slice(0, 160), body: (o.body || '').slice(0, 600) || null, href: o.href || null, created_by: o.by || null });
     // also a phone notification, if they turned that on and aren't already looking at the portal
-    await sendPush({ emails: [email], title: o.title, body: o.body, url: o.href || '/student', tag: `n-${o.kind}`, skipIfActiveMs: 45_000 });
+    await sendPush({ emails: [email], title: o.title, body: o.body, url: o.href || '/student', tag: `n-${o.kind}`, skipIfActiveMs: 45_000, ...(o.kind === 'message' ? { calmMs: 6 * 3600_000 } : {}) });
   } catch { /* a missing notice must never break the action that caused it */ }
 }
 
