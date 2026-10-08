@@ -4,7 +4,6 @@ import { currentStudent } from '@/lib/student';
 import { actor, loadThread } from '@/lib/thread';
 import { loadStudentData } from '@/lib/studentData';
 import ChatThread from '@/components/ChatThread';
-import Avatar from '@/components/Avatar';
 
 export default async function StudentMessages() {
   if (await currentStaff()) redirect('/');
@@ -15,12 +14,7 @@ export default async function StudentMessages() {
   const t = a ? await loadThread(a, false) : { msgs: [], other: undefined };
   const c = d.counselor, first = c ? c.display.split(' ')[0] : 'your counselor';
   return (
-    <div className="st-page">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
-        {c && <Avatar name={c.display} url={c.avatar_url} color={c.color} size={48} />}
-        <div><h1 className="st-h1" style={{ margin: 0 }}>{c ? c.display : 'Messages'}</h1><p className="st-sub" style={{ margin: 0 }}>{c ? c.title : 'A counselor will be assigned to you soon.'}</p></div>
-      </div>
-      <ChatThread as="student" appId={d.cards[0].folderApp.application_id} other={first} msgs={t.msgs} otherInit={t.other} />
-    </div>
+    <ChatThread as="student" appId={d.cards[0].folderApp.application_id} other={first} msgs={t.msgs} otherInit={t.other}
+      backHref="/student" title={c ? c.display : 'Your counselor'} avatar={c ? { name: c.display, url: c.avatar_url, color: c.color } : undefined} />
   );
 }
