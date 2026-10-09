@@ -4,7 +4,7 @@ import Link from 'next/link';
 import Icon from './Icon';
 import Avatar from './Avatar';
 import Sticker from './Sticker';
-import { STICKERS, parseSticker, plainBody, stickerToken } from '@/lib/stickers';
+import { STICKERS, isStickerFile, parseSticker, plainBody, stickerToken } from '@/lib/stickers';
 import { addMine, listMine, removeMine, stickerExt, STICKER_TYPES, type MySticker } from '@/lib/myStickers';
 import type { ThreadMsg } from '@/lib/thread';
 import { ALL_DOC_TYPES } from '@/lib/constants';
@@ -238,7 +238,7 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
           const d = dayLabel(m.at), sep = d !== lastDay; lastDay = d;
           const prev = list[i - 1], first = sep || !prev || prev.mine !== m.mine;
           const stk = !m.deleted && m.kind === 'text' ? parseSticker(m.body) : null;
-          const stkImg = !m.deleted && m.kind === 'image' && !!m.att?.name.startsWith('sticker_');
+          const stkImg = !m.deleted && m.kind === 'image' && !m.body && isStickerFile(m.att?.name, m.att?.mime);
           const mediaOnly = !m.deleted && !m.body && m.kind === 'image' && !m.reply;
           return (
             <div key={m.id} id={`msg-${m.id}`} className={`st-row-msg ${cur === m.id ? 'hit' : ''} ${first ? 'gap' : ''}`} data-mine={m.mine}>
