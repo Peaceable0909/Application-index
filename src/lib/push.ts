@@ -21,12 +21,16 @@ export async function vapid(): Promise<{ publicKey: string; privateKey: string }
 
 export type PushOpts = { emails: string[]; title: string; body?: string; url?: string; tag?: string; skipIfActiveMs?: number; calmMs?: number; ignorePrefs?: boolean };
 
-/** Sends a notification to every device the given people have turned on. Best effort: never throws, and removes devices that have gone away. */
+type Note = { email: string; result: string; detail?: string };
+
+/** Sends a notification to every device the given people have turned on. Best effort: never throws, and removes devices that have gone away. Every decision is written to portal_push_log. */
 export async function sendPush(o: PushOpts): Promise<{ sent: number }> {
+  const notes: Note[] = [];
+  const db = admin();
+  const note = (emails: string[], result: string, detail?: string) => emails.forEach((email) => notes.push({ email, result, detail }));
   try {
     const emails = [...new Set(o.emails.map((e) => (e || '').trim().toLowerCase()).filter(Boolean))];
     if (!emails.length) return { sent: 0 };
-    const db = admin();
     let targets = emails;
     if (o.skipIfActiveMs) {
       // someone looking at the portal right now doesn't need a pop-up
@@ -36,22 +40,25 @@ export async function sendPush(o: PushOpts): Promise<{ sent: number }> {
         db.from('portal_student_seen').select('email, last_active_at').in('email', emails),
       ]);
       const active = new Set([...(st || []).filter((r) => r.last_seen_at && new Date(r.last_seen_at).getTime() > since).map((r) => r.email), ...(stu || []).filter((r) => new Date(r.last_active_at).getTime() > since).map((r) => r.email)]);
+      note(emails.filter((e) => active.has(e)), 'skipped_active', 'was using the portal in the last few seconds');
       targets = emails.filter((e) => !active.has(e));
     }
-    // each person's own setting: 'off' = nothing, 'every' = every message, 'every' (default, like WhatsApp) = every message, 'first' = calm
+    // each person's own setting: 'off' = nothing, 'every' (default, like WhatsApp) = every message, 'first' = calm
     const every = new Set<string>();
     if (!o.ignorePrefs && targets.length) {
       const { data: prefs } = await db.from('portal_push_prefs').select('email, mode').in('email', targets);
       const mode = new Map((prefs || []).map((p) => [p.email as string, p.mode as string]));
+      note(targets.filter((e) => mode.get(e) === 'off'), 'skipped_off', 'turned phone alerts off');
       targets = targets.filter((e) => mode.get(e) !== 'off');
       for (const e of targets) if (mode.get(e) !== 'first') every.add(e);
     }
     if (!targets.length) return { sent: 0 };
     // only people with a device turned on count: otherwise the calm window would be used up by messages nobody could receive
     const { data: subs } = await db.from('portal_push_subs').select('id, email, endpoint, p256dh, auth').in('email', targets);
-    if (!subs?.length) return { sent: 0 };
-    const withDevice = new Set(subs.map((x) => x.email as string));
+    const withDevice = new Set((subs || []).map((x) => x.email as string));
+    note(targets.filter((e) => !withDevice.has(e)), 'no_device', 'no phone or browser has alerts turned on');
     targets = targets.filter((e) => withDevice.has(e));
+    if (!subs?.length || !targets.length) return { sent: 0 };
     // calm mode: after one notification for a conversation, further ones wait until `calmMs` has passed
     const extra = new Map<string, number>();
     if (o.calmMs && o.tag) {
@@ -60,7 +67,7 @@ export async function sendPush(o: PushOpts): Promise<{ sent: number }> {
       const now = Date.now(), quiet: string[] = targets.filter((e) => every.has(e));
       for (const e of calm) {
         const r = (rows || []).find((x) => x.email === e);
-        if (r && now - new Date(r.last_sent_at).getTime() < o.calmMs) { await db.from('portal_push_throttle').update({ suppressed: r.suppressed + 1 }).eq('email', e).eq('tag', o.tag); }
+        if (r && now - new Date(r.last_sent_at).getTime() < o.calmMs) { note([e], 'skipped_quiet', 'inside the quiet period'); await db.from('portal_push_throttle').update({ suppressed: r.suppressed + 1 }).eq('email', e).eq('tag', o.tag); }
         else { quiet.push(e); if (r?.suppressed) extra.set(e, r.suppressed); }
       }
       targets = quiet;
@@ -74,11 +81,21 @@ export async function sendPush(o: PushOpts): Promise<{ sent: number }> {
     const payload = JSON.stringify({ title: o.title.slice(0, 80), body: (more ? `${more + 1} new messages. Latest: ${o.body || ''}` : o.body || '').slice(0, 160), url: o.url || '/', tag: o.tag || 'portal' });
     let sent = 0; const dead: string[] = [], ok: string[] = [];
     await Promise.all(send.map(async (s) => {
-      try { await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload, { TTL: 3600, urgency: 'normal' }); sent++; ok.push(s.id); }
-      catch (e) { const code = (e as { statusCode?: number }).statusCode; if (code === 404 || code === 410) dead.push(s.id); }
+      try {
+        // high urgency + a day to live: the phone wakes for it straight away, and still gets it if it was off or out of signal for a while
+        const r = await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload, { TTL: 86400, urgency: 'high' });
+        sent++; ok.push(s.id); note([s.email as string], 'sent', `accepted by the push service (HTTP ${r.statusCode})`);
+      } catch (e) {
+        const x = e as { statusCode?: number; body?: string; message?: string };
+        if (x.statusCode === 404 || x.statusCode === 410) dead.push(s.id);
+        note([s.email as string], 'failed', `HTTP ${x.statusCode ?? '?'} ${(x.body || x.message || '').toString().slice(0, 160)}`);
+      }
     }));
     if (dead.length) await db.from('portal_push_subs').delete().in('id', dead);
     if (ok.length) await db.from('portal_push_subs').update({ last_ok_at: new Date().toISOString() }).in('id', ok);
     return { sent };
-  } catch { return { sent: 0 }; }
+  } catch (e) { note(o.emails.map((x) => (x || '').trim().toLowerCase()).filter(Boolean), 'error', ((e as Error).message || 'unknown').slice(0, 160)); return { sent: 0 }; }
+  finally {
+    if (notes.length) { try { await db.from('portal_push_log').insert(notes.map((n) => ({ email: n.email, tag: o.tag || null, result: n.result, detail: n.detail || null }))); } catch { /* the log is optional */ } }
+  }
 }
