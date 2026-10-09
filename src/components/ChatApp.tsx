@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import Avatar from './Avatar';
 import Icon from './Icon';
+import Sticker from './Sticker';
+import { STICKERS, parseSticker, plainBody, stickerToken } from '@/lib/stickers';
 import { COLORS, gradient } from '@/lib/profile';
 import type { Card, ChatMsg, Ref, RoomRow } from '@/lib/chat';
 
@@ -211,6 +213,7 @@ function Thread({ seed, onSeedUsed, room, me, who, people, online: onlineSeed, t
   const [editing, setEditing] = useState<ChatMsg | null>(null);
   const [sel, setSel] = useState<string | null>(null);
   const [emoji, setEmoji] = useState(false);
+  const [pickTab, setPickTab] = useState<'emoji' | 'stickers'>('emoji');
   const [info, setInfo] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -270,6 +273,13 @@ function Thread({ seed, onSeedUsed, room, me, who, people, online: onlineSeed, t
     } catch (e) { setErr((e as Error).message); }
     setBusy(false);
   }
+  async function sendSticker(id: string) {
+    if (busy) return;
+    setBusy(true); setErr('');
+    try { const j = await api(`/api/chat/rooms/${room.id}`, json('POST', { body: stickerToken(id), replyTo: reply?.id })); stick.current = true; merge([j.message]); setReply(null); setEmoji(false); onChanged(); }
+    catch (e) { setErr((e as Error).message); }
+    setBusy(false);
+  }
   const typing = () => { if (Date.now() - typed.current > 3000) { typed.current = Date.now(); api(`/api/chat/rooms/${room.id}`, json('PATCH', { typing: true })).catch(() => {}); } };
   const react = async (m: ChatMsg, e: string) => { setSel(null); try { merge([(await api(`/api/chat/messages/${m.id}`, json('POST', { emoji: e }))).message]); } catch (x) { setErr((x as Error).message); } };
   const del = async (m: ChatMsg) => { setSel(null); if (!confirm('Delete this message for everyone?')) return; try { merge([(await api(`/api/chat/messages/${m.id}`, { method: 'DELETE' })).message]); onChanged(); } catch (x) { setErr((x as Error).message); } };
@@ -309,15 +319,14 @@ function Thread({ seed, onSeedUsed, room, me, who, people, online: onlineSeed, t
                 {!mine && group && <span className="mav">{first ? <Avatar name={s.name} url={s.avatar_url} color={s.color} size={30} /> : null}</span>}
                 <div className="bubwrap">
                   {!mine && group && first && <span className="sname">{s.name}</span>}
-                  <div className={`bub ${gone ? 'gone' : ''} ${sel === m.id ? 'sel' : ''}`} onClick={(e) => { e.stopPropagation(); if (!gone && !(e.target as HTMLElement).closest('a')) setSel(sel === m.id ? null : m.id); }}>
-                    {m.reply && <div className="quote"><b>{who(m.reply.sender).name.split(' ')[0]}</b><span>{m.reply.text}</span></div>}
+                  <div className={`bub ${gone ? 'gone' : ''} ${sel === m.id ? 'sel' : ''} ${!gone && parseSticker(m.body) ? 'sticker' : ''}`} onClick={(e) => { e.stopPropagation(); if (!gone && !(e.target as HTMLElement).closest('a')) setSel(sel === m.id ? null : m.id); }}>
+                    {m.reply && <div className="quote"><b>{who(m.reply.sender).name.split(' ')[0]}</b><span>{plainBody(m.reply.text)}</span></div>}
                     {gone ? <p><em>🚫 This message was deleted</em></p> : <>
                       {m.cards.length > 0 && <Cards cards={m.cards} mine={mine} />}
                       {m.att && (m.att.mime.startsWith('image/')
                         ? <a href={m.att.url} target="_blank" rel="noreferrer" className="att-img" onClick={(e) => e.stopPropagation()}>{/* eslint-disable-next-line @next/next/no-img-element */}<img src={m.att.url} alt={m.att.name} loading="lazy" /></a>
                         : <a href={m.att.url} target="_blank" rel="noreferrer" className="att-file" onClick={(e) => e.stopPropagation()}><span className="ico"><Icon n="file" size={18} /></span><div><b>{m.att.name}</b><small>{size(m.att.size)}</small></div><Icon n="download" size={16} /></a>)}
-                      {m.body && <p><Rich text={m.body} mine={mine} /></p>}
-                      {m.body && <LinkCard body={m.body} />}
+                      {parseSticker(m.body) ? <Sticker s={parseSticker(m.body)!} size="lg" /> : <>{m.body && <p><Rich text={m.body} mine={mine} /></p>}{m.body && <LinkCard body={m.body} />}</>}
                     </>}
                     <small>{hm(m.created_at)}{m.edited_at && !gone ? ' · edited' : ''}{seen ? ' · Seen' : ''}</small>
                   </div>
@@ -348,7 +357,13 @@ function Thread({ seed, onSeedUsed, room, me, who, people, online: onlineSeed, t
             {sugg.map((u) => <button key={u.id} onClick={() => { addRefs([{ t: 'student', id: u.id, label: u.name }]); setText((t) => t.replace(/(^|\s)#[^\n#]{0,30}$/, '$1')); ta.current?.focus(); }}><span className="sinit">{initials2(u.name)}</span><div><b>{u.name}</b><small>{[u.school, u.programme].filter(Boolean).join(' · ')}</small></div></button>)}
           </div>
         )}
-        {emoji && <div className="picker">{PICKER.map((e) => <button key={e} onClick={() => { setText((t) => t + e); ta.current?.focus(); }}>{e}</button>)}</div>}
+        {emoji && (
+          <div className="picker" onClick={(e) => e.stopPropagation()}>
+            <div className="ptabs"><button type="button" className={pickTab === 'emoji' ? 'on' : ''} onClick={() => setPickTab('emoji')}>🙂 Emoji</button><button type="button" className={pickTab === 'stickers' ? 'on' : ''} onClick={() => setPickTab('stickers')}>✨ Stickers</button></div>
+            {pickTab === 'emoji' ? <div className="pgrid2">{PICKER.map((e) => <button key={e} onClick={() => { setText((t) => t + e); ta.current?.focus(); }}>{e}</button>)}</div>
+              : <div className="stk-all">{STICKERS.map((x) => <button key={x.id} type="button" onClick={() => sendSticker(x.id)} aria-label={x.label} disabled={busy}><Sticker s={x} size="sm" /></button>)}</div>}
+          </div>
+        )}
         <div className="chat-row">
           <input ref={fileIn} type="file" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) { setFile(f); setEditing(null); } e.target.value = ''; }} />
           <button className="iconbtn" title="Attach a file or photo" onClick={() => fileIn.current?.click()} disabled={!!editing}><Icon n="upload" size={18} /></button>
