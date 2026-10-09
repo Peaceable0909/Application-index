@@ -3,6 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import Icon from './Icon';
 import Avatar from './Avatar';
+import Sticker from './Sticker';
+import { STICKERS, parseSticker, plainBody, stickerToken } from '@/lib/stickers';
 import type { ThreadMsg } from '@/lib/thread';
 import { ALL_DOC_TYPES } from '@/lib/constants';
 
@@ -91,6 +93,8 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
   const [save, setSave] = useState<{ id: string; type: string; label: string; busy: boolean } | null>(null);
   const [note, setNote] = useState('');
   const [emoji, setEmoji] = useState<number | null>(null);
+  const [recent, setRecent] = useState<string[]>([]);
+  useEffect(() => { try { setRecent(JSON.parse(localStorage.getItem('wr_stickers') || '[]')); } catch { /* optional */ } }, []);
   const lastTyping = useRef(0);
   const box = useRef<HTMLDivElement>(null), end = useRef<HTMLDivElement>(null), ta = useRef<HTMLTextAreaElement>(null), pick = useRef<HTMLInputElement>(null), cam = useRef<HTMLInputElement>(null);
   const near = useRef(true), seen = useRef(new Set(msgs.map((m) => m.id))), mr = useRef<{ rec: MediaRecorder; chunks: Blob[]; t0: number; cancel: boolean; timer: ReturnType<typeof setInterval> } | null>(null);
@@ -195,6 +199,12 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
   let lastDay = '';
   const hasText = !!text.trim() || !!file;
   const addEmoji = (e: string) => { setText((t) => t + e); ta.current?.focus(); };
+  const STK_TAB = EMOJI_TABS.length;
+  function sendSticker(id: string) {
+    setErr(''); setEmoji(null);
+    void post({ body: stickerToken(id), replyTo: reply?.id && !reply.id.startsWith('tmp') ? reply.id : null }); setReply(null);
+    try { const r = [id, ...(JSON.parse(localStorage.getItem('wr_stickers') || '[]') as string[]).filter((x) => x !== id)].slice(0, 8); localStorage.setItem('wr_stickers', JSON.stringify(r)); setRecent(r); } catch { /* optional */ }
+  }
   return (
     <div className={`st-chat wa ${backHref ? 'wa-full' : ''}`} onClick={() => emoji !== null && setEmoji(null)}>
       <header className="wa-head">
@@ -209,17 +219,18 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
         {list.map((m, i) => {
           const d = dayLabel(m.at), sep = d !== lastDay; lastDay = d;
           const prev = list[i - 1], first = sep || !prev || prev.mine !== m.mine;
+          const stk = !m.deleted && m.kind === 'text' ? parseSticker(m.body) : null;
           const mediaOnly = !m.deleted && !m.body && m.kind === 'image' && !m.reply;
           return (
             <div key={m.id} id={`msg-${m.id}`} className={`st-row-msg ${cur === m.id ? 'hit' : ''} ${first ? 'gap' : ''}`} data-mine={m.mine}>
               {sep && <div className="st-day"><span>{d}</span></div>}
-              <div className={`st-bub ${m.mine ? 'mine' : ''} ${m.deleted ? 'gone' : ''} ${first ? 'first' : ''} ${m.failed ? 'failed' : ''} ${menu === m.id ? 'menu-open' : ''} ${mediaOnly ? 'media' : ''}`} onClick={() => { if (!m.deleted && !m.sending) setMenu((cur) => (cur === m.id ? null : m.id)); }}>
-                {m.reply && <div className="st-quote"><b>{m.reply.who === 'me' ? 'You' : otherName}</b><span>{m.reply.preview}</span></div>}
+              <div className={`st-bub ${m.mine ? 'mine' : ''} ${m.deleted ? 'gone' : ''} ${first ? 'first' : ''} ${m.failed ? 'failed' : ''} ${menu === m.id ? 'menu-open' : ''} ${mediaOnly ? 'media' : ''} ${stk ? 'sticker' : ''}`} onClick={() => { if (!m.deleted && !m.sending) setMenu((cur) => (cur === m.id ? null : m.id)); }}>
+                {m.reply && <div className="st-quote"><b>{m.reply.who === 'me' ? 'You' : otherName}</b><span>{plainBody(m.reply.preview)}</span></div>}
                 {m.deleted ? <p><em>🚫 This message was deleted</em></p> : <>
                   {m.kind === 'image' && m.att && /* eslint-disable-next-line @next/next/no-img-element */ <img className="st-img" src={m.localUrl || m.att.url} alt={m.att.name} loading="lazy" onClick={(e) => { e.stopPropagation(); setLightbox(m.localUrl || m.att!.url); }} />}
                   {m.kind === 'voice' && <Voice m={m} />}
                   {m.kind === 'file' && m.att && <a className="st-file" href={m.att.url ? `${m.att.url}${m.att.url.includes('?') ? '&' : '?'}download=1` : '#'} onClick={(e) => e.stopPropagation()}><span className="ic"><Icon n="file" size={20} /></span><span className="tx"><b>{m.att.name}</b><small>{kb(m.att.size)}</small></span><Icon n="download" size={16} /></a>}
-                  {m.body && <p>{linkify(m.body, sq)}</p>}
+                  {stk ? <Sticker s={stk} size="lg" /> : m.body && <p>{linkify(m.body, sq)}</p>}
                 </>}
                 <span className="meta">{clock(m.at)}{m.mine && !m.deleted && <Ticks m={m} />}</span>
                 {Object.keys(m.reactions).length > 0 && <div className="st-rx">{Object.entries(m.reactions).map(([e, v]) => <span key={e} className={v.me ? 'me' : ''}>{e}{v.n > 1 ? ` ${v.n}` : ''}</span>)}</div>}
@@ -243,12 +254,18 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
       {note && <div className="st-note">{note}</div>}
       {away > 0 && <button className="st-jump" onClick={toBottom} aria-label="Jump to latest"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg><i>{away}</i></button>}
       {err && <div className="st-err wa-err">{err}</div>}
-      {reply && <div className="st-replybar"><div><b>{reply.mine ? 'You' : otherName}</b><span>{reply.body.slice(0, 90) || (reply.kind === 'image' ? '📷 Photo' : reply.kind === 'voice' ? '🎤 Voice note' : '📎 File')}</span></div><button onClick={() => setReply(null)} aria-label="Cancel reply">×</button></div>}
+      {reply && <div className="st-replybar"><div><b>{reply.mine ? 'You' : otherName}</b><span>{plainBody(reply.body).slice(0, 90) || (reply.kind === 'image' ? '📷 Photo' : reply.kind === 'voice' ? '🎤 Voice note' : '📎 File')}</span></div><button onClick={() => setReply(null)} aria-label="Cancel reply">×</button></div>}
       {file && <div className="st-attach">{file.f.type.startsWith('image/') ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={file.url} alt="" /> : <span className="ic"><Icon n="file" size={20} /></span>}<div><b>{file.f.name}</b><small>{kb(file.f.size)}</small></div><button onClick={() => setFile(null)} aria-label="Remove">×</button></div>}
       {emoji !== null && (
         <div className="wa-emoji" onClick={(e) => e.stopPropagation()}>
-          <div className="tabs">{EMOJI_TABS.map((t, i) => <button key={t.k} type="button" className={emoji === i ? 'on' : ''} onClick={() => setEmoji(i)} aria-label={t.k}>{t.icon}</button>)}</div>
-          <div className="grid">{Array.from(new Intl.Segmenter('en', { granularity: 'grapheme' }).segment(EMOJI_TABS[emoji].list), (x) => x.segment).map((e, i) => <button key={i} type="button" onClick={() => addEmoji(e)}>{e}</button>)}</div>
+          <div className="tabs">{EMOJI_TABS.map((t, i) => <button key={t.k} type="button" className={emoji === i ? 'on' : ''} onClick={() => setEmoji(i)} aria-label={t.k}>{t.icon}</button>)}<button type="button" className={emoji === STK_TAB ? 'on' : ''} onClick={() => setEmoji(STK_TAB)} aria-label="Stickers"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20 12a8 8 0 10-8 8h1.2a2.8 2.8 0 002-.8l4-4A2.8 2.8 0 0020 12z" /><path d="M20 13h-3.5a2.5 2.5 0 00-2.5 2.5V20" /><circle cx="9" cy="10.5" r=".9" fill="currentColor" stroke="none" /><circle cx="14.5" cy="10.5" r=".9" fill="currentColor" stroke="none" /><path d="M8.8 14.2c.8.8 1.8 1.2 3 1.2" /></svg></button></div>
+          {emoji === STK_TAB ? (
+            <div className="stk-grid">
+              {recent.length > 0 && <><p className="stk-h">Recent</p><div className="stk-row">{recent.map((id) => { const x = STICKERS.find((q) => q.id === id); return x ? <button key={id} type="button" onClick={() => sendSticker(id)} aria-label={x.label}><Sticker s={x} size="sm" /></button> : null; })}</div></>}
+              <p className="stk-h">All stickers</p>
+              <div className="stk-all">{STICKERS.map((x) => <button key={x.id} type="button" onClick={() => sendSticker(x.id)} aria-label={x.label}><Sticker s={x} size="sm" /></button>)}</div>
+            </div>
+          ) : <div className="grid">{Array.from(new Intl.Segmenter('en', { granularity: 'grapheme' }).segment(EMOJI_TABS[emoji].list), (x) => x.segment).map((e, i) => <button key={i} type="button" onClick={() => addEmoji(e)}>{e}</button>)}</div>}
         </div>
       )}
       {rec ? (

@@ -1,3 +1,4 @@
+import { plainBody } from './stickers';
 import { admin } from './supabase';
 import { canAccessApp, canSee, Staff } from './auth';
 import { REQUIRED_DOCS } from './constants';
@@ -119,4 +120,4 @@ export async function canTag(me: Staff, applicationId: string | null | undefined
   return applicationId && (await canAccessApp(me, applicationId)) ? applicationId : null;
 }
 
-export const previewOf = (body: string, att?: string | null) => (body.trim() ? body.trim().replace(/\s+/g, ' ').slice(0, 80) : att ? `📎 ${att}` : '');
+export const previewOf = (body: string, att?: string | null) => (body.trim() ? plainBody(body.trim()).replace(/\s+/g, ' ').slice(0, 80) : att ? `📎 ${att}` : '');
