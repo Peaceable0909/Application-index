@@ -34,3 +34,6 @@ const RE = /^\[\[sticker:([a-z0-9-]{1,30})\]\]$/;
 export const parseSticker = (body: string | null | undefined): Sticker | null => { const m = RE.exec((body || '').trim()); return m ? STICKERS.find((s) => s.id === m[1]) || null : null; };
 /** Readable text for places that can't draw a sticker (alerts, emails, chat list, reply quotes). */
 export const plainBody = (body: string): string => { const s = parseSticker(body); return s ? `${s.emoji} Sticker: ${s.label}` : body; };
+
+/** An attachment that should be drawn as a sticker (no bubble, sticker size): sent as a sticker, or any GIF. */
+export const isStickerFile = (name?: string | null, mime?: string | null) => !!name && (name.startsWith('sticker_') || mime === 'image/gif' || /\.gif$/i.test(name));

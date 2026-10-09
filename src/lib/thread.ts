@@ -1,4 +1,4 @@
-import { plainBody } from './stickers';
+import { isStickerFile, plainBody } from './stickers';
 import { admin } from './supabase';
 import { currentStaff, canAccessApp, type Staff } from './auth';
 import { currentStudent } from './student';
@@ -43,7 +43,7 @@ export async function actor(appIdParam?: string | null): Promise<Actor | null> {
   return { role: 'student', email: me.email, appId, studentEmail: me.email };
 }
 
-const preview = (r: Row) => (r.deleted_at ? 'Message deleted' : plainBody(r.body.trim()).slice(0, 80) || (r.att_mime?.startsWith('image/') ? (r.att_name?.startsWith('sticker_') ? '🙂 Sticker' : '📷 Photo') : r.att_mime?.startsWith('audio/') ? '🎤 Voice note' : `📎 ${r.att_name || 'File'}`));
+const preview = (r: Row) => (r.deleted_at ? 'Message deleted' : plainBody(r.body.trim()).slice(0, 80) || (r.att_mime?.startsWith('image/') ? (isStickerFile(r.att_name, r.att_mime) ? '🙂 Sticker' : '📷 Photo') : r.att_mime?.startsWith('audio/') ? '🎤 Voice note' : `📎 ${r.att_name || 'File'}`));
 
 export function shape(rows: Row[], a: Actor): ThreadMsg[] {
   const byId = new Map(rows.map((r) => [r.id, r]));
@@ -118,7 +118,7 @@ export async function postMessage(a: Actor, o: { body: string; replyTo?: string 
   const { data, error } = await db.from('portal_student_msgs').insert({ student_email: a.studentEmail, application_id: a.appId, from_student: a.role === 'student', sender_email: a.email, body, reply_to, ...att, ...(a.role === 'student' ? { student_read_at: now } : { staff_read_at: now }) }).select('id').single();
   if (error || !data) return { ok: false, error: 'Could not send. Please try again.' };
   const quiet = !prev?.[0] || Date.now() - new Date(prev[0].created_at).getTime() > 3 * 3600_000;
-  const text = plainBody(body) || (file?.type.startsWith('image/') ? (file.name.startsWith('sticker_') ? '🙂 Sticker' : '📷 Photo') : file?.type.startsWith('audio/') ? '🎤 Voice note' : `📎 ${file?.name || 'File'}`);
+  const text = plainBody(body) || (file?.type.startsWith('image/') ? (isStickerFile(file.name, file.type) ? '🙂 Sticker' : '📷 Photo') : file?.type.startsWith('audio/') ? '🎤 Voice note' : `📎 ${file?.name || 'File'}`);
   if (a.role === 'student') {
     // phone alert for the counselor (or the admins when nobody is assigned)
     try {

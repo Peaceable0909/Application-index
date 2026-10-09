@@ -171,7 +171,7 @@ button.iconbtn { padding:0; }
 .st-bub.sticker .stk { animation:stkPop .5s cubic-bezier(.22,1,.36,1) both, stkBob 3.4s ease-in-out .7s infinite; }
 .st-bub.sticker .stk .em { display:inline-block; animation:stkWiggle 3.4s ease-in-out 1s infinite; }
 /* a sent GIF / WebP / PNG sticker: no bubble, no frame */
-.wa .st-img.stkimg { width:min(170px,48vw); height:auto; max-height:210px; object-fit:contain; background:none; border-radius:0; margin:0; filter:drop-shadow(0 2px 3px rgba(0,0,0,.25)); animation:stkPop .5s cubic-bezier(.22,1,.36,1) both; --tilt:0deg; }
+.wa .st-img.stkimg { width:132px; height:132px; max-height:none; object-fit:contain; background:none; border-radius:0; margin:0; filter:drop-shadow(0 2px 3px rgba(0,0,0,.25)); animation:stkPop .5s cubic-bezier(.22,1,.36,1) both; --tilt:0deg; }
 .wa .st-bub.sticker:has(.stkimg) { padding-bottom:20px; }
 .stk-h .stk-edit { float:right; height:auto; padding:2px 10px; border-radius:99px; border:0; background:var(--wa-hover); color:#00a884; font:700 12px var(--font-ui), system-ui; text-transform:none; letter-spacing:0; box-shadow:none; }
 .stk-mine { display:grid; grid-template-columns:repeat(auto-fill,minmax(76px,1fr)); gap:8px; padding:4px 2px 6px; }
