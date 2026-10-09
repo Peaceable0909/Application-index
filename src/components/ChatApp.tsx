@@ -25,7 +25,7 @@ const json = (method: string, body: unknown): RequestInit => ({ method, headers:
 
 /** Photos from phones are huge: shrink before upload so they fit under the 4 MB limit. */
 async function shrink(f: File): Promise<File> {
-  if (!f.type.startsWith('image/') || f.type === 'image/gif' || f.size < 700_000) return f;
+  if (!f.type.startsWith('image/') || f.type === 'image/gif' || f.type === 'image/webp' || f.size < 700_000) return f;
   try {
     const bmp = await createImageBitmap(f), k = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
     const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);

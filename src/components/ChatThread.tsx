@@ -5,6 +5,7 @@ import Icon from './Icon';
 import Avatar from './Avatar';
 import Sticker from './Sticker';
 import { STICKERS, parseSticker, plainBody, stickerToken } from '@/lib/stickers';
+import { addMine, listMine, removeMine, stickerExt, STICKER_TYPES, type MySticker } from '@/lib/myStickers';
 import type { ThreadMsg } from '@/lib/thread';
 import { ALL_DOC_TYPES } from '@/lib/constants';
 
@@ -28,7 +29,7 @@ function linkify(t: string, q = '') {
 }
 
 async function shrink(f: File): Promise<File> {
-  if (!f.type.startsWith('image/') || f.type === 'image/gif' || f.size < 600_000) return f;
+  if (!f.type.startsWith('image/') || f.type === 'image/gif' || f.type === 'image/webp' || f.name.startsWith('sticker_') || f.size < 600_000) return f;
   try {
     const bmp = await createImageBitmap(f), k = Math.min(1, 1600 / Math.max(bmp.width, bmp.height)), c = document.createElement('canvas');
     c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k); c.getContext('2d')!.drawImage(bmp, 0, 0, c.width, c.height);
@@ -94,6 +95,9 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
   const [note, setNote] = useState('');
   const [emoji, setEmoji] = useState<number | null>(null);
   const [recent, setRecent] = useState<string[]>([]);
+  const [mine, setMine] = useState<(MySticker & { url: string })[]>([]);
+  const [manage, setManage] = useState(false);
+  const stkPick = useRef<HTMLInputElement>(null);
   useEffect(() => { try { setRecent(JSON.parse(localStorage.getItem('wr_stickers') || '[]')); } catch { /* optional */ } }, []);
   const lastTyping = useRef(0);
   const box = useRef<HTMLDivElement>(null), end = useRef<HTMLDivElement>(null), ta = useRef<HTMLTextAreaElement>(null), pick = useRef<HTMLInputElement>(null), cam = useRef<HTMLInputElement>(null);
@@ -200,6 +204,20 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
   const hasText = !!text.trim() || !!file;
   const addEmoji = (e: string) => { setText((t) => t + e); ta.current?.focus(); };
   const STK_TAB = EMOJI_TABS.length;
+  const loadMine = useCallback(async () => {
+    try { const all = await listMine(); setMine((old) => { old.forEach((o) => URL.revokeObjectURL(o.url)); return all.map((x) => ({ ...x, url: URL.createObjectURL(x.blob) })); }); } catch { /* storage can be off in private windows */ }
+  }, []);
+  useEffect(() => { if (emoji === STK_TAB) void loadMine(); }, [emoji, STK_TAB, loadMine]);
+  /** Sends a picture as a sticker: no bubble, animation kept. */
+  function sendAsSticker(blob: Blob, type: string) {
+    setErr(''); setEmoji(null); setFile(null);
+    void post({ body: '', file: new File([blob], `sticker_${Date.now()}.${stickerExt(type)}`, { type }), replyTo: reply?.id && !reply.id.startsWith('tmp') ? reply.id : null }); setReply(null);
+  }
+  async function addFiles(files: FileList | null) {
+    const list = Array.from(files || []); let bad = '';
+    for (const f of list) { const e = await addMine(f).catch(() => 'Could not save that on this device.'); if (e) bad = e; }
+    setErr(bad); void loadMine();
+  }
   function sendSticker(id: string) {
     setErr(''); setEmoji(null);
     void post({ body: stickerToken(id), replyTo: reply?.id && !reply.id.startsWith('tmp') ? reply.id : null }); setReply(null);
@@ -220,14 +238,15 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
           const d = dayLabel(m.at), sep = d !== lastDay; lastDay = d;
           const prev = list[i - 1], first = sep || !prev || prev.mine !== m.mine;
           const stk = !m.deleted && m.kind === 'text' ? parseSticker(m.body) : null;
+          const stkImg = !m.deleted && m.kind === 'image' && !!m.att?.name.startsWith('sticker_');
           const mediaOnly = !m.deleted && !m.body && m.kind === 'image' && !m.reply;
           return (
             <div key={m.id} id={`msg-${m.id}`} className={`st-row-msg ${cur === m.id ? 'hit' : ''} ${first ? 'gap' : ''}`} data-mine={m.mine}>
               {sep && <div className="st-day"><span>{d}</span></div>}
-              <div className={`st-bub ${m.mine ? 'mine' : ''} ${m.deleted ? 'gone' : ''} ${first ? 'first' : ''} ${m.failed ? 'failed' : ''} ${menu === m.id ? 'menu-open' : ''} ${mediaOnly ? 'media' : ''} ${stk ? 'sticker' : ''}`} onClick={() => { if (!m.deleted && !m.sending) setMenu((cur) => (cur === m.id ? null : m.id)); }}>
+              <div className={`st-bub ${m.mine ? 'mine' : ''} ${m.deleted ? 'gone' : ''} ${first ? 'first' : ''} ${m.failed ? 'failed' : ''} ${menu === m.id ? 'menu-open' : ''} ${mediaOnly && !stkImg ? 'media' : ''} ${stk || stkImg ? 'sticker' : ''}`} onClick={() => { if (!m.deleted && !m.sending) setMenu((cur) => (cur === m.id ? null : m.id)); }}>
                 {m.reply && <div className="st-quote"><b>{m.reply.who === 'me' ? 'You' : otherName}</b><span>{plainBody(m.reply.preview)}</span></div>}
                 {m.deleted ? <p><em>🚫 This message was deleted</em></p> : <>
-                  {m.kind === 'image' && m.att && /* eslint-disable-next-line @next/next/no-img-element */ <img className="st-img" src={m.localUrl || m.att.url} alt={m.att.name} loading="lazy" onClick={(e) => { e.stopPropagation(); setLightbox(m.localUrl || m.att!.url); }} />}
+                  {m.kind === 'image' && m.att && /* eslint-disable-next-line @next/next/no-img-element */ <img className={`st-img ${stkImg ? 'stkimg' : ''}`} src={m.localUrl || m.att.url} alt={m.att.name} loading="lazy" onClick={(e) => { e.stopPropagation(); setLightbox(m.localUrl || m.att!.url); }} />}
                   {m.kind === 'voice' && <Voice m={m} />}
                   {m.kind === 'file' && m.att && <a className="st-file" href={m.att.url ? `${m.att.url}${m.att.url.includes('?') ? '&' : '?'}download=1` : '#'} onClick={(e) => e.stopPropagation()}><span className="ic"><Icon n="file" size={20} /></span><span className="tx"><b>{m.att.name}</b><small>{kb(m.att.size)}</small></span><Icon n="download" size={16} /></a>}
                   {stk ? <Sticker s={stk} size="lg" /> : m.body && <p>{linkify(m.body, sq)}</p>}
@@ -255,12 +274,24 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
       {away > 0 && <button className="st-jump" onClick={toBottom} aria-label="Jump to latest"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg><i>{away}</i></button>}
       {err && <div className="st-err wa-err">{err}</div>}
       {reply && <div className="st-replybar"><div><b>{reply.mine ? 'You' : otherName}</b><span>{plainBody(reply.body).slice(0, 90) || (reply.kind === 'image' ? '📷 Photo' : reply.kind === 'voice' ? '🎤 Voice note' : '📎 File')}</span></div><button onClick={() => setReply(null)} aria-label="Cancel reply">×</button></div>}
-      {file && <div className="st-attach">{file.f.type.startsWith('image/') ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={file.url} alt="" /> : <span className="ic"><Icon n="file" size={20} /></span>}<div><b>{file.f.name}</b><small>{kb(file.f.size)}</small></div><button onClick={() => setFile(null)} aria-label="Remove">×</button></div>}
+      {file && <div className="st-attach">{file.f.type.startsWith('image/') ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={file.url} alt="" /> : <span className="ic"><Icon n="file" size={20} /></span>}<div><b>{file.f.name}</b><small>{kb(file.f.size)}</small>{STICKER_TYPES.test(file.f.type) && file.f.size <= 2 * 1024 * 1024 && <span className="stk-acts"><button type="button" onClick={() => sendAsSticker(file.f, file.f.type)}>Send as sticker</button><button type="button" onClick={async () => { const e = await addMine(file.f).catch(() => 'Could not save that on this device.'); setNote(e || 'Saved to My stickers ✓'); setTimeout(() => setNote(''), 3000); if (e) setErr(e); }}>Save to My stickers</button></span>}</div><button onClick={() => setFile(null)} aria-label="Remove">×</button></div>}
       {emoji !== null && (
         <div className="wa-emoji" onClick={(e) => e.stopPropagation()}>
           <div className="tabs">{EMOJI_TABS.map((t, i) => <button key={t.k} type="button" className={emoji === i ? 'on' : ''} onClick={() => setEmoji(i)} aria-label={t.k}>{t.icon}</button>)}<button type="button" className={emoji === STK_TAB ? 'on' : ''} onClick={() => setEmoji(STK_TAB)} aria-label="Stickers"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20 12a8 8 0 10-8 8h1.2a2.8 2.8 0 002-.8l4-4A2.8 2.8 0 0020 12z" /><path d="M20 13h-3.5a2.5 2.5 0 00-2.5 2.5V20" /><circle cx="9" cy="10.5" r=".9" fill="currentColor" stroke="none" /><circle cx="14.5" cy="10.5" r=".9" fill="currentColor" stroke="none" /><path d="M8.8 14.2c.8.8 1.8 1.2 3 1.2" /></svg></button></div>
           {emoji === STK_TAB ? (
             <div className="stk-grid">
+              <p className="stk-h">My stickers <button type="button" className="stk-edit" onClick={() => setManage((v) => !v)}>{manage ? 'Done' : 'Edit'}</button></p>
+              <div className="stk-mine">
+                <button type="button" className="stk-add" onClick={() => stkPick.current?.click()} aria-label="Add stickers from your phone"><span>+</span><small>Add</small></button>
+                {mine.map((x) => (
+                  <div key={x.id} className="stk-my">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <button type="button" onClick={() => !manage && sendAsSticker(x.blob, x.type)} aria-label="Send this sticker"><img src={x.url} alt="" /></button>
+                    {manage && <button type="button" className="x" onClick={async () => { await removeMine(x.id); void loadMine(); }} aria-label="Remove sticker">×</button>}
+                  </div>
+                ))}
+              </div>
+              {mine.length === 0 && <p className="stk-hint">Add GIF, WebP or PNG stickers from your phone. Animated ones keep moving.</p>}
               {recent.length > 0 && <><p className="stk-h">Recent</p><div className="stk-row">{recent.map((id) => { const x = STICKERS.find((q) => q.id === id); return x ? <button key={id} type="button" onClick={() => sendSticker(id)} aria-label={x.label}><Sticker s={x} size="sm" /></button> : null; })}</div></>}
               <p className="stk-h">All stickers</p>
               <div className="stk-all">{STICKERS.map((x) => <button key={x.id} type="button" onClick={() => sendSticker(x.id)} aria-label={x.label}><Sticker s={x} size="sm" /></button>)}</div>
@@ -282,6 +313,7 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
         </form>
       )}
       <input ref={pick} type="file" hidden accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" onChange={(e) => { const f = e.target.files?.[0]; if (f) setFile({ f, url: URL.createObjectURL(f) }); e.target.value = ''; }} />
+      <input ref={stkPick} type="file" hidden multiple accept="image/gif,image/webp,image/png" onChange={(e) => { void addFiles(e.target.files); e.target.value = ''; }} />
       <input ref={cam} type="file" hidden accept="image/*" capture="environment" onChange={(e) => { const f = e.target.files?.[0]; if (f) setFile({ f, url: URL.createObjectURL(f) }); e.target.value = ''; }} />
       {save && (
         <div className="st-lightbox" style={{ cursor: 'default' }} onClick={() => !save.busy && setSave(null)}>
