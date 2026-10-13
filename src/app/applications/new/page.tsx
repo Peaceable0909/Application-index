@@ -16,13 +16,13 @@ export default async function NewApplication({ searchParams }: { searchParams: P
   return (
     <>
       <Link href="/applications" className="crumb"><Icon n="left" size={15} /> Back to Applications</Link>
-      <div className="head"><h1>Add a new application</h1></div>
-      <p className="sub">Adds the student as a new row at the bottom of Sheet1 and opens their record here.</p>
+      <div className="head"><h1>Add a student</h1></div>
+      <p className="sub">Saves the student in the portal straight away, adds them to Sheet1 as well, and opens their record.</p>
       {sp.err && <div className="card err">{sp.err}</div>}
       <div className="card" style={{ maxWidth: 820 }}>
         <form action={createApplication} className="grid g2" style={{ gap: 16 }}>
-          {f('Full name *', <input name="name" required />)}
-          {f('Email', <input name="email" type="email" />)}
+          {f('Full name *', <input name="name" required autoFocus autoComplete="off" />)}
+          {f('Email', <input name="email" type="email" autoComplete="off" />)}
           {f('Phone', <input name="phone" />)}
           {f('University', <input name="school" list="schools" placeholder="e.g. RCL" /> )}
           <datalist id="schools"><option value="RCL" /><option value="CCCU" /><option value="BPP University" /><option value="York St John University" /></datalist>
@@ -34,7 +34,8 @@ export default async function NewApplication({ searchParams }: { searchParams: P
           {f('Age', <input name="age" />)}
           {f('Counselor', <select name="counselor"><option value="">Unassigned</option>{(counselors || []).map((c) => <option key={c.name}>{c.name}</option>)}</select>)}
           {f('Status', <select name="status" defaultValue="New Lead">{STATUSES.map((s) => <option key={s}>{s}</option>)}</select>)}
-          <div style={{ gridColumn: '1 / -1' }}><Btn className="primary lg">Add to Sheet1</Btn></div>
+          <label className="muted" style={{ gridColumn: '1 / -1', display: 'flex', gap: 8, alignItems: 'center' }}><input type="checkbox" name="invite" value="1" style={{ width: 'auto' }} /> Email them an invitation to the student portal (needs an email address)</label>
+          <div style={{ gridColumn: '1 / -1' }}><Btn className="primary lg">Add student</Btn></div>
         </form>
       </div>
     </>

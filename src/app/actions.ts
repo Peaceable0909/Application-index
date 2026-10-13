@@ -5,7 +5,8 @@ import { revalidatePath } from 'next/cache';
 import { admin, sessionClient } from '@/lib/supabase';
 import { guardApp, requireStaff, requireTeam } from '@/lib/auth';
 import { callScript, DriveFile } from '@/lib/appsScript';
-import { counselorKey, docTypeFromName, dobForMaster, schoolShort } from '@/lib/docs';
+import { counselorKey, docTypeFromName, dobForMaster, progressFor, schoolDisplay, schoolKey, schoolShort, studentKey } from '@/lib/docs';
+import { createHash } from 'crypto';
 import { ALL_DOC_TYPES, CAS_STATUSES, VISA_STATUSES } from '@/lib/constants';
 import { syncAll, syncFolders } from '@/lib/sync';
 import { STATUSES } from '@/lib/constants';
@@ -685,28 +686,65 @@ export async function sendMessage(f: FormData) {
   redirect(`/messages?msg=${encodeURIComponent(`Email sent to ${to}`)}`);
 }
 
-// Adds a student by hand: a new row in Sheet1, then a sync so the portal shows it.
+// Adds a student by hand. The student is saved in the portal first, so it always works; the Sheet1 row is a second step.
+// If Google is unhappy the record stays and can be sent to the sheet later ("Add to master sheet" on the student).
+// The id is the same one the sync gives a sheet-only student, so when the Sheet1 row appears it merges into this record.
 export async function createApplication(f: FormData) {
   const staff = await requireTeam();
-  const name = s(f, 'name'), email = s(f, 'email').toLowerCase();
-  if (!name) redirect('/applications/new?err=Name+is+required');
-  if (email && !EMAIL_RE.test(email)) redirect('/applications/new?err=Invalid+email');
-  const status = s(f, 'status') || 'New Lead';
+  const fail = (m: string): never => redirect('/applications/new?err=' + encodeURIComponent(m));
+  const name = s(f, 'name').replace(/\s+/g, ' '), email = s(f, 'email').toLowerCase();
+  if (!name) fail('Please enter the student’s name.');
+  if (email && !EMAIL_RE.test(email)) fail('That email address does not look right.');
+  const status = (STATUSES as readonly string[]).includes(s(f, 'status')) ? s(f, 'status') : 'New Lead';
+  const school = schoolDisplay(s(f, 'school')) || null, counselor = s(f, 'counselor') || null;
+  const key = studentKey(email, school, name);
+  const id = 'stub:' + createHash('sha1').update(key).digest('hex').slice(0, 16);
+  const db = admin();
+
+  // Same student already here? Open them instead of making a second copy.
+  const { data: same } = email
+    ? await db.from('portal_applications').select('application_id, school').ilike('email', email.replace(/[\\%_]/g, '\\$&'))
+    : await db.from('portal_applications').select('application_id, school').eq('student_key', key);
+  const dupe = (same || []).find((a) => !email || !schoolKey(a.school) || !schoolKey(school) || schoolKey(a.school) === schoolKey(school));
+  if (dupe) redirect(`/applications/${encodeURIComponent(dupe.application_id)}?msg=${encodeURIComponent('That student is already in the portal, so I opened their record.')}`);
+
+  const now = new Date().toISOString();
+  const fields = {
+    phone: s(f, 'phone'), programme: s(f, 'programme'), country: s(f, 'country'), city: s(f, 'city'),
+    gender: s(f, 'gender'), dob: dobForMaster(s(f, 'dob')), age: s(f, 'age'),
+  };
+  const { error } = await db.from('portal_applications').upsert({
+    application_id: id, name, email: email || null, school, counselor, status, progress: progressFor(status), submitted_at: now,
+    ...Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, v || null])),
+    student_key: key, in_master: false, in_regent: false, has_raw: false, synced_at: now, last_activity_at: now,
+  }, { onConflict: 'application_id' });
+  if (error) fail(`Could not save the student: ${error.message}`);
+  await log(id, staff.email, 'student_added', { school, programme: fields.programme || null });
+  if (counselor) after(() => notifyAssigned(counselor, [{ id, name, school, programme: fields.programme || null }], staff.email));
+
+  // Step two: the Sheet1 row. A failure here never loses the student.
+  let sheet = '', sheetFailed = false;
   try {
-    const r = await callScript<{ exists: boolean }>('addMaster', {
-      date: new Date().toISOString(), name, email, phone: s(f, 'phone'), school: schoolShort(s(f, 'school')), programme: s(f, 'programme'),
-      country: s(f, 'country'), city: s(f, 'city'), gender: s(f, 'gender'), dob: dobForMaster(s(f, 'dob')), age: s(f, 'age'), counselor: s(f, 'counselor'), status,
+    const r = await callScript<{ exists: boolean; row: number }>('addMaster', {
+      date: now, name, email, ...fields, school: schoolShort(school), counselor: counselor || '', status,
     });
-    await syncAll();
-    const db = admin();
-    const q = email ? db.from('portal_applications').select('application_id').ilike('email', email) : db.from('portal_applications').select('application_id').ilike('name', name);
-    const { data: hit } = await q.order('created_at', { ascending: false }).limit(1).maybeSingle();
-    if (hit) { await log(hit.application_id, staff.email, 'moved_to_master', { status, exists: r.exists }); redirect(`/applications/${hit.application_id}?msg=${encodeURIComponent(r.exists ? 'Already in Sheet1 — opened the existing record' : 'Student added to Sheet1')}`); }
+    await log(id, staff.email, 'moved_to_master', { row: r.row, status, exists: r.exists });
+    try { await syncAll(); } catch { /* the next sync links the row */ }
+    sheet = r.exists ? ' They were already in Sheet1, so nothing was duplicated.' : ' Also added to Sheet1.';
   } catch (e) {
-    if ((e as { digest?: string }).digest?.startsWith('NEXT_REDIRECT')) throw e;
-    redirect('/applications/new?err=' + encodeURIComponent((e as Error).message));
+    rethrow(e); sheetFailed = true;
+    sheet = ` Sheet1 was not updated (${(e as Error).message}). Open “Add to master sheet” on this student to try again.`;
   }
-  redirect('/applications?msg=Student+added');
+
+  let invited = '';
+  if (f.get('invite') === '1' && email) {
+    try { const r = await inviteStudentsCore([{ id }], staff.email, true); invited = r.sent ? ' Invitation emailed.' : ' The invitation was not sent.'; }
+    catch { invited = ' The invitation was not sent.'; }
+  } else if (email) invited = ' They can sign in to the student portal with that email.';
+
+  revalidatePath('/'); revalidatePath('/applications');
+  const msg = `${name} was added to the portal.${sheet}${invited}`;
+  redirect(`/applications/${encodeURIComponent(id)}?${sheetFailed ? 'err' : 'msg'}=${encodeURIComponent(msg)}`);
 }
 
 export async function addStaff(f: FormData) {

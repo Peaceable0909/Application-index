@@ -6,6 +6,7 @@ export const dateTime = (t: string) => new Date(t).toLocaleString('en-GB', { dat
 export function describeActivity(kind: string, d: Record<string, string>): { title: string; icon: string; tone: string } {
   switch (kind) {
     case 'new_application': return { title: 'New application submitted', icon: 'file', tone: 'green' };
+    case 'student_added': return { title: 'Added to the portal by hand', icon: 'user-plus', tone: 'green' };
     case 'imported_from_sheet': return { title: 'Found in the sheets', icon: 'file', tone: '' };
     case 'status_change': return { title: `Status updated · ${d.to || ''}`, icon: 'clock', tone: 'amber' };
     case 'counselor_change': return { title: `Counselor assigned · ${d.to || '—'}`, icon: 'users', tone: '' };

@@ -8,7 +8,7 @@ import { dateTime, describeActivity } from '@/lib/format';
 import Btn from '@/components/Btn';
 import Icon from '@/components/Icon';
 
-const KINDS = ['new_application', 'status_change', 'counselor_change', 'doc_uploaded', 'email_sent', 'note', 'moved_to_master', 'folder_linked', 'payment_change', 'interview_change', 'task_done'];
+const KINDS = ['new_application', 'student_added', 'status_change', 'counselor_change', 'doc_uploaded', 'email_sent', 'note', 'moved_to_master', 'folder_linked', 'payment_change', 'interview_change', 'task_done'];
 
 export default async function Activity({ searchParams }: { searchParams: Promise<{ kind?: string; actor?: string; from?: string; to?: string; tab?: string }> }) {
   const people = await loadPeople();

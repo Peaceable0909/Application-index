@@ -120,7 +120,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           <div className="card">
             <h2><Icon n="bolt" size={18} className="spark" /> Quick Actions</h2>
             {[
-              ['user-plus', '', 'Add New Application', 'Manually add a student application', '/applications/new'],
+              ['user-plus', '', 'Add a Student', 'Add a student to the portal by hand', '/applications/new'],
               ['upload', 'green', 'Upload Document', 'Add documents to an existing application', '/documents#upload'],
               ['mail', 'amber', 'Send Email', 'Contact students or counselors', '/messages?compose=1'],
               ['users', 'purple', 'Assign Counselor', 'Set or change counselor assignment', '/applications?counselor=__none'],
