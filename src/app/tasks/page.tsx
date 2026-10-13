@@ -22,6 +22,7 @@ const ago = (t: string) => { const m = Math.max(1, Math.round((Date.now() - new 
 function describe(kind: string, d: Record<string, string>) {
   switch (kind) {
     case 'new_application': return 'New application received';
+    case 'student_added': return 'Added by hand';
     case 'imported_from_sheet': return 'Found in the sheets';
     case 'status_change': return `Status ${d.from || '—'} → ${d.to}`;
     case 'counselor_change': return `Counselor → ${d.to || '—'}`;

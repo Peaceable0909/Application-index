@@ -41,7 +41,10 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     <>
       <div className="head" style={{ justifyContent: 'space-between' }}>
         <h1>Applications</h1>
-        <form action={syncNow} className="filters"><input type="hidden" name="returnTo" value="/applications" /><label className="muted"><input type="checkbox" name="full" value="1" /> full</label><Btn className="ghost">Sync now</Btn></form>
+        <div className="filters">
+          <Link href="/applications/new" className="btn primary"><Icon n="user-plus" size={15} /> Add student</Link>
+          <form action={syncNow} className="filters"><input type="hidden" name="returnTo" value="/applications" /><label className="muted"><input type="checkbox" name="full" value="1" /> full</label><Btn className="ghost">Sync now</Btn></form>
+        </div>
       </div>
       <p className="sub">{filtered.length === base.length ? `${base.length} students` : `${filtered.length} of ${base.length} students`} across both sheets.</p>
       {sp.msg && <div className="card ok">{sp.msg}</div>}
