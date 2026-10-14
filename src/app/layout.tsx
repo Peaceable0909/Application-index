@@ -12,6 +12,8 @@ import Bell from '@/components/Bell';
 import UserMenu from '@/components/UserMenu';
 import NavProgress from '@/components/NavProgress';
 import MobileMenu from '@/components/MobileMenu';
+import StaffTabs from '@/components/StaffTabs';
+import Haptics from '@/components/Haptics';
 import Presence from '@/components/Presence';
 import { unreadTotal } from '@/lib/chat';
 import { currentStudent } from '@/lib/student';
@@ -23,6 +25,7 @@ import './student.css';
 import './themes.css';
 import './whatsapp.css';
 import './calls.css';
+import './ios.css';
 import { cookies } from 'next/headers';
 import { COOKIE, parseTheme } from '@/lib/theme';
 
@@ -76,9 +79,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <header className="topbar"><MobileMenu /><TopSearch /><div className="topright"><Bell staff={staff} /><UserMenu staff={staff} /></div></header>
               <main>{children}</main>
             </div>
+            <StaffTabs role={staff.role} taskCount={taskCount} chatCount={chatCount} inboxCount={inboxCount} />
           </div>
         ) : student ? <StudentShell me={student} notices={studentNotices} unread={studentUnread}>{children}</StudentShell> : <main style={{ maxWidth: 'none' }}>{children}</main>}
         {(staff || student) && <CallOverlay />}
+        {(staff || student) && <Haptics />}
         </CallProvider>
       </body>
     </html>

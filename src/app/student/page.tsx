@@ -14,6 +14,12 @@ import ProgressRing from '@/components/ProgressRing';
 import LocalTime from '@/components/LocalTime';
 import ChecklistPanel from '@/components/ChecklistPanel';
 import PushToggle from '@/components/PushToggle';
+import QuickActions from '@/components/QuickActions';
+import CounselorActions from '@/components/CounselorActions';
+import Countdown from '@/components/Countdown';
+import Milestones from '@/components/Milestones';
+import Celebrate from '@/components/Celebrate';
+import { milestoneBadges } from '@/lib/badges';
 
 export const maxDuration = 60;
 const fmtD = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -24,6 +30,10 @@ export default async function StudentHome() {
   if (!me) redirect('/student/login');
   const d = await loadStudentData(me);
   const nu = nextUp(d), up = d.interview.upcoming[0];
+  const badges = milestoneBadges(d);
+  const docsLeft = d.cards.reduce((n, c) => n + (c.canUpload ? c.missing.length : 0), 0);
+  const soonI = up && new Date(up.starts_at).getTime() - Date.now() < 3 * 864e5 ? up : null;
+  const dl = d.cards.map((c) => ({ c, t: c.a.deadline ? new Date(c.a.deadline + 'T23:59:59').getTime() : 0 })).filter((x) => x.t > Date.now() && x.t - Date.now() < 90 * 864e5).sort((a, b) => a.t - b.t)[0];
   let i = 0;
   return (
     <div className="st-page">
@@ -56,6 +66,16 @@ export default async function StudentHome() {
         <div><div className="st-eyebrow">{nu.tone === 'clear' ? 'All good' : 'Next up'}</div><h2>{nu.title}</h2><p>{nu.sub}</p></div>
         <Link href={nu.href} className="st-btn light">{nu.cta} <Icon n="arrow" size={16} /></Link>
       </section>
+
+      <div style={{ ['--i' as string]: i++ }}>
+        <QuickActions docsLeft={docsLeft} unread={d.unreadMsgs} interview={up ? 'Booked ✓' : d.interview.slots.length ? 'Book a time' : 'Practice'} counselor={d.counselor ? { display: d.counselor.display, avatar_url: d.counselor.avatar_url, color: d.counselor.color } : null} appId={d.cards[0].folderApp.application_id} />
+      </div>
+
+      {soonI ? <div style={{ ['--i' as string]: i++ }}><Countdown to={soonI.starts_at} title="Interview practice starts in" sub="Find a quiet spot and test your sound." /></div>
+        : dl ? <div style={{ ['--i' as string]: i++ }}><Countdown to={`${dl.c.a.deadline}T23:59:59`} title="Application deadline" sub={[schoolShort(dl.c.a.school), dl.c.a.programme && dl.c.a.programme.toUpperCase() !== 'N/A' ? dl.c.a.programme : ''].filter(Boolean).join(' · ')} /></div> : null}
+
+      <div style={{ ['--i' as string]: i++ }}><Milestones badges={badges} /></div>
+      <Celebrate scope={d.a0.application_id} unlocked={badges.filter((b) => b.on).map((b) => ({ key: b.key, label: b.label, emoji: b.emoji }))} />
 
       {(
         <Link href="/student/interview/credibility" className="st-card cr-entry" style={{ ['--i' as string]: i++ }}>
@@ -90,11 +110,13 @@ export default async function StudentHome() {
       <section className="st-card" style={{ ['--i' as string]: i++ }}>
         <h2>Your counselor</h2>
         {d.counselor ? (
-          <div className="st-person" style={{ marginTop: 12 }}>
-            <Avatar name={d.counselor.display} url={d.counselor.avatar_url} color={d.counselor.color} size={56} />
-            <div style={{ flex: 1 }}><b>{d.counselor.display}</b><small>{d.counselor.title}</small></div>
-            <Link href="/student/messages" className="st-btn sm"><Icon n="chat" size={15} /> Message</Link>
-          </div>
+          <>
+            <div className="st-person" style={{ marginTop: 12 }}>
+              <Avatar name={d.counselor.display} url={d.counselor.avatar_url} color={d.counselor.color} size={56} />
+              <div style={{ flex: 1, minWidth: 0 }}><b>{d.counselor.display}</b><small>{d.counselor.title}</small></div>
+            </div>
+            <CounselorActions appId={d.cards[0].folderApp.application_id} name={d.counselor.display} avatar={{ name: d.counselor.display, url: d.counselor.avatar_url, color: d.counselor.color }} />
+          </>
         ) : <p className="st-sub" style={{ margin: '8px 0 0' }}>A counselor will be assigned to you soon.</p>}
       </section>
     </div>

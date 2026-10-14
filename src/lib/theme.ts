@@ -4,7 +4,7 @@ export const ACCENTS = ['blue', 'emerald', 'violet', 'rose', 'amber'] as const;
 export type Mode = (typeof MODES)[number];
 export type Accent = (typeof ACCENTS)[number];
 export const MODE_LABEL: Record<Mode, string> = { light: 'Light', soft: 'Soft', dark: 'Dark', system: 'Auto' };
-export const ACCENT_COLOR: Record<Accent, string> = { blue: '#2458e6', emerald: '#059669', violet: '#7c3aed', rose: '#e11d48', amber: '#d97706' };
+export const ACCENT_COLOR: Record<Accent, string> = { blue: '#007aff', emerald: '#30b350', violet: '#7a5af8', rose: '#ff2d55', amber: '#ff9500' };
 export const COOKIE = 'wr_theme';
 export const isMode = (v: unknown): v is Mode => typeof v === 'string' && (MODES as readonly string[]).includes(v);
 export const isAccent = (v: unknown): v is Accent => typeof v === 'string' && (ACCENTS as readonly string[]).includes(v);
