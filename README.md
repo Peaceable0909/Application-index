@@ -18,6 +18,9 @@ document download goes through the portal server after a staff login check.
 1. **Database** – run `supabase/migrations/001_portal.sql` (already applied to the `elltpulse` project; uses `portal_*` tables only).
 2. **Apps Script** – add `apps-script/PortalApi.gs` to your project and follow the header comments
    (set `PORTAL_TOKEN`, add the 1-line hook at the top of `doPost`, redeploy a new version).
+   Whenever `PortalApi.gs` changes in the repo, paste the new version over the old one and redeploy a new version. The
+   change that lets the portal write a moved student's school and programme into Sheet1 needs that. Until then a move still
+   works in the portal, and Sheet1 is brought up to date by the next sync after the script is updated.
 3. **Env vars** – copy `.env.example` → `.env.local` (or set them in Vercel).
 4. **Staff login** – create a user (same email as in `portal_staff`) in Supabase → Authentication → Users.
 5. Deploy to Vercel. `vercel.json` syncs daily (Vercel free plan limit); the Apps Script webhook (`notifyPortal_`) makes new

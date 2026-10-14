@@ -24,6 +24,10 @@ import { saveOffer, inviteOneStudent, sendStudentReminder, saveDates, addNote, a
 import { loadThread } from '@/lib/thread';
 import StaffStudentPanel from '@/components/StaffStudentPanel';
 import type { ReactNode } from 'react';
+import MoveButton from '@/components/MoveSheet';
+import { UndoMove, RetrySheet } from '@/components/MoveBits';
+import { getCatalog } from '@/lib/moveCatalog';
+import type { Moved } from '@/lib/moves';
 
 type SP = { msg?: string; err?: string; preview?: string; tab?: string; compose?: string; draft?: string };
 const TABS = ['overview', 'documents', 'offer', 'notes', 'activity', 'messages', 'regent', 'sources'] as const;
@@ -42,7 +46,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
   if (!app || !canSee(staff, app.counselor)) notFound();
 
   // everything below only needs the application row, so it all loads at the same time
-  const [{ data: siblings }, { data: notes }, { data: activity }, { data: counselors }, { data: suggestions }, { data: messages }, { data: reminders }, offerRow, chatRows, { data: checkRows }, { data: cached }, { data: draftRow }] = await Promise.all([
+  const [{ data: siblings }, { data: notes }, { data: activity }, { data: counselors }, { data: suggestions }, { data: messages }, { data: reminders }, offerRow, chatRows, { data: checkRows }, { data: cached }, { data: draftRow }, catalog] = await Promise.all([
     db.from('portal_applications').select('application_id,submitted_at').eq('student_key', app.student_key).order('submitted_at', { ascending: false }),
     db.from('portal_notes').select('*').eq('application_id', id).order('pinned', { ascending: false }).order('created_at', { ascending: false }),
     db.from('portal_activity').select('*').eq('application_id', id).order('created_at', { ascending: false }).limit(100),
@@ -55,6 +59,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
     db.from('portal_checklist').select('id, text, due, done').eq('application_id', id).order('created_at'),
     db.from('portal_ai_cache').select('output,input_hash,created_at').eq('cache_key', `student:${id}`).maybeSingle(),
     sp.draft ? db.from('portal_ai_cache').select('output').eq('cache_key', `draft:${id}:${staff.email}`).maybeSingle() : Promise.resolve({ data: null }),
+    getCatalog(),
   ]);
   const { data: docs } = await db.from('portal_documents').select('*').in('application_id', (siblings || []).map((s) => s.application_id)).order('created_at', { ascending: false });
 
@@ -100,6 +105,11 @@ export default async function ApplicationPage({ params, searchParams }: { params
 
   const draft = (draftRow?.output as Draft | undefined) || null;
 
+  // the latest school/programme move can be undone while nothing has replaced it
+  const lastMove = (activity || []).find((a) => a.kind === 'school_moved');
+  const undoableMove = lastMove && !(activity || []).some((a) => a.kind === 'school_move_undone' && (a.detail as { of?: string })?.of === lastMove.id) ? lastMove.id : null;
+  type MoveDetail = { from: { school?: string | null; programme?: string | null }; to: { school?: string | null; programme?: string | null }; reason?: string; sheet?: string };
+
   const first = niceName(app.name);
   const fillTo = (kind: 'student' | 'counselor') => kind === 'student' ? (app.email || '') : (counselor?.email || '');
   const composeMissing = sp.compose === 'missing';
@@ -134,7 +144,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
         <span className="avatar lg">{initials(app.name)}</span>
         <div style={{ flex: 1, minWidth: 220 }}>
           <h1>{app.name}</h1>
-          <div className="meta">{[app.programme && app.programme.toUpperCase() !== 'N/A' ? app.programme : null, schoolShort(app.school), app.city].filter(Boolean).join('  ·  ') || 'No programme set'}</div>
+          <div className="meta">{[app.programme && app.programme.toUpperCase() !== 'N/A' ? app.programme : null, schoolShort(app.school), app.city].filter(Boolean).join('  ·  ') || 'No programme set'}<MoveButton mode="one" id={id} current={{ name: app.name, school: app.school, programme: app.programme, status: app.status }} catalog={catalog} variant="icon" /></div>
         </div>
         <div className="chips">
           {judged && missing.length > 0 && <span className="badge plain red">Missing Docs</span>}
@@ -142,9 +152,11 @@ export default async function ApplicationPage({ params, searchParams }: { params
           {app.counselor && <span className="badge plain purple"><Icon n="users" size={13} /> Assigned: {app.counselor}</span>}
           <Link href={`/chat?about=${encodeURIComponent(id)}`} className="badge plain blue" title="Send this student to a teammate in chat"><Icon n="chat" size={13} /> Discuss in chat</Link>
           {app.in_regent && app.payment && <span className={`badge plain ${/^paid/i.test(app.payment) ? 'green' : 'amber'}`}>{app.payment}</span>}
+          {app.in_master && (app.moved as Moved | null)?.sheet === false && <RetrySheet id={id} />}
           <details className="dd">
             <summary className="iconbtn" style={{ width: 36, height: 36 }} aria-label="More"><Icon n="more" size={18} /></summary>
             <div className="menu" style={{ minWidth: 220 }}>
+              <MoveButton mode="one" id={id} current={{ name: app.name, school: app.school, programme: app.programme, status: app.status }} catalog={catalog} variant="menu" />
               {app.drive_folder_url && <a href={app.drive_folder_url} target="_blank"><Icon n="folder" /> Open Drive folder</a>}
               <Link href={tabHref('documents')}><Icon n="link" /> Manage Drive folders</Link>
               {app.drive_folder_id && <form action={refreshDocuments}><input type="hidden" name="id" value={id} /><input type="hidden" name="returnTo" value={tabHref('documents')} /><button className="item"><Icon n="upload" /> Refresh from Drive</button></form>}
@@ -449,7 +461,14 @@ export default async function ApplicationPage({ params, searchParams }: { params
           <div className="card">
             <h2>Activity</h2>
             <ul className="feed">
-              {(activity || []).map((a) => { const d = describeActivity(a.kind, a.detail as Record<string, string>); return <li key={a.id}><span className={`ico ${d.tone}`}><Icon n={d.icon} size={17} /></span><div><b>{d.title}</b><small><Who people={people} email={a.actor} size={18} bare /></small></div><time>{dateTime(a.created_at)}</time></li>; })}
+              {(activity || []).map((a) => {
+                const d = describeActivity(a.kind, a.detail as Record<string, string>);
+                const mv = a.kind === 'school_moved' ? (a.detail as MoveDetail) : null;
+                return <li key={a.id}><span className={`ico ${d.tone}`}><Icon n={d.icon} size={17} /></span><div><b>{d.title}</b>
+                  {mv && <small>{[`${[mv.from.school, mv.from.programme].filter(Boolean).join(' · ') || '—'} → ${[mv.to.school, mv.to.programme].filter(Boolean).join(' · ') || '—'}`, mv.reason === 'switch' ? 'Student switching' : 'Correction', mv.sheet === 'updated' ? 'Sheet1 updated' : mv.sheet === 'pending' ? 'Sheet1 not updated' : ''].filter(Boolean).join(' · ')}</small>}
+                  <small><Who people={people} email={a.actor} size={18} bare /></small>
+                  {a.id === undoableMove && <UndoMove activityId={a.id} />}</div><time>{dateTime(a.created_at)}</time></li>;
+              })}
               {!(activity || []).length && <li className="muted">No activity yet.</li>}
             </ul>
           </div>

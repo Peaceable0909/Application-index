@@ -27,6 +27,9 @@ import { canAccessApp } from '@/lib/auth';
 import { docScanEnabled, scanOne } from '@/lib/docscan';
 import { draftEmail, PURPOSES, PurposeKey, TONES, ToneKey } from '@/lib/draft';
 import { aiOverview, aiStudentSummary, computeFacts, loadStudents, refreshTasks, studentFacts } from '@/lib/overview';
+import { getCatalog } from '@/lib/moveCatalog';
+import { pushPendingMoves } from '@/lib/moveCore';
+import { canonicalProgramme, canonicalSchool } from '@/lib/moves';
 
 // redirect() works by throwing; a catch block must pass that through instead of reporting it as an error.
 const rethrow = (e: unknown) => { if ((e as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw e; };
@@ -87,7 +90,8 @@ export async function syncNow(f: FormData) {
   let msg: string;
   try {
     const r = await syncAll({ full: f.get('full') === '1' });
-    msg = `Synced ${r.total} students · ${r.formSubmissions} with a form submission · ${r.inMaster} in Sheet1 · ${r.inRegent} in Regent Only · ${r.formOnly} not yet in Sheet1 · ${r.created} new.`;
+    const pending = await pushPendingMoves({ max: 25, budgetMs: 15_000 }).catch(() => ({ tried: 0, done: 0 }));   // moves the sheet missed
+    msg = `${pending.done ? `${pending.done} moved student${pending.done === 1 ? '' : 's'} written to Sheet1. ` : ''}Synced ${r.total} students · ${r.formSubmissions} with a form submission · ${r.inMaster} in Sheet1 · ${r.inRegent} in Regent Only · ${r.formOnly} not yet in Sheet1 · ${r.created} new.`;
   } catch (e) { rethrow(e); msg = `Sync failed: ${(e as Error).message}`; }
   revalidatePath('/');
   redirect(`${ret}?msg=${encodeURIComponent(msg)}`);
@@ -696,7 +700,9 @@ export async function createApplication(f: FormData) {
   if (!name) fail('Please enter the student’s name.');
   if (email && !EMAIL_RE.test(email)) fail('That email address does not look right.');
   const status = (STATUSES as readonly string[]).includes(s(f, 'status')) ? s(f, 'status') : 'New Lead';
-  const school = schoolDisplay(s(f, 'school')) || null, counselor = s(f, 'counselor') || null;
+  // spell the school and programme the way the portal already does, so "bpp" and "BPP University" do not become two schools
+  const cat = await getCatalog();
+  const school = canonicalSchool(s(f, 'school'), cat) || null, counselor = s(f, 'counselor') || null;
   const key = studentKey(email, school, name);
   const id = 'stub:' + createHash('sha1').update(key).digest('hex').slice(0, 16);
   const db = admin();
@@ -710,7 +716,7 @@ export async function createApplication(f: FormData) {
 
   const now = new Date().toISOString();
   const fields = {
-    phone: s(f, 'phone'), programme: s(f, 'programme'), country: s(f, 'country'), city: s(f, 'city'),
+    phone: s(f, 'phone'), programme: canonicalProgramme(s(f, 'programme'), schoolKey(school), cat), country: s(f, 'country'), city: s(f, 'city'),
     gender: s(f, 'gender'), dob: dobForMaster(s(f, 'dob')), age: s(f, 'age'),
   };
   const { error } = await db.from('portal_applications').upsert({

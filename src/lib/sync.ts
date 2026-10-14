@@ -3,6 +3,8 @@ import { admin } from './supabase';
 import { refreshTasks } from './overview';
 import { callScript, DriveFile, MasterRow, RegentRow, SheetRow } from './appsScript';
 import { canonicalStatus, counselorKey, docTypeFromName, normEmail, normName, progressFor, schoolDisplay, schoolKey, studentKey } from './docs';
+import { pick, resolveMoved, type Moved } from './moves';
+import { pushPendingMoves } from './moveCore';
 
 const RECENT_MS = 3 * 24 * 3600 * 1000;
 
@@ -14,7 +16,6 @@ function parseSubmitted(s: string): string | null {
   return isNaN(d.getTime()) ? null : d.toISOString();
 }
 const looksLikeDate = (s: string) => /^\d{1,4}[/-]\d{1,2}[/-]\d{1,4}/.test(s.trim()) || /^\d{4}-\d{2}-\d{2}T/.test(s.trim());
-const pick = (...v: (string | null | undefined)[]) => v.map((x) => (x || '').trim()).find((x) => x && x.toUpperCase() !== 'N/A') || null;
 
 export async function syncFolders(apps: { id: string; folders: string[] }[]) {
   const db = admin();
@@ -81,7 +82,7 @@ export async function syncAll(opts: { full?: boolean } = {}) {
   const M = makeFinder(master), G = makeFinder(regent);
 
   const { data: existing } = await db.from('portal_applications')
-    .select('application_id, status, counselor, docs_synced_at, student_key, payment, interview, extra_folder_ids');
+    .select('application_id, status, counselor, docs_synced_at, student_key, payment, interview, extra_folder_ids, moved');
   const known = new Map((existing || []).map((r) => [r.application_id, r]));
 
   const usedM = new Set<MasterRow>(), usedG = new Set<RegentRow>();
@@ -96,7 +97,11 @@ export async function syncAll(opts: { full?: boolean } = {}) {
     const submitted = r ? parseSubmitted(r.submittedAt)
       : m && looksLikeDate(m.studentIdOrDate) ? parseSubmitted(m.studentIdOrDate)
       : g ? parseSubmitted(g.date) : null;
-    const school = schoolDisplay(pick(r?.school, m?.school, g?.school));
+    // A school or programme changed in the portal stays until the sheet catches up (or someone edits the sheet after the move).
+    const sheetSchool = schoolDisplay(pick(r?.school, m?.school, g?.school)), sheetProgramme = pick(m?.programme, g?.programme, r?.programme);
+    const mv = resolveMoved({ school: sheetSchool, programme: sheetProgramme }, prev?.moved as Moved | null);
+    const school = schoolDisplay(mv.school);
+    const programme = mv.programme;
     const name = pick(m?.name, g?.name, r?.name) || 'Unknown';
     const payment = pick(g?.payment);
     const rawInterview = pick(g?.interview); // "To Be Booked for interview" / "...Interview" are the same thing
@@ -111,11 +116,12 @@ export async function syncAll(opts: { full?: boolean } = {}) {
       }
       if (g && prev.payment !== payment && (prev.payment || payment)) activity.push({ application_id: id, actor: 'sheet', kind: 'payment_change', detail: { from: prev.payment, to: payment } });
       if (g && prev.interview !== interview && (prev.interview || interview)) activity.push({ application_id: id, actor: 'sheet', kind: 'interview_change', detail: { from: prev.interview, to: interview } });
+      mv.dropped.filter((d) => d.why === 'sheet-changed').forEach((d) => activity.push({ application_id: id, actor: 'sheet', kind: 'move_reset', detail: { field: d.kind, value: d.kind === 'school' ? school : programme } }));
     }
     return {
       application_id: id, sheet_row: r?.row ?? null, master_row: m?.row ?? null, regent_row: g?.row ?? null,
       submitted_at: submitted, name, email: pick(r?.email, m?.email, g?.email), phone: pick(r?.phone, m?.phone, g?.phone),
-      school, programme: pick(m?.programme, g?.programme, r?.programme), country: pick(m?.country, g?.country, r?.country),
+      school, programme, moved: mv.moved, country: pick(m?.country, g?.country, r?.country),
       city: pick(r?.city, m?.city, g?.city), gender: pick(r?.gender, m?.gender, g?.gender), dob: pick(r?.dob, m?.dob), age: pick(r?.age, m?.age),
       counselor: pick(m?.counselor, g?.counselor, r?.counselor, prev?.counselor),
       status, progress: progressFor(status), student_ref: ref, sheet_notes: pick(m?.notes, g?.notes, r?.notes),
@@ -130,7 +136,9 @@ export async function syncAll(opts: { full?: boolean } = {}) {
   };
 
   const rows = raw.map((r) => {
-    const m = M.find(r) || null, g = G.find(r) || null;
+    // After a move the sheet may already say the new school, so look for the student under that name first.
+    const to = (known.get(r.applicationId)?.moved as Moved | null)?.school?.to;
+    const m = (to ? M.find({ ...r, school: to }) : null) || M.find(r) || null, g = (to ? G.find({ ...r, school: to }) : null) || G.find(r) || null;
     if (m) usedM.add(m); if (g) usedG.add(g);
     return build(r.applicationId, r, m, g);
   });
@@ -138,9 +146,14 @@ export async function syncAll(opts: { full?: boolean } = {}) {
 
   // Students with no form submission: one stub per student, gathering Sheet1 + Regent Only together.
   const stubs = new Map<string, ReturnType<typeof build>>();
+  // A stub's id comes from its school. If the school changed (a move, then the sheet followed), keep the id it already has
+  // so its documents, messages and history stay attached.
+  const stubIdByKey = new Map<string, string>();
+  for (const [kid, prev] of known) if (kid.startsWith('stub:') && prev.student_key) stubIdByKey.set(prev.student_key, kid);
   const stubFor = (m: MasterRow | null, g: RegentRow | null) => {
     const key = studentKey(pick(m?.email, g?.email), schoolDisplay(pick(m?.school, g?.school)), pick(m?.name, g?.name) || '');
-    const id = 'stub:' + createHash('sha1').update(key).digest('hex').slice(0, 16);
+    const std = 'stub:' + createHash('sha1').update(key).digest('hex').slice(0, 16);
+    const id = known.has(std) ? std : stubIdByKey.get(key) || std;
     if (!stubs.has(id)) stubs.set(id, build(id, null, m, g));
   };
   M.unique.filter((m) => !usedM.has(m)).forEach((m) => { const g = G.find(m) || null; if (g) usedG.add(g); stubFor(m, g); });
@@ -184,6 +197,7 @@ export async function syncAll(opts: { full?: boolean } = {}) {
     }).map(({ r, folders }) => ({ id: r.application_id, folders }));
   await syncFolders(needFiles);
 
+  try { await pushPendingMoves(); } catch { /* moves the sheet missed are tried again next time */ }
   try { await refreshTasks(); } catch { /* tasks refresh again when the overview is opened */ }
 
   return {

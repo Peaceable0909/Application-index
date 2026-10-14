@@ -295,9 +295,11 @@ function portalUpdateRegent_(p) {
   } finally { lock.releaseLock(); }
 }
 
-// p = { email, name, school, fields: { status?, counselor? }, notesAppend?, by? }
+// p = { email, name, school, fields: { status?, counselor?, phone?, city?, school?, programme? }, notesAppend?, by? }
 // The row is found by email (+school) each time, because rows move when
-// someone sorts the sheet.
+// someone sorts the sheet. `p.school` is the school the row has NOW; `fields.school`
+// is the new one. The reply lists the fields that were really written ("applied"),
+// so the portal can tell this version from an older one that ignores school/programme.
 function portalUpdateMaster_(p) {
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
@@ -319,12 +321,15 @@ function portalUpdateMaster_(p) {
     });
     if (!row) throw new Error('Student not found in ' + MASTER_SHEET_NAME);
     const f = p.fields || {};
-    if (f.status !== undefined) sheet.getRange(row, 13).setValue(f.status);
-    if (f.counselor !== undefined) sheet.getRange(row, 12).setValue(f.counselor);
-    if (f.phone !== undefined) { const c = sheet.getRange(row, 4); c.setNumberFormat('@'); c.setValue(f.phone); }   // keeps +234… as text
-    if (f.city !== undefined) sheet.getRange(row, 8).setValue(f.city);
+    const applied = [];
+    if (f.status !== undefined) { sheet.getRange(row, 13).setValue(f.status); applied.push('status'); }
+    if (f.counselor !== undefined) { sheet.getRange(row, 12).setValue(f.counselor); applied.push('counselor'); }
+    if (f.phone !== undefined) { const c = sheet.getRange(row, 4); c.setNumberFormat('@'); c.setValue(f.phone); applied.push('phone'); }   // keeps +234… as text
+    if (f.city !== undefined) { sheet.getRange(row, 8).setValue(f.city); applied.push('city'); }
+    if (f.school !== undefined) { sheet.getRange(row, 5).setValue(f.school); applied.push('school'); }
+    if (f.programme !== undefined) { sheet.getRange(row, 6).setValue(f.programme); applied.push('programme'); }
     if (p.notesAppend) portalAppendNote_(sheet.getRange(row, 14), p.notesAppend, p.by);
-    return { row: row };
+    return { row: row, applied: applied };
   } finally { lock.releaseLock(); }
 }
 

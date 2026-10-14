@@ -5,13 +5,15 @@ import { STATUSES } from '@/lib/constants';
 import Btn from '@/components/Btn';
 import Icon from '@/components/Icon';
 import { createApplication } from '../../actions';
+import { getCatalog } from '@/lib/moveCatalog';
 
 export const maxDuration = 60;
 
 export default async function NewApplication({ searchParams }: { searchParams: Promise<{ err?: string }> }) {
   await requireTeam();
   const sp = await searchParams;
-  const { data: counselors } = await admin().from('portal_counselors').select('name').eq('active', true).order('name');
+  const [{ data: counselors }, catalog] = await Promise.all([admin().from('portal_counselors').select('name').eq('active', true).order('name'), getCatalog()]);
+  const programmes = [...new Set(catalog.schools.flatMap((s) => s.programmes.map((p) => p.name)))].sort();
   const f = (label: string, input: React.ReactNode) => <label className="grid" style={{ gap: 6 }}><span className="muted">{label}</span>{input}</label>;
   return (
     <>
@@ -25,8 +27,9 @@ export default async function NewApplication({ searchParams }: { searchParams: P
           {f('Email', <input name="email" type="email" autoComplete="off" />)}
           {f('Phone', <input name="phone" />)}
           {f('University', <input name="school" list="schools" placeholder="e.g. RCL" /> )}
-          <datalist id="schools"><option value="RCL" /><option value="CCCU" /><option value="BPP University" /><option value="York St John University" /></datalist>
-          {f('Programme', <input name="programme" />)}
+          <datalist id="schools">{catalog.schools.map((s) => <option key={s.key} value={s.name} />)}</datalist>
+          {f('Programme', <input name="programme" list="programmes" autoComplete="off" />)}
+          <datalist id="programmes">{programmes.map((n) => <option key={n} value={n} />)}</datalist>
           {f('Country', <input name="country" defaultValue="Nigeria" />)}
           {f('City', <input name="city" />)}
           {f('Gender', <select name="gender"><option value="">—</option><option>Male</option><option>Female</option></select>)}

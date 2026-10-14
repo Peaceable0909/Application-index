@@ -1,3 +1,4 @@
+import { moveTitle } from './moves';
 export const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?';
 export const ago = (t: string) => { const m = Math.max(1, Math.round((Date.now() - new Date(t).getTime()) / 60000)); return m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; };
 export const shortDate = (t: string | null) => (t ? new Date(t).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
@@ -30,6 +31,10 @@ export function describeActivity(kind: string, d: Record<string, string>): { tit
     case 'task_done': return { title: `Task completed · ${d.title || ''}`, icon: 'check', tone: 'green' };
     case 'task_dismissed': return { title: 'Task dismissed', icon: 'check', tone: '' };
     case 'task_snoozed': return { title: 'Task snoozed', icon: 'clock', tone: '' };
+    case 'school_moved': return { title: moveTitle(d as never), icon: 'swap', tone: 'purple' };
+    case 'school_move_undone': return { title: 'School or programme change undone', icon: 'left', tone: 'amber' };
+    case 'move_reset': return { title: `${d.field === 'school' ? 'School' : 'Programme'} follows the sheet again${d.value ? ` · ${d.value}` : ''}`, icon: 'swap', tone: 'amber' };
+    case 'move_sheet_updated': return { title: 'Sheet1 updated with the new school or programme', icon: 'check-circle', tone: 'green' };
     default: return { title: kind.replace(/_/g, ' '), icon: 'file', tone: '' };
   }
 }

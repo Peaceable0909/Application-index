@@ -183,7 +183,7 @@ a.st-card, .st-card[href] { transition:transform .35s var(--ios-spring), box-sha
 .st-grab { width:38px; height:5px; background:var(--st-tint-2); }
 
 /* ---- notification panel (bell) ---- */
-.spanel { border-radius:22px; background:var(--glass-bg); -webkit-backdrop-filter:saturate(1.9) blur(30px); backdrop-filter:saturate(1.9) blur(30px); border:.5px solid var(--glass-line); box-shadow:var(--glass-shadow); }
+.spanel { border-radius:22px; background:var(--pop-bg); -webkit-backdrop-filter:saturate(1.9) blur(30px); backdrop-filter:saturate(1.9) blur(30px); border:.5px solid var(--glass-line); box-shadow:var(--glass-shadow); }
 .stu-shell .spanel { color:var(--st-ink); }
 
 /* ---- forms ---- */
@@ -532,3 +532,41 @@ svg.ic-in { display:inline-block; vertical-align:-.2em; margin-right:.38em; flex
 .callln { display:flex; align-items:center; gap:8px; font-weight:600; } .callln svg { flex:none; opacity:.9; }
 .st-bub:not(.mine) .callln.missed, .bub:not(.mine) .callln.missed { color:var(--red); }
 .st-toast .e { color:#fff; }
+
+/* ---- move sheet: change a student's school or programme ---- */
+.mv-bg { z-index:9200; }
+.modal.mvs { width:min(640px,100%); max-height:min(92dvh, 860px); padding:0; display:flex; flex-direction:column; overflow:hidden; border-radius:28px; background:var(--card); }
+.mv-h { display:flex; align-items:center; justify-content:space-between; padding:18px 22px 10px; } .mv-h b { font:700 20px var(--font-sf); letter-spacing:-.02em; color:var(--ink); }
+.mv-body { padding:4px 22px 18px; overflow:auto; display:grid; grid-template-columns:minmax(0, 1fr); grid-auto-rows:max-content; gap:16px; align-content:start; }
+.mv-foot { display:flex; justify-content:flex-end; gap:10px; padding:14px 22px calc(16px + env(safe-area-inset-bottom)); border-top:.5px solid var(--line); background:var(--card); }
+.mv-who { display:grid; gap:2px; padding:12px 14px; border-radius:16px; background:var(--tint); } .mv-who b { color:var(--ink); font-size:16px; } .mv-who span { color:var(--muted); font-size:13.5px; }
+.mv-fld { display:grid; gap:7px; } .mv-lbl { font:600 12px var(--font-sf); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
+.mv-fld input { height:46px; font-size:16px; }
+.mv-seg { display:grid; grid-template-columns:1fr 1fr; gap:4px; padding:4px; border-radius:14px; background:var(--tint-2); }
+.mv-seg button { height:38px; border:0; border-radius:11px; background:transparent; box-shadow:none; color:var(--muted); font:600 14px var(--font-sf); padding:0 10px; } .mv-seg button[aria-checked="true"] { background:var(--card); color:var(--ink); box-shadow:0 1px 3px rgba(0,0,0,.14); }
+.mv-chips { display:flex; flex-wrap:wrap; gap:6px; }
+.mv-chip { height:auto; padding:6px 11px; border-radius:99px; border:0; background:var(--accent-soft); color:var(--accent-ink); font:600 13px var(--font-sf); box-shadow:none; display:inline-flex; gap:7px; align-items:center; text-align:left; } .mv-chip i { font-style:normal; opacity:.65; font-weight:500; } .mv-chip.is-on { background:var(--accent); color:#fff; } .mv-chip.is-on i { opacity:.85; }
+.mv-hint { color:var(--muted); font-size:13px; line-height:1.4; } .mv-hint.t-warn { color:var(--amber-ink); } .mv-hint .linkish { font-weight:650; }
+.mv-list { display:grid; gap:8px; max-height:260px; overflow:auto; }
+.mv-line { display:grid; gap:5px; padding:11px 13px; border-radius:14px; background:var(--tint); color:inherit; text-decoration:none; } .mv-line[data-state="blocked"], .mv-line[data-state="failed"] { background:var(--red-soft); } .mv-line[data-state="nochange"] { opacity:.75; }
+a.mv-line[data-state="moved"] { grid-template-columns:1fr auto; align-items:center; }
+.mv-name { color:var(--ink); font-size:14.5px; }
+.mv-diff { display:flex; flex-wrap:wrap; align-items:center; gap:7px; font-size:13.5px; } .mv-diff svg { color:var(--muted); flex:none; }
+.mv-diff .old { color:var(--muted); text-decoration:line-through; text-decoration-color:rgba(128,128,128,.5); } .mv-diff .new { color:var(--ink); font-weight:600; } .mv-diff .chg { color:var(--accent-ink); }
+.mv-note { font-size:13px; color:var(--muted); line-height:1.4; } .mv-note.t-warn { color:var(--amber-ink); } .mv-note.t-stop { color:var(--red-ink); font-weight:600; } .mv-note a { color:inherit; text-decoration:underline; }
+.mv-opts { display:grid; gap:12px; padding:14px; border-radius:16px; background:var(--tint); }
+.mv-opt { display:grid; gap:6px; font:600 13px var(--font-sf); color:var(--muted); } .mv-opt select { height:42px; font-size:15px; width:100%; max-width:100%; min-width:0; text-overflow:ellipsis; }
+.mv-chk { display:flex; gap:11px; align-items:flex-start; font-size:14.5px; color:var(--ink); cursor:pointer; } .mv-chk input { width:20px; height:20px; margin:2px 0 0; flex:none; } .mv-chk small { display:block; color:var(--muted); font-size:12.5px; margin-top:2px; font-weight:400; } .mv-chk.mv-sub { padding-left:31px; }
+.mv-result { display:flex; gap:14px; align-items:center; padding:16px; border-radius:18px; background:var(--tint); }
+.mv-result .ic { width:44px; height:44px; border-radius:14px; display:grid; place-items:center; background:var(--amber-soft); color:var(--amber-ink); flex:none; } .mv-result.is-good .ic { background:var(--green-soft); color:var(--green-ink); }
+.mv-result b { display:block; font-size:17px; color:var(--ink); } .mv-result small { display:block; color:var(--muted); font-size:13.5px; margin-top:3px; line-height:1.4; }
+.mv-edit { display:inline-grid; width:28px; height:28px; margin-left:8px; vertical-align:middle; border-radius:9px; }
+.feed li > div > small { display:block; } .feed li > div > .mv-pending { margin-top:6px; }
+.mv-pending { display:inline-flex; align-items:center; gap:8px; }
+@media (max-width:700px) {
+  .mv-bg { place-items:end center; padding:0; } .modal.mvs { width:100%; max-height:94dvh; border-radius:28px 28px 0 0; }
+  .mv-h { padding:16px 18px 8px; } .mv-body { padding:4px 18px 16px; } .mv-foot { padding:12px 18px calc(14px + env(safe-area-inset-bottom)); } .mv-foot .btn { flex:1; }
+}
+
+/* menu buttons line up with the menu links (the base button style centres its content) */
+.dd .menu button.item { justify-content:flex-start; }
