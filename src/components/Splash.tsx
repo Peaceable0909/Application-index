@@ -39,6 +39,7 @@ export default function Splash() {
   const skip = useRef<() => void>(undefined);
 
   useEffect(() => {
+    (window as unknown as { __sp?: boolean }).__sp = true; // tells the page's own safety timer that the app started
     const html = document.documentElement;
     if (html.classList.contains('no-splash') || matchMedia('(prefers-reduced-motion: reduce)').matches) { setS('gone'); return; }
     // keep the keyboard (an autofocused field) from opening behind the intro; give focus back afterwards

@@ -73,7 +73,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang="en" className={`${ui.variable} ${display.variable}`} data-theme={theme.mode === 'system' ? 'light' : theme.mode} data-accent={theme.accent} {...(theme.mode === 'system' ? { 'data-pref': 'system' } : {})} suppressHydrationWarning>
       <head>
         {/* runs before first paint: "Auto" follows the phone/computer setting, and keeps following it */}
-        <script dangerouslySetInnerHTML={{ __html: "try{var e=document.documentElement;var t=+localStorage.getItem('wr_splash')||0;if(Date.now()-t<108e5)e.classList.add('no-splash');else localStorage.setItem('wr_splash',String(Date.now()));if(e.getAttribute('data-pref')==='system'){var m=matchMedia('(prefers-color-scheme: dark)'),f=function(){e.setAttribute('data-theme',m.matches?'dark':'light')};f();m.addEventListener('change',f)}}catch(x){}" }} />
+        <script dangerouslySetInnerHTML={{ __html: "try{var e=document.documentElement;setTimeout(function(){if(!window.__sp)e.classList.add('no-splash')},7e3);var t=+localStorage.getItem('wr_splash')||0;if(Date.now()-t<108e5)e.classList.add('no-splash');else localStorage.setItem('wr_splash',String(Date.now()));if(e.getAttribute('data-pref')==='system'){var m=matchMedia('(prefers-color-scheme: dark)'),f=function(){e.setAttribute('data-theme',m.matches?'dark':'light')};f();m.addEventListener('change',f)}}catch(x){}" }} />
       </head>
       <body>
         <Splash />
