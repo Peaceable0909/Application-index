@@ -12,7 +12,7 @@ export default function InstallApp() {
     const h = (e: Event) => { e.preventDefault(); setEvt(e as BIP); }; window.addEventListener('beforeinstallprompt', h);
     return () => window.removeEventListener('beforeinstallprompt', h);
   }, []);
-  if (installed) return <p className="st-sub" style={{ margin: 0 }}>The app is installed on this device ✓</p>;
+  if (installed) return <p className="st-sub" style={{ margin: 0 }}><Icon n="check-circle" size={16} className="ic-in" />The app is installed on this device</p>;
   return (
     <div>
       {evt ? <button className="st-btn" onClick={async () => { await evt.prompt(); setEvt(null); }}><Icon n="download" size={16} /> Install the app</button>

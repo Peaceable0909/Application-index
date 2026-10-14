@@ -68,7 +68,7 @@ export async function POST(req: Request, { params }: Ctx) {
   const { data, error } = await db.from('portal_chat_msgs').insert({ room_id: id, sender: me.email, body, reply_to: replyTo, refs, ...att }).select(MSG_COLS).single();
   if (error || !data) return bad(error?.message || 'Could not send', 500);
   await Promise.all([
-    db.from('portal_rooms').update({ last_message_at: data.created_at, last_preview: previewOf(body, (att.att_name as string) || (refs.length ? '👤 Shared a student' : null)), last_sender: me.email }).eq('id', id),
+    db.from('portal_rooms').update({ last_message_at: data.created_at, last_preview: previewOf(body, (att.att_name as string) || (refs.length ? 'Shared a student' : null)), last_sender: me.email }).eq('id', id),
     db.from('portal_room_members').update({ typing_at: null, last_read_at: data.created_at }).eq('room_id', id).eq('email', me.email),
   ]);
   after(() => notifyChat(id, me.email, body.slice(0, 200), !!file).catch(() => {}));

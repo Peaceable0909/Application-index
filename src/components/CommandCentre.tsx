@@ -4,6 +4,7 @@ import { Staff } from '@/lib/auth';
 import { aiOverview, AppFull, computeFacts, refreshTasks, SRow } from '@/lib/overview';
 import { completeReminder, completeTask, markSeen, refreshOverview, snoozeTask } from '@/app/actions';
 import Btn from './Btn';
+import Icon from './Icon';
 
 const ago = (t: string) => { const m = Math.max(1, Math.round((Date.now() - new Date(t).getTime()) / 60000)); return m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; };
 
@@ -24,7 +25,7 @@ export default async function CommandCentre({ staff, rows, all }: { staff: Staff
       <div className="grid g2" style={{ marginBottom: 16, alignItems: 'start' }}>
         <div className="card ai">
           <div className="filters" style={{ justifyContent: 'space-between', marginBottom: 10 }}>
-            <h2 style={{ margin: 0 }}><span className="spark" aria-hidden>✦</span> AI overview <span className="badge blue plain" style={{ marginLeft: 6 }}>beta</span></h2>
+            <h2 style={{ margin: 0 }}><span className="spark" aria-hidden><Icon n="spark" size={17} /></span> AI overview <span className="badge blue plain" style={{ marginLeft: 6 }}>beta</span></h2>
             <div className="filters" style={{ gap: 6 }}>
               <form action={refreshOverview}><input type="hidden" name="returnTo" value="/" /><Btn className="ghost sm">Refresh</Btn></form>
               <form action={markSeen}><input type="hidden" name="returnTo" value="/" /><Btn className="ghost sm">Mark as seen</Btn></form>

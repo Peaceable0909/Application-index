@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { staffAddChecklist, staffRemoveChecklist } from '@/app/actions';
 import ChatThread from './ChatThread';
 import type { ThreadMsg } from '@/lib/thread';
+import Icon from './Icon';
 
 const TEMPLATES = ['Book your IELTS test', 'Pay your tuition deposit', 'Book your biometrics appointment', 'Complete your TB test', 'Send your updated bank statement'];
 export type Item = { id: string; text: string; due: string | null; done: boolean };
@@ -26,7 +27,7 @@ export default function StaffStudentPanel({ appId, studentName, msgs, otherInit,
       <div className="card"><h2>Student checklist</h2><p className="muted" style={{ marginTop: 0 }}>Small to-dos shown on the student’s home screen.</p>
         {items.length === 0 && <p className="muted">Nothing yet.</p>}
         <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 12px', display: 'grid', gap: 6 }}>
-          {items.map((it) => <li key={it.id} style={{ display: 'flex', gap: 8, alignItems: 'center' }}><span>{it.done ? '✅' : '⬜'}</span><span style={{ flex: 1, textDecoration: it.done ? 'line-through' : 'none' }}>{it.text}{it.due ? <small className="muted"> · due {it.due}</small> : null}</span><button className="btn ghost sm" onClick={async () => { await staffRemoveChecklist(it.id); router.refresh(); }}>Remove</button></li>)}
+          {items.map((it) => <li key={it.id} style={{ display: 'flex', gap: 8, alignItems: 'center' }}><span style={{ display: 'inline-grid', color: it.done ? 'var(--green-ink)' : 'var(--muted)' }}><Icon n={it.done ? 'check-circle' : 'circle'} size={18} /></span><span style={{ flex: 1, textDecoration: it.done ? 'line-through' : 'none' }}>{it.text}{it.due ? <small className="muted"> · due {it.due}</small> : null}</span><button className="btn ghost sm" onClick={async () => { await staffRemoveChecklist(it.id); router.refresh(); }}>Remove</button></li>)}
         </ul>
         <div className="filters" style={{ marginBottom: 8 }}>{TEMPLATES.map((t) => <button key={t} className="btn ghost sm" disabled={busy} onClick={() => add(t)}>+ {t}</button>)}</div>
         <div className="filters"><input value={text} onChange={(e) => setText(e.target.value)} placeholder="Or write your own…" maxLength={140} style={{ flex: '1 1 200px' }} /><input type="date" value={due} onChange={(e) => setDue(e.target.value)} aria-label="Due date" /><button className="btn sm" disabled={busy || text.trim().length < 3} onClick={() => add()}>Add</button></div>

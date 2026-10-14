@@ -13,7 +13,7 @@ export default function QuickActions({ docsLeft, unread, interview, counselor, a
   const first = /^(mr|mrs|ms|miss|dr|prof|engr|pastor)\.?$/i.test(parts[0] || '') && parts[1] ? `${parts[0]} ${parts[1]}` : parts[0];
   return (
     <div className="st-quick">
-      <Link href="/student/documents" className="st-qt"><span className="st-qi orange"><Icon n="file" size={22} /></span><b>Documents</b><small>{docsLeft ? `${docsLeft} to upload` : 'All received ✓'}</small>{docsLeft > 0 && <i className="n">{docsLeft}</i>}</Link>
+      <Link href="/student/documents" className="st-qt"><span className="st-qi orange"><Icon n="file" size={22} /></span><b>Documents</b><small>{docsLeft ? `${docsLeft} to upload` : 'All received'}</small>{docsLeft > 0 && <i className="n">{docsLeft}</i>}</Link>
       <Link href="/student/messages" className="st-qt"><span className="st-qi blue"><Icon n="chat" size={22} /></span><b>Messages</b><small>{unread ? `${unread} new` : 'Say hello'}</small>{unread > 0 && <i className="n">{unread}</i>}</Link>
       <Link href="/student/interview" className="st-qt"><span className="st-qi purple"><Icon n="video" size={22} /></span><b>Interview</b><small>{interview}</small></Link>
       <button type="button" className="st-qt" disabled={!call || !counselor || call.phase !== 'idle'} onClick={() => counselor && call?.start(appId, 'voice', { name: counselor.display, avatar: { name: counselor.display, url: counselor.avatar_url, color: counselor.color } })}>

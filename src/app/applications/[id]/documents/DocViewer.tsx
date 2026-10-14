@@ -4,6 +4,7 @@ import { ALL_DOC_TYPES } from '@/lib/constants';
 import { scanDocs, setDocType, uploadDocument } from '@/app/actions';
 import Btn from '@/components/Btn';
 import DocTypeSelect from '@/components/DocTypeSelect';
+import Icon from '@/components/Icon';
 
 export type ViewerDoc = {
   id: string; name: string; type: string; path: string | null; size: number; mime: string; driveUrl: string; fromOther: boolean; added: string;
@@ -47,7 +48,7 @@ export default function DocViewer({ appId, docs, missing, initial, canUpload, sc
             {docs.filter((d) => d.type === t).map((d) => (
               <div key={d.id} onClick={() => setSel(d.id)} style={{ padding: '6px 8px', borderRadius: 6, cursor: 'pointer', background: d.id === sel ? '#eceae1' : 'transparent' }}>
                 {d.name}
-                <div className="muted" style={{ fontSize: 12 }}>{d.path ? `📁 ${d.path} · ` : ''}{d.fromOther ? 'other submission · ' : ''}{d.added}</div>
+                <div className="muted" style={{ fontSize: 12 }}>{d.path ? <><Icon n="folder" size={13} className="ic-in" />{d.path} · </> : null}{d.fromOther ? 'other submission · ' : ''}{d.added}</div>
               </div>
             ))}
           </div>

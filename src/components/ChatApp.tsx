@@ -6,6 +6,7 @@ import Icon from './Icon';
 import Sticker from './Sticker';
 import { STICKERS, parseSticker, plainBody, stickerToken } from '@/lib/stickers';
 import { COLORS, gradient } from '@/lib/profile';
+import { plainPreview } from '@/lib/sysText';
 import type { Card, ChatMsg, Ref, RoomRow } from '@/lib/chat';
 
 export type Person = { email: string; name: string; avatar_url: string | null; color: string | null; title: string | null };
@@ -48,15 +49,15 @@ function Cards({ cards, mine }: { cards: Card[]; mine: boolean }) {
       {cards.map((c, i) => c.t === 'student' ? (
         <div key={i} className={`scard ${c.open ? '' : 'locked'} ${mine ? 'm' : ''}`} onClick={(e) => e.stopPropagation()}>
           <div className="stop"><span className="sinit">{initials2(c.name)}</span><div><b>{c.name}</b><small>{[c.school, c.programme && c.programme.toUpperCase() !== 'N/A' ? c.programme : ''].filter(Boolean).join(' · ') || 'Student'}</small></div></div>
-          <div className="smeta">{c.status && <span className="sbadge">{c.status}</span>}{c.open && c.counselor && <span>👤 {c.counselor}</span>}</div>
-          {c.docs && <div className={`sdocs ${c.docs.missing.length ? 'warn' : 'ok'}`}>{c.docs.missing.length ? `📄 ${c.docs.have}/${c.docs.total} documents · needs ${c.docs.missing.slice(0, 3).join(', ')}` : `✅ All ${c.docs.total} documents in`}</div>}
-          {c.open ? <Link href={`/applications/${encodeURIComponent(c.id)}`} className="sopen">Open student <Icon n="right" size={14} /></Link> : <span className="sopen off">🔒 Not assigned to you</span>}
+          <div className="smeta">{c.status && <span className="sbadge">{c.status}</span>}{c.open && c.counselor && <span><Icon n="user" size={13} className="ic-in" />{c.counselor}</span>}</div>
+          {c.docs && <div className={`sdocs ${c.docs.missing.length ? 'warn' : 'ok'}`}><Icon n={c.docs.missing.length ? 'file' : 'check-circle'} size={14} className="ic-in" />{c.docs.missing.length ? `${c.docs.have}/${c.docs.total} documents · needs ${c.docs.missing.slice(0, 3).join(', ')}` : `All ${c.docs.total} documents in`}</div>}
+          {c.open ? <Link href={`/applications/${encodeURIComponent(c.id)}`} className="sopen">Open student <Icon n="right" size={14} /></Link> : <span className="sopen off"><Icon n="lock" size={13} className="ic-in" />Not assigned to you</span>}
         </div>
       ) : (
         <div key={i} className={`dcard ${c.open ? '' : 'locked'} ${mine ? 'm' : ''}`} onClick={(e) => e.stopPropagation()}>
           <span className="ico"><Icon n="file" size={18} /></span>
           <div><b>{c.name}</b><small>{c.type} · {c.student}</small></div>
-          {c.open ? <span className="dact"><Link href={`/applications/${encodeURIComponent(c.id)}/documents?file=${encodeURIComponent(c.f)}`} title="View"><Icon n="eye" size={17} /></Link><a href={`/api/files/${encodeURIComponent(c.f)}?download=1`} title="Download"><Icon n="download" size={17} /></a></span> : <span className="dact">🔒</span>}
+          {c.open ? <span className="dact"><Link href={`/applications/${encodeURIComponent(c.id)}/documents?file=${encodeURIComponent(c.f)}`} title="View"><Icon n="eye" size={17} /></Link><a href={`/api/files/${encodeURIComponent(c.f)}?download=1`} title="Download"><Icon n="download" size={17} /></a></span> : <span className="dact"><Icon n="lock" size={16} /></span>}
         </div>
       ))}
     </div>
@@ -78,7 +79,7 @@ function SharePicker({ onAdd, onClose }: { onAdd: (refs: Pending[]) => void; onC
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-h"><b>{cur ? cur.name : 'Quote a student'}</b><button className="iconbtn" onClick={onClose} aria-label="Close">×</button></div>
+        <div className="modal-h"><b>{cur ? cur.name : 'Quote a student'}</b><button className="iconbtn" onClick={onClose} aria-label="Close"><Icon n="x" size={16} /></button></div>
         {!cur ? (
           <>
             <div className="search" style={{ marginBottom: 10 }}><input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by student name or university…" /></div>
@@ -90,7 +91,7 @@ function SharePicker({ onAdd, onClose }: { onAdd: (refs: Pending[]) => void; onC
           </>
         ) : (
           <>
-            <button className="linkish" onClick={() => setCur(null)}>‹ Back to search</button>
+            <button className="linkish" onClick={() => setCur(null)}><Icon n="chevron-left" size={14} className="ic-in" />Back to search</button>
             <button className="btn" style={{ width: '100%', margin: '12px 0' }} onClick={() => { onAdd([{ t: 'student', id: cur.id, label: cur.name }]); onClose(); }}>Quote {cur.name.split(' ')[0]}’s student card</button>
             <div className="stat-l" style={{ marginBottom: 6 }}>Or share documents</div>
             <div className="pick-list" style={{ maxHeight: 220 }}>
@@ -139,12 +140,12 @@ export default function ChatApp({ me, people, initialRooms, initialActive, about
           <div className="search"><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search chats…" /></div>
           <button className="btn sm" onClick={() => setCreating(true)}><Icon n="user-plus" size={14} /> New</button>
         </div>
-        {pending && <div className="ctx" style={{ margin: 10 }}><div><b>Discuss {pending.name}</b><span>Pick who to send the student card to</span></div><button className="iconbtn" aria-label="Cancel" onClick={() => { setPending(null); history.replaceState(null, '', active ? `/chat?room=${active}` : '/chat'); }}>×</button></div>}
+        {pending && <div className="ctx" style={{ margin: 10 }}><div><b>Discuss {pending.name}</b><span>Pick who to send the student card to</span></div><button className="iconbtn" aria-label="Cancel" onClick={() => { setPending(null); history.replaceState(null, '', active ? `/chat?room=${active}` : '/chat'); }}><Icon n="x" size={16} /></button></div>}
         <div className="chat-scroll">
           {list.map((r) => (
             <button key={r.id} className={`chat-item ${active === r.id ? 'on' : ''}`} onClick={() => open(r.id)}>
               {roomIcon(r, 44)}
-              <div><b>{title(r)}{r.muted && <span className="muted" title="Muted"> 🔕</span>}</b><small>{r.last_preview ? `${r.last_sender === me ? 'You: ' : r.kind === 'group' && r.last_sender ? `${who(r.last_sender).name.split(' ')[0]}: ` : ''}${r.last_preview}` : 'No messages yet'}</small></div>
+              <div><b>{title(r)}{r.muted && <span className="muted" title="Muted"> <Icon n="bell-off" size={13} className="ic-in" /></span>}</b><small>{r.last_preview ? `${r.last_sender === me ? 'You: ' : r.kind === 'group' && r.last_sender ? `${who(r.last_sender).name.split(' ')[0]}: ` : ''}${plainPreview(r.last_preview)}` : 'No messages yet'}</small></div>
               <span className="when">{short(r.last_message_at)}{r.unread > 0 && <i className={`n ${r.muted ? 'quiet' : ''}`}>{r.unread}</i>}</span>
             </button>
           ))}
@@ -171,7 +172,7 @@ function NewChat({ me, people, online, onClose, onOpen }: { me: string; people: 
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-h"><b>New chat</b><button className="iconbtn" onClick={onClose} aria-label="Close">×</button></div>
+        <div className="modal-h"><b>New chat</b><button className="iconbtn" onClick={onClose} aria-label="Close"><Icon n="x" size={16} /></button></div>
         <div className="tabs" style={{ margin: '0 0 12px' }}>
           <button className={`tab ${mode === 'dm' ? 'active' : ''}`} onClick={() => setMode('dm')}>Direct message</button>
           <button className={`tab ${mode === 'group' ? 'active' : ''}`} onClick={() => setMode('group')}>New group</button>
@@ -321,7 +322,7 @@ function Thread({ seed, onSeedUsed, room, me, who, people, online: onlineSeed, t
                   {!mine && group && first && <span className="sname">{s.name}</span>}
                   <div className={`bub ${gone ? 'gone' : ''} ${sel === m.id ? 'sel' : ''} ${!gone && parseSticker(m.body) ? 'sticker' : ''}`} onClick={(e) => { e.stopPropagation(); if (!gone && !(e.target as HTMLElement).closest('a')) setSel(sel === m.id ? null : m.id); }}>
                     {m.reply && <div className="quote"><b>{who(m.reply.sender).name.split(' ')[0]}</b><span>{plainBody(m.reply.text)}</span></div>}
-                    {gone ? <p><em>🚫 This message was deleted</em></p> : <>
+                    {gone ? <p><em><Icon n="ban" size={14} className="ic-in" />This message was deleted</em></p> : <>
                       {m.cards.length > 0 && <Cards cards={m.cards} mine={mine} />}
                       {m.att && (m.att.mime.startsWith('image/')
                         ? <a href={m.att.url} target="_blank" rel="noreferrer" className="att-img" onClick={(e) => e.stopPropagation()}>{/* eslint-disable-next-line @next/next/no-img-element */}<img src={m.att.url} alt={m.att.name} loading="lazy" /></a>
@@ -348,9 +349,9 @@ function Thread({ seed, onSeedUsed, room, me, who, people, online: onlineSeed, t
       </div>
       <footer className="chat-foot">
         {err && <div className="err-line">{err} <button className="linkish" onClick={() => setErr('')}>dismiss</button></div>}
-        {(reply || editing) && <div className="ctx"><div><b>{editing ? 'Editing message' : `Replying to ${who(reply!.sender).name.split(' ')[0]}`}</b><span>{(editing || reply)!.body || (reply?.att ? `📎 ${reply.att.name}` : '')}</span></div><button className="iconbtn" aria-label="Cancel" onClick={() => { setReply(null); setEditing(null); if (editing) setText(''); }}>×</button></div>}
-        {file && <div className="ctx"><div><b>📎 {file.name}</b><span>{size(file.size)}{file.type.startsWith('image/') ? ' · photo will be resized' : ''}</span></div><button className="iconbtn" aria-label="Remove file" onClick={() => setFile(null)}>×</button></div>}
-        {refs.length > 0 && <div className="refchips">{refs.map((r, i) => <span key={i} className="refchip">{r.t === 'doc' ? '📄' : '👤'} {r.label}<button aria-label="Remove" onClick={() => setRefs((c) => c.filter((_, j) => j !== i))}>×</button></span>)}</div>}
+        {(reply || editing) && <div className="ctx"><div><b>{editing ? 'Editing message' : `Replying to ${who(reply!.sender).name.split(' ')[0]}`}</b><span>{(editing || reply)!.body || (reply?.att ? reply.att.name : '')}</span></div><button className="iconbtn" aria-label="Cancel" onClick={() => { setReply(null); setEditing(null); if (editing) setText(''); }}><Icon n="x" size={16} /></button></div>}
+        {file && <div className="ctx"><div><b><Icon n="paperclip" size={14} className="ic-in" />{file.name}</b><span>{size(file.size)}{file.type.startsWith('image/') ? ' · photo will be resized' : ''}</span></div><button className="iconbtn" aria-label="Remove file" onClick={() => setFile(null)}><Icon n="x" size={16} /></button></div>}
+        {refs.length > 0 && <div className="refchips">{refs.map((r, i) => <span key={i} className="refchip"><Icon n={r.t === 'doc' ? 'file' : 'user'} size={13} className="ic-in" />{r.label}<button aria-label="Remove" onClick={() => setRefs((c) => c.filter((_, j) => j !== i))}><Icon n="x" size={13} /></button></span>)}</div>}
         {sugg.length > 0 && hq !== null && (
           <div className="sugg">
             <div className="sugg-h">Quote a student</div>
@@ -359,7 +360,7 @@ function Thread({ seed, onSeedUsed, room, me, who, people, online: onlineSeed, t
         )}
         {emoji && (
           <div className="picker" onClick={(e) => e.stopPropagation()}>
-            <div className="ptabs"><button type="button" className={pickTab === 'emoji' ? 'on' : ''} onClick={() => setPickTab('emoji')}>🙂 Emoji</button><button type="button" className={pickTab === 'stickers' ? 'on' : ''} onClick={() => setPickTab('stickers')}>✨ Stickers</button></div>
+            <div className="ptabs"><button type="button" className={pickTab === 'emoji' ? 'on' : ''} onClick={() => setPickTab('emoji')}><Icon n="smile" size={15} className="ic-in" />Emoji</button><button type="button" className={pickTab === 'stickers' ? 'on' : ''} onClick={() => setPickTab('stickers')}><Icon n="spark" size={15} className="ic-in" />Stickers</button></div>
             {pickTab === 'emoji' ? <div className="pgrid2">{PICKER.map((e) => <button key={e} onClick={() => { setText((t) => t + e); ta.current?.focus(); }}>{e}</button>)}</div>
               : <div className="stk-all">{STICKERS.map((x) => <button key={x.id} type="button" onClick={() => sendSticker(x.id)} aria-label={x.label} disabled={busy}><Sticker s={x} size="sm" /></button>)}</div>}
           </div>
@@ -367,7 +368,7 @@ function Thread({ seed, onSeedUsed, room, me, who, people, online: onlineSeed, t
         <div className="chat-row">
           <input ref={fileIn} type="file" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) { setFile(f); setEditing(null); } e.target.value = ''; }} />
           <button className="iconbtn" title="Attach a file or photo" onClick={() => fileIn.current?.click()} disabled={!!editing}><Icon n="upload" size={18} /></button>
-          <button className="iconbtn" title="Emoji" onClick={(e) => { e.stopPropagation(); setEmoji((v) => !v); }}>🙂</button>
+          <button className="iconbtn" title="Emoji" onClick={(e) => { e.stopPropagation(); setEmoji((v) => !v); }}><Icon n="smile" size={20} /></button>
           <button className="iconbtn" title="Quote a student or share their documents  (or type #)" onClick={() => setPicker(true)} disabled={!!editing}><span style={{ fontWeight: 700, fontSize: 17 }}>#</span></button>
           <textarea ref={ta} value={text} rows={1} placeholder={editing ? 'Edit your message…' : `Message ${group ? title : title.split(' ')[0]}…  (type # to quote a student)`} maxLength={2000}
             onChange={(e) => { setText(e.target.value); typing(); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 140) + 'px'; }}
@@ -390,7 +391,7 @@ function InfoPanel({ room, me, who, people, online, members, title, onClose, onC
   const other = !group ? who(room.members.find((m) => m !== me) || me) : null;
   return (
     <div className="info">
-      <div className="info-h"><b>{group ? 'Group info' : 'Chat info'}</b><button className="iconbtn" onClick={onClose} aria-label="Close">×</button></div>
+      <div className="info-h"><b>{group ? 'Group info' : 'Chat info'}</b><button className="iconbtn" onClick={onClose} aria-label="Close"><Icon n="x" size={16} /></button></div>
       <div className="info-b">
         {other && <div className="tcard" style={{ marginBottom: 16 }}><Avatar name={other.name} url={other.avatar_url} color={other.color} size={64} /><div><b style={{ fontSize: 17 }}>{other.name}</b><div className="muted">{other.title || 'Teammate'}</div><div className="muted" style={{ fontSize: 13 }}>{other.email}</div></div></div>}
         {group && (

@@ -11,7 +11,7 @@ export default function StudentDetails({ locked, phone, city, preferred }: { loc
   async function save(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault(); setBusy(true); setMsg(null);
     const r = await studentSaveDetails(new FormData(e.currentTarget));
-    if (r.ok) { setEdit(false); setMsg({ t: r.sheet === false ? 'Saved. Your counselor will see the update shortly.' : 'Saved ✓' }); router.refresh(); } else setMsg({ t: r.error || 'Could not save', bad: true });
+    if (r.ok) { setEdit(false); setMsg({ t: r.sheet === false ? 'Saved. Your counselor will see the update shortly.' : 'Saved' }); router.refresh(); } else setMsg({ t: r.error || 'Could not save', bad: true });
     setBusy(false);
   }
   return (

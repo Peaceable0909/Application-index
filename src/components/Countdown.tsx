@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import Icon from './Icon';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
@@ -15,7 +16,7 @@ export default function Countdown({ to, title, sub }: { to: string; title: strin
   return (
     <section className={`st-card st-count ${urgent ? 'urgent' : ''}`}>
       <div className="st-count-h"><div><div className="st-eyebrow">{title}</div>{sub && <p className="st-sub" style={{ margin: 0 }}>{sub}</p>}</div></div>
-      {left === 0 ? <p className="st-count-done">It’s time ✨</p> : (
+      {left === 0 ? <p className="st-count-done"><Icon n="spark" size={16} className="ic-in" />It’s time</p> : (
         <div className="st-count-grid" role="timer" aria-label={`${d} days ${h} hours ${m} minutes left`}>
           {cells.map(([l, n]) => (
             <div key={l} className="st-count-c"><b key={`${l}${n}`} className="tick">{pad(n)}</b><small>{l}</small></div>

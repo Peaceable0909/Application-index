@@ -6,6 +6,7 @@ import { requireTeam } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
 import { dateTime, initials } from '@/lib/format';
 import Btn from '@/components/Btn';
+import Icon from '@/components/Icon';
 
 export default async function Notes({ searchParams }: { searchParams: Promise<{ q?: string; pinned?: string }> }) {
   const people = await loadPeople();
@@ -25,7 +26,7 @@ export default async function Notes({ searchParams }: { searchParams: Promise<{ 
       <div className="card">
         {list.map((n) => { const a = n.portal_applications as { name: string; application_id: string } | null; return (
           <div key={n.id} className="note"><Avatar name={personFor(people, n.author).name} url={personFor(people, n.author).avatar_url} color={personFor(people, n.author).color} size={34} />
-            <div style={{ flex: 1 }}><b>{personFor(people, n.author).name} {n.pinned && '📌'}</b> <span className="muted">on</span> {a ? <Link href={`/applications/${a.application_id}?tab=notes`}><b>{a.name}</b></Link> : '—'}<small>{dateTime(n.created_at)}</small><p style={{ whiteSpace: 'pre-wrap' }}>{n.body}</p></div></div>); })}
+            <div style={{ flex: 1 }}><b>{personFor(people, n.author).name} {n.pinned && <Icon n="pin" size={13} className="ic-in" />}</b> <span className="muted">on</span> {a ? <Link href={`/applications/${a.application_id}?tab=notes`}><b>{a.name}</b></Link> : '—'}<small>{dateTime(n.created_at)}</small><p style={{ whiteSpace: 'pre-wrap' }}>{n.body}</p></div></div>); })}
         {!list.length && <p className="muted" style={{ margin: 0 }}>No notes match.</p>}
       </div>
     </>

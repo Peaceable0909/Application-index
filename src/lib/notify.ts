@@ -38,7 +38,7 @@ export async function notifyChat(roomId: string, senderEmail: string, preview: s
       await sendMail({
         to: m.email, subject: `New message from ${from}${where}`, body: `${from}${where}: ${preview || (hasFile ? 'sent an attachment' : '')}`,
         eyebrow: 'New message', title: `${from} messaged you`, greeting: `Hi ${shownName(p).split(' ')[0]},`, preheader: preview || 'Open the portal to read it.',
-        blocks: [{ type: 'quote', from: `${from}${where}`, text: preview ? preview.slice(0, 300) : '📎 Sent an attachment' }],
+        blocks: [{ type: 'quote', from: `${from}${where}`, text: preview ? preview.slice(0, 300) : 'Sent an attachment' }],
         cta: { label: 'Open the chat', href: `${site()}/chat?room=${roomId}` }, footerNote: 'Automatic notification, sent at most every 3 hours per chat. Turn off in My profile.',
         sign: { name: 'Admissions Portal', title: 'Notification' },
       });

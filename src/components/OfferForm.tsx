@@ -33,7 +33,7 @@ export default function OfferForm({ action, id, offer, conditions: initial, docs
               <li key={i} className={c.met ? 'met' : ''}>
                 <label><input type="checkbox" checked={c.met} onChange={() => setConds((cs) => cs.map((x, j) => (j === i ? { ...x, met: !x.met } : x)))} /> <span>{c.text}</span></label>
                 <input type="date" value={c.due || ''} onChange={(e) => setConds((cs) => cs.map((x, j) => (j === i ? { ...x, due: e.target.value || null } : x)))} title="Due date (optional)" />
-                <button type="button" className="iconbtn" aria-label="Remove" onClick={() => setConds((cs) => cs.filter((_, j) => j !== i))}>×</button>
+                <button type="button" className="iconbtn" aria-label="Remove" onClick={() => setConds((cs) => cs.filter((_, j) => j !== i))}><Icon n="x" size={16} /></button>
               </li>
             ))}
           </ul>

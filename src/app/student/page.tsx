@@ -55,7 +55,7 @@ export default async function StudentHome() {
                 {c.a.intake && <span className="st-chip amber">Intake {new Date(c.a.intake + '-01').toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}</span>}
                 {left !== null && left >= 0 && <span className={`st-chip ${left <= 14 ? 'amber' : ''}`}>{left === 0 ? 'Deadline today' : `${left} day${left === 1 ? '' : 's'} to deadline`}</span>}
               </div>
-              {!final && <div className="st-steps">{STEPS.map((st, n) => <div key={st} className={`st-step ${n < idx ? 'done' : n === idx ? 'now' : ''}`}><i>{n < idx ? '✓' : n + 1}</i>{st}</div>)}</div>}
+              {!final && <div className="st-steps">{STEPS.map((st, n) => <div key={st} className={`st-step ${n < idx ? 'done' : n === idx ? 'now' : ''}`}><i>{n < idx ? <Icon n="check" size={14} /> : n + 1}</i>{st}</div>)}</div>}
             </div>
           </section>
         );
@@ -69,7 +69,7 @@ export default async function StudentHome() {
       </section>
 
       <div style={{ ['--i' as string]: i++ }}>
-        <QuickActions docsLeft={docsLeft} unread={d.unreadMsgs} interview={up ? 'Booked ✓' : d.interview.slots.length ? 'Book a time' : 'Practice'} counselor={d.counselor ? { display: d.counselor.display, avatar_url: d.counselor.avatar_url, color: d.counselor.color } : null} appId={d.cards[0].folderApp.application_id} />
+        <QuickActions docsLeft={docsLeft} unread={d.unreadMsgs} interview={up ? 'Booked' : d.interview.slots.length ? 'Book a time' : 'Practice'} counselor={d.counselor ? { display: d.counselor.display, avatar_url: d.counselor.avatar_url, color: d.counselor.color } : null} appId={d.cards[0].folderApp.application_id} />
       </div>
 
       {soonI ? <div style={{ ['--i' as string]: i++ }}><Countdown to={soonI.starts_at} title="Interview practice starts in" sub="Find a quiet spot and test your sound." /></div>
@@ -77,7 +77,7 @@ export default async function StudentHome() {
 
       <div style={{ ['--i' as string]: i++ }}><Milestones badges={badges} /></div>
       <WelcomeTour name={d.first} />
-      <Celebrate scope={d.a0.application_id} unlocked={badges.filter((b) => b.on).map((b) => ({ key: b.key, label: b.label, emoji: b.emoji }))} />
+      <Celebrate scope={d.a0.application_id} unlocked={badges.filter((b) => b.on).map((b) => ({ key: b.key, label: b.label, icon: b.icon }))} />
 
       {(
         <Link href="/student/interview/credibility" className="st-card cr-entry" style={{ ['--i' as string]: i++ }}>
@@ -102,8 +102,8 @@ export default async function StudentHome() {
       {d.cards.map((c) => c.offer && (c.offer.offer_type || c.offer.cas_status || c.offer.visa_status || c.offer.conditions?.length) ? (
         <section key={`o${c.a.student_key}`} id="offer" className="st-card" style={{ ['--i' as string]: i++ }}>
           <h2>Offer &amp; visa</h2><p className="st-sub">{schoolShort(c.a.school)} · your progress step by step</p>
-          <div className="st-line">{milestones(c.offer).map((m) => <div key={m.key} className={`st-ms ${m.state}`}><i>{m.state === 'done' ? '✓' : m.state === 'bad' ? '✕' : ''}</i><div><b>{m.label}</b><small>{[m.detail, m.date ? fmtD(m.date) : ''].filter(Boolean).join(' · ') || 'Not yet'}</small></div></div>)}</div>
-          {(c.offer.conditions || []).length > 0 && <ul className="st-list" style={{ marginTop: 16 }}>{c.offer.conditions.map((cd, n) => <li key={n} className={`st-row ${cd.met ? 'got' : 'need'}`}><span className="st-ico">{cd.met ? '✓' : '!'}</span><div className="st-grow"><b>{cd.text}</b><small>{cd.met ? 'Met' : 'Still to do'}{cd.due ? ` · by ${fmtD(cd.due)}` : ''}</small></div></li>)}</ul>}
+          <div className="st-line">{milestones(c.offer).map((m) => <div key={m.key} className={`st-ms ${m.state}`}><i>{m.state === 'done' ? <Icon n="check" size={15} /> : m.state === 'bad' ? <Icon n="x" size={15} /> : null}</i><div><b>{m.label}</b><small>{[m.detail, m.date ? fmtD(m.date) : ''].filter(Boolean).join(' · ') || 'Not yet'}</small></div></div>)}</div>
+          {(c.offer.conditions || []).length > 0 && <ul className="st-list" style={{ marginTop: 16 }}>{c.offer.conditions.map((cd, n) => <li key={n} className={`st-row ${cd.met ? 'got' : 'need'}`}><span className="st-ico"><Icon n={cd.met ? 'check' : 'alert'} size={18} /></span><div className="st-grow"><b>{cd.text}</b><small>{cd.met ? 'Met' : 'Still to do'}{cd.due ? ` · by ${fmtD(cd.due)}` : ''}</small></div></li>)}</ul>}
           {c.offer.offer_doc_id && c.docs.some((x) => x.id === c.offer!.offer_doc_id) && <a className="st-btn ghost sm" style={{ marginTop: 16 }} href={`/api/files/${encodeURIComponent(c.offer.offer_doc_id)}`} target="_blank" rel="noreferrer"><Icon n="eye" size={15} /> View my offer letter</a>}
           {c.offer.student_note && <div className="st-note" style={{ marginTop: 16 }}><b>Note from your counselor</b>{c.offer.student_note}</div>}
         </section>
