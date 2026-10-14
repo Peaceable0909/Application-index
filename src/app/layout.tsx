@@ -5,7 +5,8 @@ import { currentStaff } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
 import { appIdsFor } from '@/lib/auth';
 import { inboxUnread } from '@/lib/inbox';
-import Mark from '@/components/Mark';
+import Logo from '@/components/Logo';
+import Splash from '@/components/Splash';
 import Nav from '@/components/Nav';
 import TopSearch from '@/components/TopSearch';
 import Bell from '@/components/Bell';
@@ -30,11 +31,22 @@ import './calls.css';
 import './ios.css';
 import { cookies } from 'next/headers';
 import { COOKIE, parseTheme } from '@/lib/theme';
+import { site } from '@/lib/emailTemplate';
 
 const ui = Inter({ subsets: ['latin'], variable: '--font-ui', display: 'swap' });
 const display = Instrument_Serif({ subsets: ['latin'], weight: '400', style: ['normal', 'italic'], variable: '--font-display', display: 'swap' });
 
-export const metadata = { title: 'Admissions Portal', description: 'Applications, documents and counselors in one place.', manifest: '/manifest.webmanifest', appleWebApp: { capable: true, title: 'WhiteRock', statusBarStyle: 'default' as const }, icons: { apple: '/pwa/icon-192.png' } };
+const blurb = 'Applications, documents and counselors in one place.';
+export const metadata = {
+  metadataBase: new URL(site()),
+  title: { default: 'Extravel', template: '%s · Extravel' },
+  description: blurb,
+  manifest: '/manifest.webmanifest',
+  appleWebApp: { capable: true, title: 'Extravel', statusBarStyle: 'default' as const },
+  icons: { icon: [{ url: '/brand/favicon.png', type: 'image/png' }], apple: '/brand/apple-touch-icon.png' },
+  openGraph: { siteName: 'Extravel', title: 'Extravel', description: blurb, images: [{ url: '/brand/og.png', width: 1200, height: 630 }] },
+  twitter: { card: 'summary_large_image' as const, title: 'Extravel', description: blurb, images: ['/brand/og.png'] },
+};
 export const viewport = { themeColor: '#0d1f4d' };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
@@ -64,16 +76,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <script dangerouslySetInnerHTML={{ __html: "try{var e=document.documentElement;var t=+localStorage.getItem('wr_splash')||0;if(Date.now()-t<108e5)e.classList.add('no-splash');else localStorage.setItem('wr_splash',String(Date.now()));if(e.getAttribute('data-pref')==='system'){var m=matchMedia('(prefers-color-scheme: dark)'),f=function(){e.setAttribute('data-theme',m.matches?'dark':'light')};f();m.addEventListener('change',f)}}catch(x){}" }} />
       </head>
       <body>
-        <div className="splash" aria-hidden>
-          <div className="splash-in"><Mark draw /><div className="splash-word">Admissions <em>Portal</em></div><div className="splash-line" /></div>
-        </div>
+        <Splash />
         <NavProgress />
         <CallProvider enabled={!!(staff || student)}>
         {staff && <Presence />}
         {staff ? (
           <div className="shell">
             <aside className="side">
-              <Link href="/" className="brand"><Mark size={36} inverse /><span><b>Admissions <em>Portal</em></b><small>WhiteRock Admissions</small></span></Link>
+              <Link href="/" className="brand" aria-label="Extravel home"><Logo light height={52} alt="" /><small>Team portal</small></Link>
               <Nav taskCount={taskCount} chatCount={chatCount} inboxCount={inboxCount} role={staff.role} />
               <div className="tag">More opportunities.<br />Brighter futures.</div>
             </aside>

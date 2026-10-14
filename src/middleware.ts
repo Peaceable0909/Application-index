@@ -17,14 +17,14 @@ export async function middleware(req: NextRequest) {
   });
   const { data } = await sb.auth.getUser();
   const { pathname } = req.nextUrl;
-  const pwa = pathname === '/sw.js' || pathname === '/manifest.webmanifest' || pathname.startsWith('/pwa/');
+  const pwa = pathname === '/sw.js' || pathname === '/manifest.webmanifest' || pathname.startsWith('/pwa/') || pathname.startsWith('/brand/');
   const isStudentArea = pathname === '/student' || pathname.startsWith('/student/');
   const host = (req.headers.get('host') || '').toLowerCase();
   const studentHost = (process.env.STUDENT_HOST || '').toLowerCase();
 
   // Optional separate address for students (set STUDENT_HOST): that address only ever serves the student portal.
   if (studentHost && host === studentHost) {
-    const ok = isStudentArea || pathname.startsWith('/auth/') || pathname.startsWith('/api/files/') || pathname === '/api/email/logo' || pathname === '/icon.svg' || pwa;
+    const ok = isStudentArea || pathname.startsWith('/auth/') || pathname.startsWith('/api/files/') || pathname === '/api/email/logo' || pwa;
     if (pathname === '/') return NextResponse.redirect(new URL(data.user ? '/student' : '/student/login', req.url));
     if (!ok) return NextResponse.redirect(new URL('/student', req.url));
   }
