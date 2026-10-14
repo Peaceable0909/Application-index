@@ -8,8 +8,7 @@ import { STICKERS, isStickerFile, parseSticker, plainBody, stickerToken } from '
 import { addMine, listMine, removeMine, stickerExt, STICKER_TYPES, type MySticker } from '@/lib/myStickers';
 import type { ThreadMsg } from '@/lib/thread';
 import { ALL_DOC_TYPES } from '@/lib/constants';
-import { useCall } from './useCall';
-import CallOverlay from './CallOverlay';
+import { useCallMaybe } from './CallProvider';
 import type { CallView } from '@/lib/callTypes';
 
 type Other = { name: string; online: boolean; lastSeen: string | null };
@@ -84,7 +83,7 @@ function Voice({ m }: { m: Local }) {
 export default function ChatThread({ appId, msgs, as, other: otherName, otherInit, backHref, avatar, title }: { appId: string; msgs: ThreadMsg[]; as: 'student' | 'staff'; other: string; otherInit?: Other; backHref?: string; avatar?: { name: string; url: string | null; color: string | null }; title?: string }) {
   const [list, setList] = useState<Local[]>(msgs);
   const [srvCall, setSrvCall] = useState<CallView | null>(null);
-  const call = useCall({ appId, server: srvCall });
+  const call = useCallMaybe();
   const [other, setOther] = useState<Other | null>(otherInit || null);
   const [text, setText] = useState('');
   const [reply, setReply] = useState<Local | null>(null);
@@ -136,7 +135,10 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
     return () => { clearInterval(t); document.removeEventListener('visibilitychange', v); };
   }, [sync]);
 
-  useEffect(() => { if (call.phase === 'ended') { const t = setTimeout(() => void sync(false), 600); return () => clearTimeout(t); } }, [call.phase, sync]);
+  useEffect(() => (call ? call.registerChat() : undefined), [call?.registerChat]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { call?.offerServer(appId, srvCall, { name: title || otherName, avatar: avatar || null }); }, [srvCall]); // eslint-disable-line react-hooks/exhaustive-deps
+  const callPhase = call?.phase;
+  useEffect(() => { if (callPhase === 'ended') { const t = setTimeout(() => void sync(false), 600); return () => clearTimeout(t); } }, [callPhase, sync]);
   useEffect(() => { if (near.current) end.current?.scrollIntoView({ block: 'end' }); }, [list.length]);
   useEffect(() => { end.current?.scrollIntoView({ block: 'end' }); }, []);
   useEffect(() => { const c = (e: MouseEvent) => { if (!(e.target as Element).closest?.('.st-bub')) setMenu(null); }; document.addEventListener('click', c); return () => document.removeEventListener('click', c); }, []);
@@ -235,8 +237,8 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
         {backHref && <Link href={backHref} className="wa-back" aria-label="Back"><svg width="24" height="24" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg></Link>}
         <Avatar name={avatar?.name || otherName} url={avatar?.url} color={avatar?.color} size={40} />
         <div className="wa-who"><b>{title || otherName}</b>{typing ? <small className="typing">typing…</small> : status ? <small>{status === 'Active now' ? 'online' : status.toLowerCase()}</small> : null}</div>
-        <button type="button" className="wa-ic" onClick={(e) => { e.stopPropagation(); void call.start('video'); }} disabled={call.phase !== 'idle'} aria-label="Video call"><Icon n="video" size={21} /></button>
-        <button type="button" className="wa-ic" onClick={(e) => { e.stopPropagation(); void call.start('voice'); }} disabled={call.phase !== 'idle'} aria-label="Voice call"><Icon n="phone" size={20} /></button>
+        <button type="button" className="wa-ic" onClick={(e) => { e.stopPropagation(); void call?.start(appId, 'video', { name: title || otherName, avatar: avatar || null }); }} disabled={!call || call.phase !== 'idle'} aria-label="Video call"><Icon n="video" size={21} /></button>
+        <button type="button" className="wa-ic" onClick={(e) => { e.stopPropagation(); void call?.start(appId, 'voice', { name: title || otherName, avatar: avatar || null }); }} disabled={!call || call.phase !== 'idle'} aria-label="Voice call"><Icon n="phone" size={20} /></button>
         <button type="button" className="wa-ic" onClick={(e) => { e.stopPropagation(); setSearch(search ? null : { q: '', i: 0 }); }} aria-label="Search this chat"><Icon n="search" size={20} /></button>
       </header>
       {search && <div className="wa-search"><input autoFocus value={search.q} onChange={(e) => setSearch({ q: e.target.value, i: 0 })} placeholder="Search messages" onKeyDown={(e) => { if (e.key === 'Enter') step(e.shiftKey ? -1 : 1); if (e.key === 'Escape') setSearch(null); }} /><span>{search.q.trim().length > 1 ? (hits.length ? `${Math.min(search.i, hits.length - 1) + 1}/${hits.length}` : 'No matches') : ''}</span><button type="button" onClick={() => step(-1)} aria-label="Previous match" disabled={!hits.length}>↑</button><button type="button" onClick={() => step(1)} aria-label="Next match" disabled={!hits.length}>↓</button><button type="button" onClick={() => setSearch(null)} aria-label="Close search">✕</button></div>}
@@ -338,7 +340,6 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
         </div>
       )}
       {lightbox && <div className="st-lightbox" onClick={() => setLightbox(null)}>{/* eslint-disable-next-line @next/next/no-img-element */}<img src={lightbox} alt="" /><button aria-label="Close">×</button></div>}
-      <CallOverlay call={call} name={title || otherName} avatar={avatar} />
     </div>
   );
 }
