@@ -46,7 +46,7 @@ export default function StudentInterviews({ slots, upcoming, past, hasUpcoming }
           {!slots.length && <p className="muted" style={{ margin: 0 }}>No sessions are open right now. Please check back soon, or message your counselor.</p>}
           <ul className="dlist">
             {slots.map((sl) => (
-              <li key={sl.id}><span className="dstat" style={{ background: '#eef3ff', color: 'var(--blue)' }}><Icon n="clock" size={14} /></span>
+              <li key={sl.id}><span className="dstat" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}><Icon n="clock" size={14} /></span>
                 <div className="dmain"><b><LocalTime iso={sl.starts_at} /></b><small>{sl.duration_min} minutes{sl.notes ? ` · ${sl.notes}` : ''}{sl.free > 1 ? ` · ${sl.free} places left` : ''}</small></div>
                 <button className="btn sm" disabled={!!busy} onClick={() => run(sl.id, () => studentBookSlot(sl.id), 'Booked! We’ve emailed you the meeting link and a calendar invite.', { title: 'You’re booked!', lines: [when(sl.starts_at), `${sl.duration_min} minutes`, 'We’ve emailed you the meeting link and a calendar invite.'] })}>{busy === sl.id ? 'Booking…' : 'Book'}</button></li>
             ))}

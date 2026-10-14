@@ -7,6 +7,7 @@ export default function MobileMenu() {
   const [open, setOpen] = useState(false);
   const path = usePathname();
   useEffect(() => { setOpen(false); }, [path]);
+  useEffect(() => { const o = () => setOpen(true); window.addEventListener('open-menu', o); return () => window.removeEventListener('open-menu', o); }, []);
   useEffect(() => {
     document.documentElement.classList.toggle('menu-open', open);
     const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
