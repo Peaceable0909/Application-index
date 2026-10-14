@@ -57,7 +57,7 @@ export default async function Payments({ searchParams }: { searchParams: Promise
                 <td data-l="Waiting">{ok ? <span className="muted">—</span> : <span className={days > 14 ? 'warn-t' : ''}>{days} day{days === 1 ? '' : 's'}</span>}</td>
                 <td data-l="Last reminder" className="muted">{lastSent.get(a.application_id) ? ago(lastSent.get(a.application_id)!) : '—'}</td>
               </tr>); })}
-            {!list.length && <tr><td colSpan={7} className="muted" style={{ textAlign: 'center', padding: 36 }}>{view === 'unpaid' ? 'Everyone in Regent Only has paid. 🎉' : 'Nothing here.'}</td></tr>}
+            {!list.length && <tr><td colSpan={7} className="muted" style={{ textAlign: 'center', padding: 36 }}>{view === 'unpaid' ? 'Everyone in Regent Only has paid.' : 'Nothing here.'}</td></tr>}
           </tbody></table></div></div>
       </form>
     </>

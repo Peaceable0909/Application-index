@@ -38,7 +38,7 @@ export default function StudentBell({ initial }: { initial: Notice[] }) {
               <div>
                 <b>{n.title}</b>
                 {n.body && <div className="muted" style={{ fontSize: 12.5 }}>{n.body}</div>}
-                <div className="sp-f"><small>{ago(n.created_at)}</small>{n.done ? <small className="ok-t">Done ✓</small> : n.href ? <Link href={n.href} onClick={() => setOpen(false)}>Open →</Link> : null}</div>
+                <div className="sp-f"><small>{ago(n.created_at)}</small>{n.done ? <small className="ok-t"><Icon n="check" size={12} className="ic-in" />Done</small> : n.href ? <Link href={n.href} onClick={() => setOpen(false)}>Open →</Link> : null}</div>
               </div>
             </div>
           ))}

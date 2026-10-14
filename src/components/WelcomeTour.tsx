@@ -3,12 +3,13 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { confetti } from '@/lib/confetti';
 import { tick, success } from '@/lib/haptics';
+import Icon from './Icon';
 
 const SLIDES = [
-  { e: '🎓', t: (n: string) => `Welcome, ${n}!`, d: 'Your whole admission journey in one place: where you are, what is next, and who to ask.', hue: ['#5ac8fa', '#007aff'] },
-  { e: '📷', t: () => 'Scan documents with your camera', d: 'Photograph each page and we turn it into one neat PDF, then tell your counselor straight away.', hue: ['#ffb340', '#ff9500'] },
-  { e: '💬', t: () => 'Message or call your counselor', d: 'Send a message any time, or tap Call for a voice or video chat. You can even send stickers.', hue: ['#4cd964', '#2fb750'] },
-  { e: '🔔', t: () => 'Never miss a thing', d: 'Turn on alerts so we can tell you the moment something needs you. Add the app to your home screen too.', hue: ['#c77dff', '#9b4fd6'] },
+  { ic: 'graduation', t: (n: string) => `Welcome, ${n}!`, d: 'Your whole admission journey in one place: where you are, what is next, and who to ask.', hue: ['#5ac8fa', '#007aff'] },
+  { ic: 'camera', t: () => 'Scan documents with your camera', d: 'Photograph each page and we turn it into one neat PDF, then tell your counselor straight away.', hue: ['#ffb340', '#ff9500'] },
+  { ic: 'chat', t: () => 'Message or call your counselor', d: 'Send a message any time, or tap Call for a voice or video chat. You can even send stickers.', hue: ['#4cd964', '#2fb750'] },
+  { ic: 'bell', t: () => 'Never miss a thing', d: 'Turn on alerts so we can tell you the moment something needs you. Add the app to your home screen too.', hue: ['#c77dff', '#9b4fd6'] },
 ];
 
 /** A short first-visit tour in a bottom sheet. Shown once per device. */
@@ -27,7 +28,7 @@ export default function WelcomeTour({ name }: { name: string }) {
         <div className="wt-track" ref={box} onScroll={(e) => { const el = e.currentTarget; setI(Math.round(el.scrollLeft / el.clientWidth)); }}>
           {SLIDES.map((s, k) => (
             <div key={k} className="wt-slide">
-              <div className="wt-art" style={{ ['--h1' as string]: s.hue[0], ['--h2' as string]: s.hue[1] }}><span>{s.e}</span></div>
+              <div className="wt-art" style={{ ['--h1' as string]: s.hue[0], ['--h2' as string]: s.hue[1] }}><span><Icon n={s.ic} size={58} /></span></div>
               <h2>{s.t(name)}</h2><p>{s.d}</p>
             </div>
           ))}

@@ -86,7 +86,7 @@ export async function shapeMessages(rows: Raw[], viewer: Staff): Promise<ChatMsg
   });
   return rows.map((r) => {
     const gone = !!r.deleted_at, p = (rep || []).find((x) => x.id === r.reply_to);
-    const pText = p ? (p.deleted_at ? 'Message deleted' : (p.body || (p.att_name ? `📎 ${p.att_name}` : (p.refs || []).length ? '👤 Shared student' : '')).slice(0, 120)) : '';
+    const pText = p ? (p.deleted_at ? 'Message deleted' : (p.body || (p.att_name ? p.att_name : (p.refs || []).length ? 'Shared student' : '')).slice(0, 120)) : '';
     return {
       id: r.id, room_id: r.room_id, sender: r.sender, body: gone ? '' : r.body,
       reply: p ? { id: p.id, sender: p.sender, text: pText } : null,
@@ -120,4 +120,4 @@ export async function canTag(me: Staff, applicationId: string | null | undefined
   return applicationId && (await canAccessApp(me, applicationId)) ? applicationId : null;
 }
 
-export const previewOf = (body: string, att?: string | null) => (body.trim() ? plainBody(body.trim()).replace(/\s+/g, ' ').slice(0, 80) : att ? `📎 ${att}` : '');
+export const previewOf = (body: string, att?: string | null) => (body.trim() ? plainBody(body.trim()).replace(/\s+/g, ' ').slice(0, 80) : att ? att : '');

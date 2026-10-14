@@ -69,7 +69,7 @@ export default function PushToggle({ banner = false }: { banner?: boolean }) {
         <span className="ic"><Icon n="bell" size={22} /></span>
         <div className="tx"><b>Get alerts on your phone</b><small>Know straight away when your counselor replies or something needs your attention.</small></div>
         <button className="st-btn sm" onClick={enable} disabled={busy}>{busy ? 'Turning on…' : 'Turn on'}</button>
-        <button className="x" aria-label="Not now" onClick={() => { try { localStorage.setItem('push-banner-dismissed', '1'); } catch { /* optional */ } setHidden(true); }}>×</button>
+        <button className="x" aria-label="Not now" onClick={() => { try { localStorage.setItem('push-banner-dismissed', '1'); } catch { /* optional */ } setHidden(true); }}><Icon n="x" size={16} /></button>
         {msg && <small className="msg">{msg}</small>}
       </section>
     );

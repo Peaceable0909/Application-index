@@ -11,6 +11,7 @@ import { ALL_DOC_TYPES } from '@/lib/constants';
 import { useCallMaybe } from './CallProvider';
 import { confetti } from '@/lib/confetti';
 import { success, tick } from '@/lib/haptics';
+import { parseCallLine, plainPreview } from '@/lib/sysText';
 import type { CallView } from '@/lib/callTypes';
 
 type Other = { name: string; online: boolean; lastSeen: string | null };
@@ -53,10 +54,10 @@ function beep() {
 
 
 const EMOJI_TABS: { k: string; icon: string; list: string }[] = [
-  { k: 'smileys', icon: '😀', list: '😀😃😄😁😆😅😂🤣🥲😊😇🙂🙃😉😌😍🥰😘😗😙😚😋😛😝😜🤪🤨🧐🤓😎🥳😏😒😞😔😟😕🙁😣😖😫😩🥺😢😭😤😠😡🤯😳🥵🥶😱😨😰😥😓🤗🤔🤭🤫😶😐😑😬🙄😯😮😲🥱😴😪😵🥴🤢🤧😷' },
-  { k: 'hands', icon: '👍', list: '👍👎👌🤌✌️🤞🤟🤘🤙👈👉👆👇☝️👋🤚✋🖖👏🙌👐🤲🙏✍️💪🫶🫡🤝' },
-  { k: 'hearts', icon: '❤️', list: '❤️🧡💛💚💙💜🖤🤍🤎💔💕💞💓💗💖💘💝✨⭐🌟💫🔥🎉🎊🎈🏆🥇💯✅❌⚠️❓❗🔔' },
-  { k: 'things', icon: '📎', list: '📎📄📝📚🎓🏫✈️🛂🛫🌍📅⏰📞📱💻💬📧💳💷🏠🚆☕🍕🎁📸🎤' },
+  { k: 'smileys', icon: 'smile', list: '😀😃😄😁😆😅😂🤣🥲😊😇🙂🙃😉😌😍🥰😘😗😙😚😋😛😝😜🤪🤨🧐🤓😎🥳😏😒😞😔😟😕🙁😣😖😫😩🥺😢😭😤😠😡🤯😳🥵🥶😱😨😰😥😓🤗🤔🤭🤫😶😐😑😬🙄😯😮😲🥱😴😪😵🥴🤢🤧😷' },
+  { k: 'hands', icon: 'thumbs', list: '👍👎👌🤌✌️🤞🤟🤘🤙👈👉👆👇☝️👋🤚✋🖖👏🙌👐🤲🙏✍️💪🫶🫡🤝' },
+  { k: 'hearts', icon: 'heart', list: '❤️🧡💛💚💙💜🖤🤍🤎💔💕💞💓💗💖💘💝✨⭐🌟💫🔥🎉🎊🎈🏆🥇💯✅❌⚠️❓❗🔔' },
+  { k: 'things', icon: 'paperclip', list: '📎📄📝📚🎓🏫✈️🛂🛫🌍📅⏰📞📱💻💬📧💳💷🏠🚆☕🍕🎁📸🎤' },
 ];
 const hash = (s: string) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
 
@@ -273,13 +274,14 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
         <button type="button" className="wa-ic" onClick={(e) => { e.stopPropagation(); void call?.start(appId, 'voice', { name: title || otherName, avatar: avatar || null }); }} disabled={!call || call.phase !== 'idle'} aria-label="Voice call"><Icon n="phone" size={20} /></button>
         <button type="button" className="wa-ic" onClick={(e) => { e.stopPropagation(); setSearch(search ? null : { q: '', i: 0 }); }} aria-label="Search this chat"><Icon n="search" size={20} /></button>
       </header>
-      {search && <div className="wa-search"><input autoFocus value={search.q} onChange={(e) => setSearch({ q: e.target.value, i: 0 })} placeholder="Search messages" onKeyDown={(e) => { if (e.key === 'Enter') step(e.shiftKey ? -1 : 1); if (e.key === 'Escape') setSearch(null); }} /><span>{search.q.trim().length > 1 ? (hits.length ? `${Math.min(search.i, hits.length - 1) + 1}/${hits.length}` : 'No matches') : ''}</span><button type="button" onClick={() => step(-1)} aria-label="Previous match" disabled={!hits.length}>↑</button><button type="button" onClick={() => step(1)} aria-label="Next match" disabled={!hits.length}>↓</button><button type="button" onClick={() => setSearch(null)} aria-label="Close search">✕</button></div>}
+      {search && <div className="wa-search"><input autoFocus value={search.q} onChange={(e) => setSearch({ q: e.target.value, i: 0 })} placeholder="Search messages" onKeyDown={(e) => { if (e.key === 'Enter') step(e.shiftKey ? -1 : 1); if (e.key === 'Escape') setSearch(null); }} /><span>{search.q.trim().length > 1 ? (hits.length ? `${Math.min(search.i, hits.length - 1) + 1}/${hits.length}` : 'No matches') : ''}</span><button type="button" onClick={() => step(-1)} aria-label="Previous match" disabled={!hits.length}>↑</button><button type="button" onClick={() => step(1)} aria-label="Next match" disabled={!hits.length}>↓</button><button type="button" onClick={() => setSearch(null)} aria-label="Close search"><Icon n="x" size={18} /></button></div>}
       <div className="st-chat-list" ref={box} onScroll={onScroll} aria-live="polite">
-        {list.length === 0 && <div className="st-chat-empty"><span className="wa-hello">👋</span><b>Say hello to {otherName}</b><span>Ask a question, send a photo of a document, or record a voice note.</span></div>}
+        {list.length === 0 && <div className="st-chat-empty"><span className="wa-hello"><Icon n="chat" size={38} /></span><b>Say hello to {otherName}</b><span>Ask a question, send a photo of a document, or record a voice note.</span></div>}
         {list.map((m, i) => {
           const d = dayLabel(m.at), sep = d !== lastDay; lastDay = d;
           const prev = list[i - 1], first = sep || !prev || prev.mine !== m.mine;
           const stk = !m.deleted && m.kind === 'text' ? parseSticker(m.body) : null;
+          const callLn = !m.deleted && m.kind === 'text' && !stk ? parseCallLine(m.body) : null;
           const stkImg = !m.deleted && m.kind === 'image' && !m.body && isStickerFile(m.att?.name, m.att?.mime);
           const mediaOnly = !m.deleted && !m.body && m.kind === 'image' && !m.reply;
           return (
@@ -287,12 +289,12 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
               <span className="swp" aria-hidden><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14L4 9l5-5M4 9h10a6 6 0 016 6v3" /></svg></span>
               {sep && <div className="st-day"><span>{d}</span></div>}
               <div className={`st-bub ${m.mine ? 'mine' : ''} ${m.deleted ? 'gone' : ''} ${first ? 'first' : ''} ${m.failed ? 'failed' : ''} ${menu === m.id ? 'menu-open' : ''} ${mediaOnly && !stkImg ? 'media' : ''} ${stk || stkImg ? 'sticker' : ''}`} onClick={() => { if (!m.deleted && !m.sending) setMenu((cur) => (cur === m.id ? null : m.id)); }}>
-                {m.reply && <div className="st-quote"><b>{m.reply.who === 'me' ? 'You' : otherName}</b><span>{plainBody(m.reply.preview)}</span></div>}
-                {m.deleted ? <p><em>🚫 This message was deleted</em></p> : <>
+                {m.reply && <div className="st-quote"><b>{m.reply.who === 'me' ? 'You' : otherName}</b><span>{plainPreview(plainBody(m.reply.preview))}</span></div>}
+                {m.deleted ? <p><em><Icon n="ban" size={14} className="ic-in" />This message was deleted</em></p> : <>
                   {m.kind === 'image' && m.att && /* eslint-disable-next-line @next/next/no-img-element */ <img className={`st-img ${stkImg ? 'stkimg' : ''}`} src={m.localUrl || m.att.url} alt={m.att.name} loading="lazy" onClick={(e) => { e.stopPropagation(); setLightbox(m.localUrl || m.att!.url); }} />}
                   {m.kind === 'voice' && <Voice m={m} />}
                   {m.kind === 'file' && m.att && <a className="st-file" href={m.att.url ? `${m.att.url}${m.att.url.includes('?') ? '&' : '?'}download=1` : '#'} onClick={(e) => e.stopPropagation()}><span className="ic"><Icon n="file" size={20} /></span><span className="tx"><b>{m.att.name}</b><small>{kb(m.att.size)}</small></span><Icon n="download" size={16} /></a>}
-                  {stk ? <Sticker s={stk} size="lg" /> : m.body && <p>{linkify(m.body, sq)}</p>}
+                  {stk ? <Sticker s={stk} size="lg" /> : m.body && (callLn ? <p className={`callln ${callLn.missed ? 'missed' : ''}`}><Icon n={callLn.video ? 'video' : 'phone'} size={16} />{callLn.text}</p> : <p>{linkify(m.body, sq)}</p>)}
                 </>}
                 <span className="meta">{clock(m.at)}{m.mine && !m.deleted && <Ticks m={m} />}</span>
                 {Object.keys(m.reactions).length > 0 && <div className="st-rx">{Object.entries(m.reactions).map(([e, v]) => <span key={e} className={v.me ? 'me' : ''}>{e}{v.n > 1 ? ` ${v.n}` : ''}</span>)}</div>}
@@ -316,11 +318,11 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
       {note && <div className="st-note">{note}</div>}
       {away > 0 && <button className="st-jump" onClick={toBottom} aria-label="Jump to latest"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg><i>{away}</i></button>}
       {err && <div className="st-err wa-err">{err}</div>}
-      {reply && <div className="st-replybar"><div><b>{reply.mine ? 'You' : otherName}</b><span>{plainBody(reply.body).slice(0, 90) || (reply.kind === 'image' ? '📷 Photo' : reply.kind === 'voice' ? '🎤 Voice note' : '📎 File')}</span></div><button onClick={() => setReply(null)} aria-label="Cancel reply">×</button></div>}
-      {file && <div className="st-attach">{file.f.type.startsWith('image/') ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={file.url} alt="" /> : <span className="ic"><Icon n="file" size={20} /></span>}<div><b>{file.f.name}</b><small>{kb(file.f.size)}</small>{STICKER_TYPES.test(file.f.type) && file.f.size <= 2 * 1024 * 1024 && <span className="stk-acts"><button type="button" onClick={() => sendAsSticker(file.f, file.f.type)}>Send as sticker</button><button type="button" onClick={async () => { const e = await addMine(file.f).catch(() => 'Could not save that on this device.'); setNote(e || 'Saved to My stickers ✓'); setTimeout(() => setNote(''), 3000); if (e) setErr(e); }}>Save to My stickers</button></span>}</div><button onClick={() => setFile(null)} aria-label="Remove">×</button></div>}
+      {reply && <div className="st-replybar"><div><b>{reply.mine ? 'You' : otherName}</b><span>{plainBody(reply.body).slice(0, 90) || (reply.kind === 'image' ? 'Photo' : reply.kind === 'voice' ? 'Voice note' : 'File')}</span></div><button onClick={() => setReply(null)} aria-label="Cancel reply"><Icon n="x" size={18} /></button></div>}
+      {file && <div className="st-attach">{file.f.type.startsWith('image/') ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={file.url} alt="" /> : <span className="ic"><Icon n="file" size={20} /></span>}<div><b>{file.f.name}</b><small>{kb(file.f.size)}</small>{STICKER_TYPES.test(file.f.type) && file.f.size <= 2 * 1024 * 1024 && <span className="stk-acts"><button type="button" onClick={() => sendAsSticker(file.f, file.f.type)}>Send as sticker</button><button type="button" onClick={async () => { const e = await addMine(file.f).catch(() => 'Could not save that on this device.'); setNote(e || 'Saved to My stickers'); setTimeout(() => setNote(''), 3000); if (e) setErr(e); }}>Save to My stickers</button></span>}</div><button onClick={() => setFile(null)} aria-label="Remove"><Icon n="x" size={16} /></button></div>}
       {emoji !== null && (
         <div className="wa-emoji" onClick={(e) => e.stopPropagation()}>
-          <div className="tabs">{EMOJI_TABS.map((t, i) => <button key={t.k} type="button" className={emoji === i ? 'on' : ''} onClick={() => setEmoji(i)} aria-label={t.k}>{t.icon}</button>)}<button type="button" className={emoji === STK_TAB ? 'on' : ''} onClick={() => setEmoji(STK_TAB)} aria-label="Stickers"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20 12a8 8 0 10-8 8h1.2a2.8 2.8 0 002-.8l4-4A2.8 2.8 0 0020 12z" /><path d="M20 13h-3.5a2.5 2.5 0 00-2.5 2.5V20" /><circle cx="9" cy="10.5" r=".9" fill="currentColor" stroke="none" /><circle cx="14.5" cy="10.5" r=".9" fill="currentColor" stroke="none" /><path d="M8.8 14.2c.8.8 1.8 1.2 3 1.2" /></svg></button></div>
+          <div className="tabs">{EMOJI_TABS.map((t, i) => <button key={t.k} type="button" className={emoji === i ? 'on' : ''} onClick={() => setEmoji(i)} aria-label={t.k}><Icon n={t.icon} size={22} /></button>)}<button type="button" className={emoji === STK_TAB ? 'on' : ''} onClick={() => setEmoji(STK_TAB)} aria-label="Stickers"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20 12a8 8 0 10-8 8h1.2a2.8 2.8 0 002-.8l4-4A2.8 2.8 0 0020 12z" /><path d="M20 13h-3.5a2.5 2.5 0 00-2.5 2.5V20" /><circle cx="9" cy="10.5" r=".9" fill="currentColor" stroke="none" /><circle cx="14.5" cy="10.5" r=".9" fill="currentColor" stroke="none" /><path d="M8.8 14.2c.8.8 1.8 1.2 3 1.2" /></svg></button></div>
           {emoji === STK_TAB ? (
             <div className="stk-grid">
               <p className="stk-h">My stickers <button type="button" className="stk-edit" onClick={() => setManage((v) => !v)}>{manage ? 'Done' : 'Edit'}</button></p>
@@ -330,7 +332,7 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
                   <div key={x.id} className="stk-my">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <button type="button" onClick={() => !manage && sendAsSticker(x.blob, x.type)} aria-label="Send this sticker"><img src={x.url} alt="" /></button>
-                    {manage && <button type="button" className="x" onClick={async () => { await removeMine(x.id); void loadMine(); }} aria-label="Remove sticker">×</button>}
+                    {manage && <button type="button" className="x" onClick={async () => { await removeMine(x.id); void loadMine(); }} aria-label="Remove sticker"><Icon n="x" size={16} /></button>}
                   </div>
                 ))}
               </div>
@@ -367,12 +369,12 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
             <div><button type="button" className="st-btn ghost sm" onClick={() => setSave(null)} disabled={save.busy}>Cancel</button><button type="button" className="st-btn sm" disabled={save.busy || (save.type === 'Other' && save.label.trim().length < 2)} onClick={async () => {
               setSave({ ...save, busy: true });
               const r = await fetch(`/api/thread/${save.id}/save`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ app: appId, docType: save.type, docLabel: save.label }) }).then((x) => x.json()).catch(() => ({ ok: false, error: 'Network error' })) as { ok: boolean; error?: string };
-              setSave(null); setNote(r.ok ? 'Saved to documents ✓' : r.error || 'Could not save'); setTimeout(() => setNote(''), 4000);
+              setSave(null); setNote(r.ok ? 'Saved to documents' : r.error || 'Could not save'); setTimeout(() => setNote(''), 4000);
             }}>{save.busy ? 'Saving…' : 'Save'}</button></div>
           </div>
         </div>
       )}
-      {lightbox && <div className="st-lightbox" onClick={() => setLightbox(null)}>{/* eslint-disable-next-line @next/next/no-img-element */}<img src={lightbox} alt="" /><button aria-label="Close">×</button></div>}
+      {lightbox && <div className="st-lightbox" onClick={() => setLightbox(null)}>{/* eslint-disable-next-line @next/next/no-img-element */}<img src={lightbox} alt="" /><button aria-label="Close"><Icon n="x" size={20} /></button></div>}
     </div>
   );
 }

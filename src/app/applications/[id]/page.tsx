@@ -23,6 +23,7 @@ import { getOffer, milestones } from '@/lib/offer';
 import { saveOffer, inviteOneStudent, sendStudentReminder, saveDates, addNote, addReminder, addToMaster, completeReminder, createDraft, scanDocs, setDocType, dismissSuggestion, generateSummary, linkFolder, refreshDocuments, scanStudent, sendCounselorEmail, unlinkFolder, updateCounselor, updateRegent, updateStatus, uploadDocument } from '../../actions';
 import { loadThread } from '@/lib/thread';
 import StaffStudentPanel from '@/components/StaffStudentPanel';
+import type { ReactNode } from 'react';
 
 type SP = { msg?: string; err?: string; preview?: string; tab?: string; compose?: string; draft?: string };
 const TABS = ['overview', 'documents', 'offer', 'notes', 'activity', 'messages', 'regent', 'sources'] as const;
@@ -119,7 +120,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
   const notesBlock = (limit?: number) => (
     <>
       {(notes || []).slice(0, limit).map((n) => (
-        <div key={n.id} className="note"><Avatar name={personFor(people, n.author).name} url={personFor(people, n.author).avatar_url} color={personFor(people, n.author).color} size={34} /><div><b>{personFor(people, n.author).name} {n.pinned && '📌'}</b><small>{dateTime(n.created_at)}</small><p style={{ whiteSpace: 'pre-wrap' }}>{n.body}</p></div></div>
+        <div key={n.id} className="note"><Avatar name={personFor(people, n.author).name} url={personFor(people, n.author).avatar_url} color={personFor(people, n.author).color} size={34} /><div><b>{personFor(people, n.author).name} {n.pinned && <Icon n="pin" size={13} className="ic-in" />}</b><small>{dateTime(n.created_at)}</small><p style={{ whiteSpace: 'pre-wrap' }}>{n.body}</p></div></div>
       ))}
       {!(notes || []).length && <p className="muted" style={{ margin: 0 }}>No notes yet.</p>}
     </>
@@ -174,7 +175,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
       )}
 
       <div className="tabs" role="tablist">
-        {([['overview', 'Overview', null], ['documents', 'Documents', judged ? `${presentRequired}/${REQUIRED_DOCS.length}` : null], ['offer', 'Offer & visa', offerRow?.offer_type ? '✓' : null], ['notes', 'Notes', (notes || []).length || null], ['activity', 'Activity', null], ['messages', 'Messages', (messages || []).length || null], ...(app.in_regent ? [['regent', 'Regent', null]] : []), ['sources', 'Sources', null]] as [string, string, string | number | null][]).map(([k, label, n]) => (
+        {([['overview', 'Overview', null], ['documents', 'Documents', judged ? `${presentRequired}/${REQUIRED_DOCS.length}` : null], ['offer', 'Offer & visa', offerRow?.offer_type ? <Icon n="check" size={11} /> : null], ['notes', 'Notes', (notes || []).length || null], ['activity', 'Activity', null], ['messages', 'Messages', (messages || []).length || null], ...(app.in_regent ? [['regent', 'Regent', null]] : []), ['sources', 'Sources', null]] as [string, string, ReactNode][]).map(([k, label, n]) => (
           <Link key={k} href={tabHref(k)} scroll={false} role="tab" aria-selected={tab === k} className={`tab ${tab === k ? 'active' : ''}`}>{label}{n ? <span className="n">{n}</span> : null}</Link>
         ))}
       </div>
@@ -185,7 +186,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
             <div>
               <div className="grid g2" style={{ marginBottom: 16 }}>
                 <div className="card ai">
-                  <h2><span className="spark">✦</span> AI Application Review <span className="badge blue plain" style={{ marginLeft: 6 }}>beta</span></h2>
+                  <h2><span className="spark"><Icon n="spark" size={17} /></span> AI Application Review <span className="badge blue plain" style={{ marginLeft: 6 }}>beta</span></h2>
                   {!judged ? (
                     <div className="callout" style={{ background: '#f4f6fb', borderColor: 'var(--line)' }}><Icon n="folder" className="ci" /><div><b style={{ color: 'var(--ink)' }}>Documents not checked</b><p>Link this student’s Drive folder so their documents can be reviewed.</p></div></div>
                   ) : missing.length ? (
@@ -425,7 +426,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
         {tab === 'offer' && (
           <>
             {offerRow && (
-              <div className="card ms-strip">{milestones(offerRow).map((m) => <div key={m.key} className={`ms ${m.state}`}><i>{m.state === 'done' ? '✓' : m.state === 'bad' ? '✕' : ''}</i><b>{m.label}</b><small>{[m.detail, m.date ? new Date(m.date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''].filter(Boolean).join(' · ') || 'Not yet'}</small></div>)}</div>
+              <div className="card ms-strip">{milestones(offerRow).map((m) => <div key={m.key} className={`ms ${m.state}`}><i>{m.state === 'done' ? <Icon n="check" size={13} /> : m.state === 'bad' ? <Icon n="x" size={13} /> : null}</i><b>{m.label}</b><small>{[m.detail, m.date ? new Date(m.date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''].filter(Boolean).join(' · ') || 'Not yet'}</small></div>)}</div>
             )}
             <OfferForm action={saveOffer} id={id} offer={(offerRow || {}) as unknown as Record<string, string | boolean | null>} conditions={offerRow?.conditions || []}
               docs={(docs || []).map((d) => ({ id: d.drive_file_id, name: d.name, type: effType(d) }))} casStatuses={CAS_STATUSES} visaStatuses={VISA_STATUSES} />
@@ -459,7 +460,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
           <div className="grid g2" style={{ alignItems: 'start' }}>
             <div>
             <div className="card ai">
-              <h2><span className="spark">✦</span> Draft with AI <span className="badge blue plain" style={{ marginLeft: 6 }}>beta</span></h2>
+              <h2><span className="spark"><Icon n="spark" size={17} /></span> Draft with AI <span className="badge blue plain" style={{ marginLeft: 6 }}>beta</span></h2>
               <form action={createDraft} className="grid" style={{ gap: 10 }}>
                 <input type="hidden" name="id" value={id} />
                 <div className="filters" style={{ flexWrap: 'nowrap' }}>

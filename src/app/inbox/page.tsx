@@ -3,6 +3,8 @@ import { requireStaff } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
 import { inboxScope } from '@/lib/inbox';
 import Avatar from '@/components/Avatar';
+import Icon from '@/components/Icon';
+import { plainPreview } from '@/lib/sysText';
 
 const ago = (iso: string) => { const m = Math.max(1, Math.round((Date.now() - new Date(iso).getTime()) / 60000)); return m < 60 ? `${m}m` : m < 1440 ? `${Math.round(m / 60)}h` : `${Math.round(m / 1440)}d`; };
 
@@ -42,7 +44,7 @@ export default async function Inbox({ searchParams }: { searchParams: Promise<{ 
             <Avatar name={t.app!.name} size={42} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between' }}><b style={{ fontWeight: t.unread ? 700 : 600 }}>{t.app!.name}</b><small className="muted">{ago(t.last.created_at)}</small></div>
-              <div className="muted" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: t.unread ? 600 : 400 }}>{term.length >= 2 && found.has(t.id) ? `“${found.get(t.id)!.slice(0, 90)}”` : <>{t.last.from_student ? '' : 'You: '}{t.last.deleted_at ? 'Message deleted' : t.last.body || (t.last.att_mime?.startsWith('image/') ? '📷 Photo' : t.last.att_mime?.startsWith('audio/') ? '🎤 Voice note' : `📎 ${t.last.att_name || 'File'}`)}</>}</div>
+              <div className="muted" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: t.unread ? 600 : 400 }}>{term.length >= 2 && found.has(t.id) ? `“${found.get(t.id)!.slice(0, 90)}”` : <>{t.last.from_student ? '' : 'You: '}{t.last.deleted_at ? 'Message deleted' : t.last.body ? plainPreview(t.last.body) : t.last.att_mime?.startsWith('image/') ? <><Icon n="image" size={13} className="ic-in" />Photo</> : t.last.att_mime?.startsWith('audio/') ? <><Icon n="mic" size={13} className="ic-in" />Voice note</> : <><Icon n="paperclip" size={13} className="ic-in" />{t.last.att_name || 'File'}</>}</>}</div>
             </div>
             {t.unread > 0 && <span className="n">{t.unread}</span>}
           </Link>

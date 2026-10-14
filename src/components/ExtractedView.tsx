@@ -74,9 +74,9 @@ export default function ExtractedView({ docs, initialTexts, initialSel, studentN
         <div className={`xview pane-${pane}`}>
           <section className="card xtext">
             <header>
-              <div><b>{doc.name}</b><div className="muted" style={{ fontSize: 12.5 }}>{doc.type}{doc.path ? ` · 📁 ${doc.path}` : ''}{doc.fromOther ? ' · other submission' : ''}{t && !t.error ? ` · ${t.chars.toLocaleString()} characters${t.truncated ? ' (cut at 120,000)' : ''}` : ''}</div></div>
+              <div><b>{doc.name}</b><div className="muted" style={{ fontSize: 12.5 }}>{doc.type}{doc.path ? <> · <Icon n="folder" size={13} className="ic-in" />{doc.path}</> : null}{doc.fromOther ? ' · other submission' : ''}{t && !t.error ? ` · ${t.chars.toLocaleString()} characters${t.truncated ? ' (cut at 120,000)' : ''}` : ''}</div></div>
               <div className="filters">
-                {t?.text && <><button className="btn ghost sm" onClick={copy}>{copied ? 'Copied ✓' : 'Copy'}</button><button className="btn ghost sm" onClick={download}><Icon n="download" size={13} /> .txt</button></>}
+                {t?.text && <><button className="btn ghost sm" onClick={copy}>{copied ? 'Copied' : 'Copy'}</button><button className="btn ghost sm" onClick={download}><Icon n="download" size={13} /> .txt</button></>}
                 <button className="btn ghost sm" disabled={!!busy} onClick={() => extract(doc.id)}>{busy === doc.id ? 'Reading…' : t ? 'Re-extract' : 'Extract text'}</button>
               </div>
             </header>

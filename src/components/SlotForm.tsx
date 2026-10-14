@@ -39,7 +39,7 @@ export default function SlotForm({ action, people, defaultTrainer, defaultUrl, s
         {mode === 'paste' && <label style={{ gridColumn: '1 / -1' }}>Meeting link<input name="teams_url" defaultValue={defaultUrl} required placeholder="https://meet.google.com/abc-defg-hij" style={{ width: '100%', marginTop: 6 }} /></label>}
         <div style={{ gridColumn: '1 / -1' }} className="invitebox">
           <div className="stat-l" style={{ marginBottom: 6 }}>Invite students <span className="muted" style={{ textTransform: 'none', letterSpacing: 0 }}>(optional · they and their counselors get an email straight away)</span></div>
-          {picked.length > 0 && <div className="refchips">{picked.map((id) => { const st = students.find((x) => x.id === id); return <span key={id} className="refchip">{st?.name || 'Student'}<button type="button" aria-label="Remove" onClick={() => toggle(id)}>×</button></span>; })}</div>}
+          {picked.length > 0 && <div className="refchips">{picked.map((id) => { const st = students.find((x) => x.id === id); return <span key={id} className="refchip">{st?.name || 'Student'}<button type="button" aria-label="Remove" onClick={() => toggle(id)}><Icon n="x" size={16} /></button></span>; })}</div>}
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search students by name, university or counselor…" style={{ width: '100%' }} />
           <div className="pick-list" style={{ maxHeight: 200, marginTop: 8 }}>
             {shown.map((st) => { const on = picked.includes(st.id); return (

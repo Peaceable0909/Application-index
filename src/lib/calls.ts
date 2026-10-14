@@ -35,10 +35,10 @@ const mmss = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, 
 /** Puts a line in the chat ("Voice call · 2:31", "Missed voice call") so both sides keep a record. Never throws. */
 async function logCall(c: Row) {
   try {
-    const label = c.kind === 'video' ? 'video call' : 'voice call', icon = c.kind === 'video' ? '📹' : '📞';
+    const label = c.kind === 'video' ? 'video call' : 'voice call';
     const secs = c.answered_at && c.ended_at ? Math.max(0, Math.round((new Date(c.ended_at).getTime() - new Date(c.answered_at).getTime()) / 1000)) : 0;
-    const body = c.status === 'declined' ? `${icon} ${label[0].toUpperCase()}${label.slice(1)} declined`
-      : c.answered_at ? `${icon} ${label[0].toUpperCase()}${label.slice(1)} · ${mmss(secs)}` : `${icon} Missed ${label}`;
+    const body = c.status === 'declined' ? `${label[0].toUpperCase()}${label.slice(1)} declined`
+      : c.answered_at ? `${label[0].toUpperCase()}${label.slice(1)} · ${mmss(secs)}` : `Missed ${label}`;
     const now = new Date().toISOString();
     await admin().from('portal_student_msgs').insert({
       student_email: c.student_email, application_id: c.application_id, from_student: c.caller === 'student', sender_email: c.caller_email, body,
@@ -114,13 +114,13 @@ async function ring(c: Row, callerName: string) {
     const db = admin();
     const text = c.kind === 'video' ? 'video call' : 'voice call';
     if (c.caller === 'staff') {
-      await sendPush({ emails: [c.student_email], title: `📞 ${callerName} is calling`, body: `Incoming ${text}. Tap to answer.`, url: '/student/messages', tag: `call-${c.id}`, ring: true });
+      await sendPush({ emails: [c.student_email], title: `${callerName} is calling`, body: `Incoming ${text}. Tap to answer.`, url: '/student/messages', tag: `call-${c.id}`, ring: true });
     } else {
       const { data: ap } = await db.from('portal_applications').select('counselor').eq('application_id', c.application_id).maybeSingle();
       const { data: co } = ap?.counselor ? await db.from('portal_counselors').select('email').eq('name_key', counselorKey(ap.counselor)).maybeSingle() : { data: null };
       let to = co?.email ? [co.email] : [];
       if (!to.length) { const { data: ad } = await db.from('portal_staff').select('email').eq('role', 'admin'); to = (ad || []).map((x) => x.email); }
-      await sendPush({ emails: to, title: `📞 ${callerName} is calling`, body: `Incoming ${text}. Tap to answer.`, url: `/applications/${encodeURIComponent(c.application_id)}?tab=messages`, tag: `call-${c.id}`, ring: true });
+      await sendPush({ emails: to, title: `${callerName} is calling`, body: `Incoming ${text}. Tap to answer.`, url: `/applications/${encodeURIComponent(c.application_id)}?tab=messages`, tag: `call-${c.id}`, ring: true });
     }
   } catch { /* the call still rings for anyone with the chat open */ }
 }

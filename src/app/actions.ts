@@ -596,7 +596,7 @@ export async function testConnection() {
   const t0 = Date.now();
   try {
     await callScript('listFiles', { folderIds: [] });   // lightest command the script supports
-    redirect(`/settings?msg=${encodeURIComponent(`Apps Script is connected ✓ (${Date.now() - t0} ms).`)}`);
+    redirect(`/settings?msg=${encodeURIComponent(`Apps Script is connected (${Date.now() - t0} ms).`)}`);
   } catch (e) {
     rethrow(e);
     redirect(`/settings?err=${encodeURIComponent((e as Error).message)}`);

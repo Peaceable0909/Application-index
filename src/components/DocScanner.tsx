@@ -96,13 +96,13 @@ export default function DocScanner({ appId, docType, docLabel, title, onClose }:
     <div className="st-sheet-bg" onClick={() => !busy && onClose()}>
       <div className="st-sheet" role="dialog" aria-label={`Scan ${title}`} onClick={(e) => e.stopPropagation()}>
         <div className="st-grab" />
-        <div className="st-sheet-h"><div><h2>Scan {title}</h2><p className="st-sub" style={{ margin: 0 }}>Take a photo of each page. We’ll turn them into one PDF.</p></div><button className="iconbtn" onClick={onClose} aria-label="Close" disabled={busy}>×</button></div>
+        <div className="st-sheet-h"><div><h2>Scan {title}</h2><p className="st-sub" style={{ margin: 0 }}>Take a photo of each page. We’ll turn them into one PDF.</p></div><button className="iconbtn" onClick={onClose} aria-label="Close" disabled={busy}><Icon n="x" size={16} /></button></div>
         <div className="st-shots">
           {shots.map((s, i) => (
             <div key={s.id} className="st-shot">
               {/* eslint-disable-next-line @next/next/no-img-element */}<img src={s.url} alt={`Page ${i + 1}`} />
               <span className="n">{i + 1}</span>
-              <div className="act"><button onClick={() => move(s.id, -1)} aria-label="Move earlier" disabled={i === 0}>‹</button><button onClick={() => redo(s.id)} aria-label="Rotate">⟳</button><button onClick={() => move(s.id, 1)} aria-label="Move later" disabled={i === shots.length - 1}>›</button><button onClick={() => drop(s.id)} aria-label="Remove">×</button></div>
+              <div className="act"><button onClick={() => move(s.id, -1)} aria-label="Move earlier" disabled={i === 0}><Icon n="chevron-left" size={16} /></button><button onClick={() => redo(s.id)} aria-label="Rotate"><Icon n="rotate" size={15} /></button><button onClick={() => move(s.id, 1)} aria-label="Move later" disabled={i === shots.length - 1}><Icon n="right" size={16} /></button><button onClick={() => drop(s.id)} aria-label="Remove"><Icon n="x" size={16} /></button></div>
               {s.warn && <div className="warn">{s.warn}</div>}
             </div>
           ))}

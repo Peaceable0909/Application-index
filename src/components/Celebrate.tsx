@@ -2,8 +2,9 @@
 import { useEffect, useState } from 'react';
 import { confetti, confettiRain } from '@/lib/confetti';
 import { success } from '@/lib/haptics';
+import Icon from './Icon';
 
-export type Unlocked = { key: string; label: string; emoji: string };
+export type Unlocked = { key: string; label: string; icon: string };
 
 /**
  * Remembers which milestones this device has already seen. When a NEW one appears, it throws confetti and shows a small banner.
@@ -25,5 +26,5 @@ export default function Celebrate({ scope, unlocked }: { scope: string; unlocked
     return () => { clearTimeout(t); clearTimeout(hide); };
   }, [scope, unlocked]);
   if (!shown) return null;
-  return <button type="button" className="st-toast" onClick={() => setShown(null)} aria-live="polite"><span className="e">{shown.emoji}</span><span><b>New milestone unlocked</b><small>{shown.label}</small></span></button>;
+  return <button type="button" className="st-toast" onClick={() => setShown(null)} aria-live="polite"><span className="e"><Icon n={shown.icon} size={22} /></span><span><b>New milestone unlocked</b><small>{shown.label}</small></span></button>;
 }
