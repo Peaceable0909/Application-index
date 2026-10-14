@@ -54,6 +54,7 @@ export default function Splash() {
       setS('out');
       later(() => {
         setS('gone');
+        if (url) { URL.revokeObjectURL(url); url = ''; }
         if (held && held.isConnected && (!document.activeElement || document.activeElement === document.body)) held.focus({ preventScroll: true });
       }, 520);
     };
