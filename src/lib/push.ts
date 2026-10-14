@@ -19,7 +19,7 @@ export async function vapid(): Promise<{ publicKey: string; privateKey: string }
   return (cached = { publicKey: data.public_key, privateKey: data.private_key });
 }
 
-export type PushOpts = { emails: string[]; title: string; body?: string; url?: string; tag?: string; skipIfActiveMs?: number; calmMs?: number; ignorePrefs?: boolean };
+export type PushOpts = { emails: string[]; title: string; body?: string; url?: string; tag?: string; skipIfActiveMs?: number; calmMs?: number; ignorePrefs?: boolean; ring?: boolean };
 
 type Note = { email: string; result: string; detail?: string };
 
@@ -78,7 +78,7 @@ export async function sendPush(o: PushOpts): Promise<{ sent: number }> {
     const k = await vapid();
     webpush.setVapidDetails(process.env.PUSH_SUBJECT || site(), k.publicKey, k.privateKey);
     const more = Math.max(0, ...[...extra.values()]);
-    const payload = JSON.stringify({ title: o.title.slice(0, 80), body: (more ? `${more + 1} new messages. Latest: ${o.body || ''}` : o.body || '').slice(0, 160), url: o.url || '/', tag: o.tag || 'portal' });
+    const payload = JSON.stringify({ title: o.title.slice(0, 80), body: (more ? `${more + 1} new messages. Latest: ${o.body || ''}` : o.body || '').slice(0, 160), url: o.url || '/', tag: o.tag || 'portal', ...(o.ring ? { ring: true } : {}) });
     let sent = 0; const dead: string[] = [], ok: string[] = [];
     await Promise.all(send.map(async (s) => {
       try {

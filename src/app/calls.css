@@ -1,0 +1,33 @@
+/* ===== calling ===== */
+.callui { position:fixed; inset:0; z-index:9000; display:flex; flex-direction:column; align-items:center; justify-content:space-between; padding:max(56px, env(safe-area-inset-top)) 24px max(34px, env(safe-area-inset-bottom)); color:#fff; background:radial-gradient(120% 90% at 50% 0%, #1d5b53 0%, #0f2a2e 48%, #0b141a 100%); font-family:var(--font-ui), system-ui, sans-serif; animation:cuIn .28s cubic-bezier(.22,1,.36,1) both; }
+@keyframes cuIn { from { opacity:0; transform:scale(1.03); } to { opacity:1; transform:none; } }
+.callui.has-video { background:#000; }
+.callui-remote { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; background:#000; }
+.callui-local { position:absolute; top:max(14px, env(safe-area-inset-top)); right:14px; width:104px; height:146px; object-fit:cover; border-radius:16px; background:#111; box-shadow:0 6px 20px rgba(0,0,0,.45); transform:scaleX(-1); z-index:2; border:2px solid rgba(255,255,255,.25); }
+.callui-local.off { opacity:.25; }
+.callui:not(.has-video) .callui-local { top:auto; bottom:150px; right:20px; width:88px; height:120px; }
+.callui-top { position:relative; z-index:1; display:flex; flex-direction:column; align-items:center; gap:10px; text-align:center; margin-top:6vh; text-shadow:0 1px 8px rgba(0,0,0,.35); }
+.has-video .callui-top { margin-top:0; align-self:flex-start; align-items:flex-start; text-align:left; }
+.callui-name { font-size:27px; font-weight:700; letter-spacing:-.01em; }
+.callui-status { font-size:15px; opacity:.82; font-variant-numeric:tabular-nums; min-height:1.3em; }
+.callui-status.end { opacity:1; font-weight:600; }
+.callui-pic { position:relative; margin-bottom:10px; border-radius:50%; }
+.callui-pic .pic { box-shadow:0 8px 30px rgba(0,0,0,.4); border:3px solid rgba(255,255,255,.25); }
+.callui-pic.pulse::before, .callui-pic.pulse::after { content:''; position:absolute; inset:-4px; border-radius:50%; border:2px solid rgba(255,255,255,.35); animation:cuPulse 2.2s ease-out infinite; }
+.callui-pic.pulse::after { animation-delay:1.1s; }
+@keyframes cuPulse { from { transform:scale(1); opacity:.7; } to { transform:scale(1.7); opacity:0; } }
+.callui-bar { position:relative; z-index:1; display:flex; justify-content:center; gap:30px; width:100%; }
+.callui-act { display:flex; flex-direction:column; align-items:center; gap:8px; font-size:12.5px; font-weight:600; opacity:.92; text-shadow:0 1px 6px rgba(0,0,0,.4); }
+.callui button.cbtn { position:relative; width:66px; height:66px; min-width:0; padding:0; border:0; border-radius:50%; background:rgba(255,255,255,.18); color:#fff; display:grid; place-items:center; box-shadow:none; backdrop-filter:blur(8px); transition:transform .15s, background .2s; }
+.callui button.cbtn:hover { background:rgba(255,255,255,.28); transform:none; box-shadow:none; } .callui button.cbtn:active { transform:scale(.92); }
+.callui button.cbtn.on { background:#fff; color:#0b141a; }
+.callui button.cbtn.cb-stop { background:#e5484d; } .callui button.cbtn.cb-stop:hover { background:#f05459; }
+.callui button.cbtn.cb-stop svg { transform:rotate(135deg); }
+.callui button.cbtn.cb-go { background:#25d366; } .callui button.cbtn.cb-go:hover { background:#2fe074; }
+.callui button.cbtn.cb-ring { animation:cuRing 1.2s ease-in-out infinite; }
+@keyframes cuRing { 0%,100% { box-shadow:0 0 0 0 rgba(37,211,102,.55); } 50% { box-shadow:0 0 0 16px rgba(37,211,102,0); } }
+.callui button.cbtn .slash { position:absolute; inset:0; margin:auto; }
+@media (prefers-reduced-motion:reduce) { .callui, .callui-pic.pulse::before, .callui-pic.pulse::after, .callui button.cbtn.cb-ring { animation:none; } }
+
+/* three header icons (video, call, search) must leave room for the name on a phone */
+@media (max-width:440px) { .wa .wa-head button.wa-ic { width:38px; } .wa .wa-head { gap:8px; } }
