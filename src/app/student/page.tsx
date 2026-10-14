@@ -19,6 +19,7 @@ import CounselorActions from '@/components/CounselorActions';
 import Countdown from '@/components/Countdown';
 import Milestones from '@/components/Milestones';
 import Celebrate from '@/components/Celebrate';
+import WelcomeTour from '@/components/WelcomeTour';
 import { milestoneBadges } from '@/lib/badges';
 
 export const maxDuration = 60;
@@ -75,6 +76,7 @@ export default async function StudentHome() {
         : dl ? <div style={{ ['--i' as string]: i++ }}><Countdown to={`${dl.c.a.deadline}T23:59:59`} title="Application deadline" sub={[schoolShort(dl.c.a.school), dl.c.a.programme && dl.c.a.programme.toUpperCase() !== 'N/A' ? dl.c.a.programme : ''].filter(Boolean).join(' · ')} /></div> : null}
 
       <div style={{ ['--i' as string]: i++ }}><Milestones badges={badges} /></div>
+      <WelcomeTour name={d.first} />
       <Celebrate scope={d.a0.application_id} unlocked={badges.filter((b) => b.on).map((b) => ({ key: b.key, label: b.label, emoji: b.emoji }))} />
 
       {(

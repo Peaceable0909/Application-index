@@ -9,6 +9,8 @@ import { addMine, listMine, removeMine, stickerExt, STICKER_TYPES, type MySticke
 import type { ThreadMsg } from '@/lib/thread';
 import { ALL_DOC_TYPES } from '@/lib/constants';
 import { useCallMaybe } from './CallProvider';
+import { confetti } from '@/lib/confetti';
+import { success, tick } from '@/lib/haptics';
 import type { CallView } from '@/lib/callTypes';
 
 type Other = { name: string; online: boolean; lastSeen: string | null };
@@ -39,6 +41,11 @@ async function shrink(f: File): Promise<File> {
     return new File([b], f.name.replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' });
   } catch { return f; }
 }
+
+// Like iMessage effects: certain words make the screen celebrate, for the sender and for whoever receives it.
+const EFFECT = /congrat|🎉|🥳|🎊|well done|you did it|welcome (aboard|to)|happy birthday/i;
+const celebrate0 = (body: string) => !!body && !parseSticker(body) && EFFECT.test(body);
+function celebrate(body: string) { if (celebrate0(body)) { confetti({ count: 130 }); success(); } }
 
 function beep() {
   try { const A = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext, c = new A(), o = c.createOscillator(), g = c.createGain(); o.type = 'sine'; o.frequency.value = 880; g.gain.value = 0.04; o.connect(g); g.connect(c.destination); o.start(); g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + 0.25); o.stop(c.currentTime + 0.26); } catch { /* sound is optional */ }
@@ -121,7 +128,7 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
       setList((cur) => { const pending = cur.filter((m) => m.sending || m.failed); return [...d.msgs, ...pending]; });
       setOther(d.other); setTyping(d.typing); setSrvCall(d.call ?? null);
       if (fresh.length) {
-        if (document.visibilityState === 'visible') { beep(); if (!near.current) setAway((n) => n + fresh.length); }
+        if (document.visibilityState === 'visible') { beep(); if (fresh.some((m) => celebrate0(m.body))) { confetti({ count: 130 }); success(); } if (!near.current) setAway((n) => n + fresh.length); }
         else { const base = document.title.replace(/^\(\d+\)\s*/, ''); document.title = `(${fresh.length}) ${base}`; }
       }
     } catch { /* offline: try again next tick */ }
@@ -147,6 +154,30 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
   const onScroll = () => { const el = box.current; if (!el) return; near.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120; if (near.current) setAway(0); };
   const toBottom = () => { end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); setAway(0); };
 
+  // swipe a message to the right to reply (touch only)
+  const sw = useRef<{ x: number; y: number; row: HTMLElement; bub: HTMLElement | null; id: string; dx: number; lock: boolean | null } | null>(null);
+  function swStart(e: React.TouchEvent<HTMLElement>, m: Local) {
+    if (m.deleted || m.sending || e.touches.length !== 1) return;
+    const t = e.touches[0];
+    sw.current = { x: t.clientX, y: t.clientY, row: e.currentTarget, bub: e.currentTarget.querySelector('.st-bub'), id: m.id, dx: 0, lock: null };
+  }
+  function swMove(e: React.TouchEvent<HTMLElement>) {
+    const s = sw.current; if (!s) return;
+    const t = e.touches[0], dx = t.clientX - s.x, dy = t.clientY - s.y;
+    if (s.lock === null) { if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return; s.lock = dx > 0 && Math.abs(dx) > Math.abs(dy) * 1.4; }
+    if (!s.lock) return;
+    const d = Math.max(0, Math.min(76, dx * 0.55)); s.dx = d;
+    if (s.bub) { s.bub.style.transition = 'none'; s.bub.style.transform = `translateX(${d}px)`; }
+    s.row.style.setProperty('--sw', String(Math.min(1, d / 46)));
+  }
+  function swEnd() {
+    const s = sw.current; sw.current = null;
+    if (!s || !s.lock) return;
+    if (s.bub) { s.bub.style.transition = 'transform .35s cubic-bezier(.34,1.5,.64,1)'; s.bub.style.transform = ''; }
+    s.row.style.setProperty('--sw', '0');
+    if (s.dx >= 44) { const m = list.find((x) => x.id === s.id); if (m) { tick(); setReply(m); setMenu(null); ta.current?.focus(); } }
+  }
+
   async function post(o: { body: string; file?: File | null; replyTo?: string | null; ms?: number }, tmpId?: string) {
     const id = tmpId || 'tmp' + Date.now() + Math.random();
     const f = o.file ? await shrink(o.file) : null;
@@ -155,6 +186,7 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
       att: f ? { name: f.name, mime: f.type, size: f.size, url: '', ms: o.ms || null } : null, localUrl: f ? URL.createObjectURL(f) : undefined,
       reply: o.replyTo ? { id: o.replyTo, who: 'them', preview: reply?.body.slice(0, 80) || '' } : null, reactions: {} };
     setList((l) => [...l.filter((m) => m.id !== id), local]); near.current = true;
+    celebrate(o.body);
     const fd = new FormData(); fd.set('appId', appId); fd.set('body', o.body); if (o.replyTo) fd.set('replyTo', o.replyTo); if (f) fd.set('file', f); if (o.ms) fd.set('durationMs', String(o.ms));
     try {
       const r = await fetch('/api/thread', { method: 'POST', body: fd }), d = (await r.json()) as { ok: boolean; error?: string };
@@ -251,7 +283,8 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
           const stkImg = !m.deleted && m.kind === 'image' && !m.body && isStickerFile(m.att?.name, m.att?.mime);
           const mediaOnly = !m.deleted && !m.body && m.kind === 'image' && !m.reply;
           return (
-            <div key={m.id} id={`msg-${m.id}`} className={`st-row-msg ${cur === m.id ? 'hit' : ''} ${first ? 'gap' : ''}`} data-mine={m.mine}>
+            <div key={m.id} id={`msg-${m.id}`} className={`st-row-msg ${cur === m.id ? 'hit' : ''} ${first ? 'gap' : ''}`} data-mine={m.mine} onTouchStart={(e) => swStart(e, m)} onTouchMove={swMove} onTouchEnd={swEnd} onTouchCancel={swEnd}>
+              <span className="swp" aria-hidden><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14L4 9l5-5M4 9h10a6 6 0 016 6v3" /></svg></span>
               {sep && <div className="st-day"><span>{d}</span></div>}
               <div className={`st-bub ${m.mine ? 'mine' : ''} ${m.deleted ? 'gone' : ''} ${first ? 'first' : ''} ${m.failed ? 'failed' : ''} ${menu === m.id ? 'menu-open' : ''} ${mediaOnly && !stkImg ? 'media' : ''} ${stk || stkImg ? 'sticker' : ''}`} onClick={() => { if (!m.deleted && !m.sending) setMenu((cur) => (cur === m.id ? null : m.id)); }}>
                 {m.reply && <div className="st-quote"><b>{m.reply.who === 'me' ? 'You' : otherName}</b><span>{plainBody(m.reply.preview)}</span></div>}

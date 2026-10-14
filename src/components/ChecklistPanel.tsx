@@ -2,6 +2,7 @@
 import { useState, useTransition } from 'react';
 import { studentToggleChecklist } from '@/app/actions';
 import Confirmed from './Confirmed';
+import { tap } from '@/lib/haptics';
 import type { CheckItem } from '@/lib/studentData';
 
 const fmt = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
@@ -15,7 +16,7 @@ export default function ChecklistPanel({ items: initial }: { items: CheckItem[] 
   function toggle(id: string) {
     const was = items.find((i) => i.id === id)!;
     const next = items.map((i) => (i.id === id ? { ...i, done: !i.done } : i));
-    setItems(next);
+    setItems(next); tap();
     if (!was.done && next.every((i) => i.done)) setParty(true);
     start(async () => { const r = await studentToggleChecklist(id); if (!r.ok) setItems((cur) => cur.map((i) => (i.id === id ? { ...i, done: was.done } : i))); });
   }

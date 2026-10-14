@@ -3,6 +3,8 @@ import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import Icon from './Icon';
 import { moveStatus } from '@/app/actions';
+import { confetti, confettiRain } from '@/lib/confetti';
+import { success } from '@/lib/haptics';
 
 export type PCard = { id: string; name: string; school: string; programme: string; status: string | null; counselor: string | null; missing: number; judged: boolean; unpaid: boolean; deadlineLeft: number | null; stale: boolean };
 const NONE = '__none';
@@ -44,6 +46,7 @@ export default function PipelineBoard({ cards: initial, stages }: { cards: PCard
       const r = await moveStatus(id, status);
       if (!r.ok) { setCards((cs) => cs.map((c) => (c.id === id ? { ...c, status: prev.status } : c))); setMsg({ t: r.error || 'Could not move it.', bad: true }); }
       else setMsg({ t: `${prev.name} → ${status}${r.sheet === false ? ' (saved here, but the sheet could not be updated)' : ''}`, bad: r.sheet === false });
+      if (r.ok && status === 'Enrolled') { success(); confettiRain(); } else if (r.ok && /offer/i.test(status)) { success(); confetti({ count: 80 }); }
       setTimeout(() => setMsg(null), 4000);
     });
   }
