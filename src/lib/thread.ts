@@ -7,6 +7,8 @@ import { sendMail } from './mail';
 import { studentSite } from './emailTemplate';
 import { shownName } from './profile';
 import { sendPush } from './push';
+import { currentCall } from './calls';
+import type { CallView } from './callTypes';
 import { counselorKey } from './docs';
 import { callScript, type DriveFile } from './appsScript';
 import { ALL_DOC_TYPES } from './constants';
@@ -66,7 +68,7 @@ export function shape(rows: Row[], a: Actor): ThreadMsg[] {
   });
 }
 
-export async function loadThread(a: Actor, markRead: boolean): Promise<{ msgs: ThreadMsg[]; typing: boolean; other: { name: string; online: boolean; lastSeen: string | null } }> {
+export async function loadThread(a: Actor, markRead: boolean): Promise<{ msgs: ThreadMsg[]; typing: boolean; other: { name: string; online: boolean; lastSeen: string | null }; call: CallView | null }> {
   const db = admin();
   if (markRead) {
     const col = a.role === 'student' ? 'student_read_at' : 'staff_read_at';
@@ -85,10 +87,10 @@ export async function loadThread(a: Actor, markRead: boolean): Promise<{ msgs: T
     const { data: s } = await db.from('portal_student_seen').select('last_active_at').eq('email', a.studentEmail).maybeSingle();
     name = 'Student'; lastSeen = s?.last_active_at || null;
   }
-  const { data: ty } = await db.from('portal_thread_typing').select('student_typing_at, staff_typing_at').eq('student_email', a.studentEmail).maybeSingle();
+  const [{ data: ty }, call] = await Promise.all([db.from('portal_thread_typing').select('student_typing_at, staff_typing_at').eq('student_email', a.studentEmail).maybeSingle(), currentCall(a)]);
   const theirs = a.role === 'student' ? ty?.staff_typing_at : ty?.student_typing_at;
   const typing = !!theirs && Date.now() - new Date(theirs).getTime() < 6000;
-  return { msgs, typing, other: { name, lastSeen, online: !!lastSeen && Date.now() - new Date(lastSeen).getTime() < 90_000 } };
+  return { msgs, typing, other: { name, lastSeen, online: !!lastSeen && Date.now() - new Date(lastSeen).getTime() < 90_000 }, call };
 }
 
 export async function postMessage(a: Actor, o: { body: string; replyTo?: string | null; file?: File | null; durationMs?: number | null }): Promise<{ ok: boolean; error?: string; id?: string }> {
