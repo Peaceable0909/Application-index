@@ -11,6 +11,8 @@ import Icon from '@/components/Icon';
 import Fold from '@/components/Fold';
 import { bulkRequestDocs, bulkInviteStudents } from '@/app/actions';
 import { SelectAll, SelectedCount } from '@/components/BulkSelect';
+import MoveButton from '@/components/MoveSheet';
+import { buildCatalog } from '@/lib/moves';
 import { statusTone } from '@/lib/ui';
 
 export const maxDuration = 60;
@@ -95,6 +97,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           <select name="setCounselor" defaultValue=""><option value="" disabled>Assign counselor…</option><option value="__clear">(unassign)</option>{(counselorList || []).map((c) => <option key={c.name}>{c.name}</option>)}</select>
           <Btn className="sm" formAction={bulkAssign}>Apply</Btn>
           <span className="muted">|</span>
+          <MoveButton mode="bulk" catalog={buildCatalog(base)} variant="ghost" />
           <Btn className="ghost sm" formAction={bulkEmailCounselors}><Icon n="mail" size={14} /> Email their counselors</Btn>
           <Btn className="ghost sm" formAction={bulkRequestDocs} data-busy="Emailing students…"><Icon n="file" size={14} /> Ask students for missing docs</Btn>
           <Btn className="ghost sm" formAction={bulkInviteStudents} data-busy="Inviting…"><Icon n="user-plus" size={14} /> Invite to student portal</Btn>
