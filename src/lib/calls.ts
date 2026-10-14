@@ -3,6 +3,8 @@ import { admin } from './supabase';
 import { sendPush } from './push';
 import { addNotice } from './notices';
 import { counselorKey } from './docs';
+import { canAccessApp, currentStaff } from './auth';
+import { currentStudent } from './student';
 import { shownName } from './profile';
 import type { Actor } from './thread';
 import type { CallKind, CallSignal, CallStatus, CallView } from './callTypes';
@@ -75,6 +77,36 @@ async function liveFor(studentEmail: string): Promise<Row | null> {
 /** The call (if any) this person should be offered right now. Used by the chat's regular refresh. */
 export async function currentCall(a: Actor): Promise<CallView | null> {
   try { const c = await liveFor(a.studentEmail); return c && visible(a, c) ? view(a, c) : null; } catch { return null; }
+}
+
+export type RingView = { call: CallView; appId: string; peer: { name: string; avatar: { name: string; url: string | null; color: string | null } | null } };
+
+/** A call that is ringing for this person right now, on whatever page they are on. Staff see students' calls for students they can see; students see their counselor's. */
+export async function ringingFor(): Promise<RingView | null> {
+  try {
+    const db = admin();
+    const staff = await currentStaff();
+    if (staff) {
+      const { data } = await db.from('portal_calls').select(COLS).eq('status', 'ringing').eq('caller', 'student').order('created_at', { ascending: false }).limit(10);
+      for (const row of (data || []) as Row[]) {
+        const c = await settle(row);
+        if (c.status !== 'ringing' || !(await canAccessApp(staff, c.application_id))) continue;
+        const a: Actor = { role: 'staff', email: staff.email, appId: c.application_id, studentEmail: c.student_email, staff };
+        if (!visible(a, c)) continue;
+        const { data: ap } = await db.from('portal_applications').select('name').eq('application_id', c.application_id).maybeSingle();
+        return { call: view(a, c), appId: c.application_id, peer: { name: (ap?.name || 'Student').trim(), avatar: null } };
+      }
+      return null;
+    }
+    const me = await currentStudent();
+    if (!me) return null;
+    const c = await liveFor(me.email);
+    if (!c || c.status !== 'ringing' || c.caller !== 'staff') return null;
+    const a: Actor = { role: 'student', email: me.email, appId: c.application_id, studentEmail: me.email };
+    const { data: st } = await db.from('portal_staff').select('email, display_name, avatar_url, color').eq('email', c.caller_email).maybeSingle();
+    const name = (st?.display_name || '').trim() || 'Your counselor';
+    return { call: view(a, c), appId: c.application_id, peer: { name, avatar: { name, url: st?.avatar_url || null, color: st?.color || null } } };
+  } catch { return null; }
 }
 
 async function ring(c: Row, callerName: string) {

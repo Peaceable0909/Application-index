@@ -16,6 +16,8 @@ import Presence from '@/components/Presence';
 import { unreadTotal } from '@/lib/chat';
 import { currentStudent } from '@/lib/student';
 import StudentShell from '@/components/StudentShell';
+import { CallProvider } from '@/components/CallProvider';
+import CallOverlay from '@/components/CallOverlay';
 import { noticesFor } from '@/lib/notices';
 import './student.css';
 import './themes.css';
@@ -61,6 +63,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <div className="splash-in"><Mark draw /><div className="splash-word">Admissions <em>Portal</em></div><div className="splash-line" /></div>
         </div>
         <NavProgress />
+        <CallProvider enabled={!!(staff || student)}>
         {staff && <Presence />}
         {staff ? (
           <div className="shell">
@@ -75,6 +78,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             </div>
           </div>
         ) : student ? <StudentShell me={student} notices={studentNotices} unread={studentUnread}>{children}</StudentShell> : <main style={{ maxWidth: 'none' }}>{children}</main>}
+        {(staff || student) && <CallOverlay />}
+        </CallProvider>
       </body>
     </html>
   );
