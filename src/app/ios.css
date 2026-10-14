@@ -58,11 +58,9 @@
 .st-top { padding:max(10px, env(safe-area-inset-top)) clamp(16px,4vw,32px) 10px; background:var(--st-topbar); -webkit-backdrop-filter:saturate(1.9) blur(26px); backdrop-filter:saturate(1.9) blur(26px); border-bottom:.5px solid transparent; transition:border-color .3s, background .3s; }
 .st-top[data-scrolled="1"] { border-bottom-color:var(--st-line); }
 .st-brand { position:relative; min-width:0; }
-.st-brand .mk { flex:none; }
-.st-brand b { font:400 19px/1.05 var(--font-display), Georgia, serif; transition:opacity .28s var(--ios-ease), transform .28s var(--ios-ease); }
-.st-brand small { transition:opacity .28s; }
-.st-top-title { position:absolute; left:46px; right:0; top:50%; transform:translateY(-35%); opacity:0; pointer-events:none; font:650 17px/1.2 var(--font-sf); letter-spacing:-.01em; color:var(--st-ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; transition:opacity .28s var(--ios-ease), transform .28s var(--ios-ease); }
-.st-top[data-scrolled="1"] .st-brand b, .st-top[data-scrolled="1"] .st-brand small { opacity:0; transform:translateY(-6px); }
+.st-logo { flex:none; transition:opacity .28s var(--ios-ease), transform .28s var(--ios-ease); }
+.st-top-title { position:absolute; left:0; right:0; top:50%; transform:translateY(-35%); opacity:0; pointer-events:none; font:650 17px/1.2 var(--font-sf); letter-spacing:-.01em; color:var(--st-ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; transition:opacity .28s var(--ios-ease), transform .28s var(--ios-ease); }
+.st-top[data-scrolled="1"] .st-brand[data-t="1"] .st-logo { opacity:0; transform:translateY(-6px); }
 .st-top[data-scrolled="1"] .st-top-title { opacity:1; transform:translateY(-50%); }
 .st-me .iconbtn, .st-me .iconbtn:hover { width:40px; height:40px; border-radius:50%; background:var(--st-tint-2); border:0; box-shadow:none; color:var(--st-ink); transform:none; }
 .st-me .iconbtn:active { transform:scale(.92); }

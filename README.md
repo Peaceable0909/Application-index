@@ -1,4 +1,4 @@
-# WhiteRock Staff Portal
+# Extravel
 
 Portal on top of your existing **Google Sheet + Drive + Apps Script**. The Sheet stays the
 source of truth for application data, Drive keeps the documents, and this app adds search,
@@ -34,3 +34,10 @@ Sheet), notes, activity history, and **email to counselor** (sent from your Gmai
 counselor emails are entered under **Settings**).
 
 Edit required documents and pipeline statuses in `src/lib/constants.ts`.
+
+## Brand
+The logo, icons and link preview live in `public/brand/` (and `public/pwa/` for the home-screen icons). The site opens with an
+intro: the still logo, then `public/brand/extravel-intro.gif` plays from its first frame and the screen fades out when the
+film ends (tap or Esc skips it; it shows once every 3 hours per device, never when the phone asks for reduced motion).
+Until that file exists, or if it can't be loaded in time, a short shine across the logo is shown instead. To change the
+film, replace the file under the same name.

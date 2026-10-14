@@ -1,5 +1,5 @@
 // ==========================================================
-// WHITEROCK PORTAL API  — add this as a NEW file (PortalApi.gs)
+// EXTRAVEL PORTAL API  — add this as a NEW file (PortalApi.gs)
 // in the SAME Apps Script project as your existing doPost.
 //
 // It lets the staff portal (server-side only) read the Applications
@@ -564,7 +564,7 @@ function lockDownExistingFolders() {
 // p = { to, cc?, subject, body, htmlBody?, replyTo? }
 function portalSendEmail_(p) {
   if (!p.to || !p.subject || !p.body) throw new Error('to, subject and body are required');
-  const opts = { name: 'WhiteRock Admissions' };
+  const opts = { name: 'Extravel' };
   if (p.cc) opts.cc = p.cc;
   if (p.replyTo) opts.replyTo = p.replyTo;
   if (p.htmlBody) opts.htmlBody = p.htmlBody;

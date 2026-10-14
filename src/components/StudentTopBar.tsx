@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import Mark from './Mark';
+import Logo from './Logo';
 import Avatar from './Avatar';
 import StudentBell from './StudentBell';
 import StudentNav from './StudentNav';
@@ -27,7 +27,7 @@ export default function StudentTopBar({ name, notices, unread }: { name: string;
   }, [path]);
   return (
     <header className="st-top" data-scrolled={scrolled ? '1' : '0'}>
-      <Link href="/student" className="st-brand" onClick={logo}><Mark size={36} /><span><b>WhiteRock <em>Admissions</em></b><small>Student portal</small></span>{title && <span className="st-top-title" aria-hidden>{title}</span>}</Link>
+      <Link href="/student" className="st-brand" data-t={title ? '1' : '0'} onClick={logo} aria-label="Extravel home"><Logo height={38} className="st-logo" alt="" />{title && <span className="st-top-title" aria-hidden>{title}</span>}</Link>
       <StudentNav variant="top" unread={unread} />
       <div className="st-me"><StudentBell initial={notices} /><Link href="/student/me" aria-label="My profile"><Avatar name={name} size={38} /></Link></div>
     </header>

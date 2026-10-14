@@ -3,7 +3,7 @@ import { currentStaff } from '@/lib/auth';
 import { sessionClient } from '@/lib/supabase';
 import { currentStudent } from '@/lib/student';
 import { signIn, signInWithGoogle, signOut } from '../actions';
-import Mark from '@/components/Mark';
+import Logo from '@/components/Logo';
 import Btn from '@/components/Btn';
 
 export const metadata = { title: 'Team sign-in', robots: { index: false, follow: false } };
@@ -16,9 +16,9 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
   const blocked = data.user?.email;
   return (
     <div className="auth">
-      <div style={{ display: 'grid', placeItems: 'center', marginBottom: 14 }}><Mark size={46} /></div>
-      <h1>Admissions <em>Portal</em></h1>
-      <p className="muted" style={{ margin: 0 }}>Team sign-in · for admissions staff and counselors.</p>
+      <div className="auth-logo"><Logo height={72} /></div>
+      <h1>Team <em>sign-in</em></h1>
+      <p className="muted" style={{ margin: 0 }}>For admissions staff and counselors.</p>
       <div className="card">
         {blocked && (
           <div className="err" style={{ marginBottom: 14 }}>

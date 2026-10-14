@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 import { currentStudent } from '@/lib/student';
 import { currentStaff } from '@/lib/auth';
 import { requestStudentCode, verifyStudentCode, signInWithGoogle } from '@/app/actions';
-import Mark from '@/components/Mark';
+import Logo from '@/components/Logo';
 import Btn from '@/components/Btn';
 
 export const metadata = { title: 'Student sign-in' };
@@ -14,8 +14,8 @@ export default async function StudentLogin({ searchParams }: { searchParams: Pro
   const code = sp.step === 'code' && sp.email;
   return (
     <div className="auth">
-      <div style={{ display: 'grid', placeItems: 'center', marginBottom: 14 }}><Mark size={46} /></div>
-      <h1>Student <em>Portal</em></h1>
+      <div className="auth-logo"><Logo height={72} /></div>
+      <h1>Student <em>sign-in</em></h1>
       <p className="muted" style={{ margin: 0 }}>{code ? 'Check your email for your sign-in code.' : 'Track your application and upload your documents.'}</p>
       <div className="card">
         {sp.error && <div className="err" style={{ marginBottom: 14 }}>{sp.error}</div>}
