@@ -14,6 +14,8 @@ import NavProgress from '@/components/NavProgress';
 import MobileMenu from '@/components/MobileMenu';
 import StaffTabs from '@/components/StaffTabs';
 import Haptics from '@/components/Haptics';
+import AppBadge from '@/components/AppBadge';
+import ThemeColor from '@/components/ThemeColor';
 import Presence from '@/components/Presence';
 import { unreadTotal } from '@/lib/chat';
 import { currentStudent } from '@/lib/student';
@@ -84,6 +86,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         ) : student ? <StudentShell me={student} notices={studentNotices} unread={studentUnread}>{children}</StudentShell> : <main style={{ maxWidth: 'none' }}>{children}</main>}
         {(staff || student) && <CallOverlay />}
         {(staff || student) && <Haptics />}
+        {(staff || student) && <ThemeColor />}
+        {student ? <AppBadge count={studentUnread + studentNotices.filter((n) => !n.read && !n.done).length} /> : staff ? <AppBadge count={chatCount + inboxCount} /> : null}
         </CallProvider>
       </body>
     </html>

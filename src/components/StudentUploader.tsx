@@ -3,6 +3,8 @@ import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { studentUpload } from '@/app/actions';
 import Icon from './Icon';
+import { confetti } from '@/lib/confetti';
+import { success } from '@/lib/haptics';
 
 async function shrink(f: File): Promise<File> {
   if (!f.type.startsWith('image/') || f.type === 'image/gif' || f.size < 900_000) return f;
@@ -33,7 +35,7 @@ export default function StudentUploader({ appId, docType, label, choose, types, 
       const small = await shrink(file), fd = new FormData();
       fd.set('appId', appId); fd.set('docType', type); fd.set('docLabel', custom); fd.set('file', small);
       const r = await studentUpload(fd);
-      if (r.ok) { setMsg({ t: 'Uploaded ✓' }); setCustom(''); router.refresh(); } else setMsg({ t: r.error || 'Upload failed', bad: true });
+      if (r.ok) { setMsg({ t: 'Uploaded ✓' }); setCustom(''); router.refresh(); success(); const b = input.current?.parentElement?.querySelector('button')?.getBoundingClientRect(); confetti({ x: b ? b.left + b.width / 2 : undefined, y: b ? b.top : undefined, count: 38, power: 0.55 }); } else setMsg({ t: r.error || 'Upload failed', bad: true });
     } catch { setMsg({ t: 'Upload failed. Please try again.', bad: true }); }
     setBusy(false);
   }

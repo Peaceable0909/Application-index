@@ -1,9 +1,12 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { confetti } from '@/lib/confetti';
+import { success } from '@/lib/haptics';
 
 /** A full-screen "it worked" moment: a ring that draws itself, a check that ticks in, and a little burst. Closes itself, or on tap / Esc. */
 export default function Confirmed({ title, lines = [], action, onClose, seconds = 6 }: { title: string; lines?: string[]; action?: { label: string; href: string }; onClose: () => void; seconds?: number }) {
+  useEffect(() => { const c = setTimeout(() => { confetti({ count: 110 }); success(); }, 250); return () => clearTimeout(c); }, []);
   useEffect(() => {
     const t = setTimeout(onClose, seconds * 1000);
     const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
