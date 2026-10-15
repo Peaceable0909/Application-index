@@ -42,6 +42,8 @@ function Rich({ text, mine }: { text: string; mine: boolean }) {
 }
 
 
+/** First name, keeping a title with it ("Mr Abraham" rather than "Mr"). */
+const nick = (n: string) => { const w = n.trim().split(/\s+/); return /^(mr|mrs|ms|miss|dr|prof)\.?$/i.test(w[0]) && w[1] ? `${w[0]} ${w[1]}` : w[0]; };
 const initials2 = (n: string) => n.split(/[\s,]+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
 function Cards({ cards, mine }: { cards: Card[]; mine: boolean }) {
   return (
@@ -305,7 +307,7 @@ function Thread({ seed, onSeedUsed, room, me, who, people, online: onlineSeed, t
       </header>
       <div className="chat-body" ref={body} onScroll={onScroll} onClick={() => { setSel(null); setEmoji(false); }}>
         {more && <button className="btn ghost sm" style={{ alignSelf: 'center' }} onClick={loadEarlier}>Load earlier messages</button>}
-        {!msgs.length && loaded && <div className="chat-empty"><span className="ico"><Icon n="chat" size={24} /></span><b>{group ? `Welcome to ${title}` : `Say hello to ${title.split(' ')[0]}`}</b><span className="muted">{group ? 'Everyone in this group can read these messages.' : 'Messages here are private between the two of you.'}</span></div>}
+        {!msgs.length && loaded && <div className="chat-empty"><span className="ico"><Icon n="chat" size={24} /></span><b>{group ? `Welcome to ${title}` : `Say hello to ${nick(title)}`}</b><span className="muted">{group ? 'Everyone in this group can read these messages.' : 'Messages here are private between the two of you.'}</span></div>}
         {!loaded && <div className="chat-empty"><span className="pspin2" /></div>}
         {msgs.map((m) => {
           const mine = m.sender === me, d = dayLabel(m.created_at), newDay = d !== prevDay;
@@ -370,7 +372,7 @@ function Thread({ seed, onSeedUsed, room, me, who, people, online: onlineSeed, t
           <button className="iconbtn" title="Attach a file or photo" onClick={() => fileIn.current?.click()} disabled={!!editing}><Icon n="upload" size={18} /></button>
           <button className="iconbtn" title="Emoji" onClick={(e) => { e.stopPropagation(); setEmoji((v) => !v); }}><Icon n="smile" size={20} /></button>
           <button className="iconbtn" title="Quote a student or share their documents  (or type #)" onClick={() => setPicker(true)} disabled={!!editing}><span style={{ fontWeight: 700, fontSize: 17 }}>#</span></button>
-          <textarea ref={ta} value={text} rows={1} placeholder={editing ? 'Edit your message…' : `Message ${group ? title : title.split(' ')[0]}…  (type # to quote a student)`} maxLength={2000}
+          <textarea ref={ta} value={text} rows={1} placeholder={editing ? 'Edit your message…' : 'Message'} maxLength={2000}
             onChange={(e) => { setText(e.target.value); typing(); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 140) + 'px'; }}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } if (e.key === 'Escape') { setReply(null); setEditing(null); } }} />
           <button className="btn chat-send" onClick={send} disabled={busy || (!text.trim() && !file && !refs.length)} aria-label={editing ? 'Save' : 'Send'}><Icon n={editing ? 'check' : 'send'} size={17} /></button>

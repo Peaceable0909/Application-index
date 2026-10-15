@@ -113,6 +113,11 @@
   .maincol:has(.chatapp.open) .topbar { display:none; } main:has(.chatapp) { padding:0 !important; }
   .chatapp { height:calc(100dvh - 64px); border-radius:0; box-shadow:none; } .chatapp.open { height:100dvh; }
   .chatapp .chat-head { padding-top:max(9px, env(safe-area-inset-top)); } .chatapp .chat-foot { padding-bottom:calc(10px + env(safe-area-inset-bottom)); }
+  /* an open conversation owns the whole phone screen (like WhatsApp): the floating tab bar would sit on top of the message box */
+  .shell:has(.chatapp.open) .stf-tabs, .shell:has(.msgr.open) .stf-tabs { display:none; }
+  .maincol:has(.msgr.open) .topbar { display:none; } main:has(.msgr) { padding:0 !important; }
+  .msgr { height:calc(100dvh - 150px); } .msgr.open { height:100dvh; margin:0; }
+  .msgr-pane .wa-head { padding-top:max(9px, env(safe-area-inset-top)); } .msgr-pane .wa-compose { padding-bottom:calc(8px + env(safe-area-inset-bottom)); }
 }
 @media (max-width:640px) { .wa .st-bub, .chatapp .bubwrap { max-width:86%; } }
 @media (prefers-reduced-motion:reduce) { .wa .st-bub, .chatapp .bub, .wa .wa-hello, .wa .wa-compose *, .wa .wa-emoji { animation:none !important; } .wa .st-chat-list { scroll-behavior:auto; } }
