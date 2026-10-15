@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { CallKind, CallSignal, CallView } from '@/lib/callTypes';
 
 export type Phase = 'idle' | 'outgoing' | 'incoming' | 'connecting' | 'live' | 'ended';
-export type Peer = { name: string; avatar?: { name: string; url: string | null; color: string | null } | null };
+export type Peer = { name: string; sub?: string; avatar?: { name: string; url: string | null; color: string | null } | null };
 export type Reaction = { id: number; e: string; x: number };
 export const REACTIONS = ['👍', '❤️', '😂', '👏', '🎉', '🙏'];
 

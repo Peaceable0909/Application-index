@@ -92,7 +92,7 @@ export async function currentCall(a: Actor): Promise<CallView | null> {
   try { const c = await liveFor(a.studentEmail); return c && visible(a, c) ? view(a, c) : null; } catch { return null; }
 }
 
-export type RingView = { call: CallView; appId: string; peer: { name: string; avatar: { name: string; url: string | null; color: string | null } | null } };
+export type RingView = { call: CallView; appId: string; peer: { name: string; sub?: string; avatar: { name: string; url: string | null; color: string | null } | null } };
 
 /** A call that is ringing for this person right now, on whatever page they are on. Staff see students' calls for students they can see; students see their counselor's. */
 export async function ringingFor(): Promise<RingView | null> {
@@ -106,9 +106,9 @@ export async function ringingFor(): Promise<RingView | null> {
         if (c.status !== 'ringing' || !(await canAccessApp(staff, c.application_id))) continue;
         const a: Actor = { role: 'staff', email: staff.email, appId: c.application_id, studentEmail: c.student_email, staff };
         if (!visible(a, c)) continue;
-        const { data: ap } = await db.from('portal_applications').select('name').eq('application_id', c.application_id).maybeSingle();
+        const { data: ap } = await db.from('portal_applications').select('name, country').eq('application_id', c.application_id).maybeSingle();
         const nm = (ap?.name || 'Student').trim();
-        return { call: view(a, c), appId: c.application_id, peer: { name: nm, avatar: { name: nm, url: await studentPhoto(c.student_email), color: null } } };
+        return { call: view(a, c), appId: c.application_id, peer: { name: nm, sub: ['Student', (ap?.country || '').trim()].filter(Boolean).join(' · '), avatar: { name: nm, url: await studentPhoto(c.student_email), color: null } } };
       }
       return null;
     }
@@ -119,7 +119,7 @@ export async function ringingFor(): Promise<RingView | null> {
     const a: Actor = { role: 'student', email: me.email, appId: c.application_id, studentEmail: me.email };
     const { data: st } = await db.from('portal_staff').select('email, display_name, avatar_url, color').eq('email', c.caller_email).maybeSingle();
     const name = (st?.display_name || '').trim() || 'Your counselor';
-    return { call: view(a, c), appId: c.application_id, peer: { name, avatar: { name, url: st?.avatar_url || null, color: st?.color || null } } };
+    return { call: view(a, c), appId: c.application_id, peer: { name, sub: 'Your counselor', avatar: { name, url: st?.avatar_url || null, color: st?.color || null } } };
   } catch { return null; }
 }
 
