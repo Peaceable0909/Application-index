@@ -13,6 +13,8 @@ import { counselorKey } from './docs';
 import { callScript, type DriveFile } from './appsScript';
 import { ALL_DOC_TYPES } from './constants';
 import { cleanLabel, resolveLabel } from './docLabel';
+import { nudge } from './realtime';
+import { staffFor } from './recipients';
 
 export type Role = 'student' | 'staff';
 export type Actor = { role: Role; email: string; appId: string; studentEmail: string; staff?: Staff };
@@ -24,7 +26,10 @@ export type ThreadMsg = {
   read: boolean;
 };
 
-export const ATT_MAX = 4 * 1024 * 1024;
+export const ATT_MAX = 4 * 1024 * 1024;           // what a request to the server can carry
+export const ATT_BIG = 20 * 1024 * 1024;         // GIFs, PDFs and videos go straight to storage, so they can be bigger
+const slug = (e: string) => e.replace(/[^a-z0-9]+/g, '_');
+const safeName = (n: string) => (n || 'file').replace(/[^\w.\- ]+/g, '_').slice(-80);
 const OK_MIME = /^(image\/(jpeg|png|webp|gif|heic|heif)|application\/pdf|application\/(msword|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet|presentationml\.presentation)|vnd\.ms-excel|vnd\.ms-powerpoint)|text\/plain|audio\/(webm|ogg|mp4|mpeg|aac|x-m4a)|video\/mp4)/i;
 export const REACTIONS = ['👍', '❤️', '😂', '🙏', '✅', '😮'];
 const COLS = 'id, student_email, application_id, from_student, sender_email, body, created_at, student_read_at, staff_read_at, att_path, att_name, att_mime, att_size, duration_ms, reply_to, reactions, deleted_at';
@@ -93,24 +98,46 @@ export async function loadThread(a: Actor, markRead: boolean): Promise<{ msgs: T
   return { msgs, typing, other: { name, lastSeen, online: !!lastSeen && Date.now() - new Date(lastSeen).getTime() < 90_000 }, call };
 }
 
-export async function postMessage(a: Actor, o: { body: string; replyTo?: string | null; file?: File | null; durationMs?: number | null }): Promise<{ ok: boolean; error?: string; id?: string }> {
+/** A place in storage the browser can upload to directly, for files too big to send through the server. */
+export async function uploadSlot(a: Actor, f: { name: string; type: string; size: number }): Promise<{ ok: true; path: string; url: string } | { ok: false; error: string }> {
+  if (!OK_MIME.test(f.type || '')) return { ok: false, error: 'That file type can’t be sent here. Use a photo, GIF, PDF, Word or voice note.' };
+  if (!(f.size > 0) || f.size > ATT_BIG) return { ok: false, error: 'That file is over 20 MB. Send a smaller one.' };
+  const path = `thread/${slug(a.studentEmail)}/${crypto.randomUUID()}-${safeName(f.name)}`;
+  const { data, error } = await admin().storage.from('chat-files').createSignedUploadUrl(path);
+  if (error || !data?.signedUrl) return { ok: false, error: 'Could not start the upload. Please try again.' };
+  return { ok: true, path, url: data.signedUrl };
+}
+
+export type Uploaded = { path: string; name: string; type: string; size: number };
+
+export async function postMessage(a: Actor, o: { body: string; replyTo?: string | null; file?: File | null; durationMs?: number | null; uploaded?: Uploaded | null; big?: boolean }): Promise<{ ok: boolean; error?: string; id?: string }> {
   const db = admin();
-  const body = o.body.trim().slice(0, 2000), file = o.file && o.file.size > 0 ? o.file : null;
-  if (!body && !file) return { ok: false, error: 'Write a message or attach something.' };
+  const body = o.body.trim().slice(0, 2000), file = o.file && o.file.size > 0 ? o.file : null, up = o.uploaded || null;
+  if (!body && !file && !up) return { ok: false, error: 'Write a message or attach something.' };
   if (file) {
-    if (file.size > ATT_MAX) return { ok: false, error: 'That file is over 4 MB. Send a smaller one.' };
-    if (!OK_MIME.test(file.type || '')) return { ok: false, error: 'That file type can’t be sent here. Use a photo, PDF, Word or voice note.' };
+    if (file.size > (o.big ? ATT_BIG : ATT_MAX)) return { ok: false, error: o.big ? 'That file is over 20 MB. Send a smaller one.' : 'That file is over 4 MB. Send a smaller one.' };
+    if (!OK_MIME.test(file.type || '')) return { ok: false, error: 'That file type can’t be sent here. Use a photo, GIF, PDF, Word or voice note.' };
   }
   if (a.role === 'student') {
     const { count } = await db.from('portal_student_msgs').select('id', { count: 'exact', head: true }).eq('student_email', a.studentEmail).eq('from_student', true).gte('created_at', new Date(Date.now() - 864e5).toISOString());
     if ((count || 0) >= 80) return { ok: false, error: 'That’s a lot of messages for one day. Your counselor will reply soon.' };
   }
   let att: Record<string, unknown> = {};
+  if (up) {
+    // the browser already put the file in storage: check it is really there, in this student's folder, and not too big
+    const dir = `thread/${slug(a.studentEmail)}`, base = up.path.slice(up.path.lastIndexOf('/') + 1);
+    if (up.path !== `${dir}/${base}` || !OK_MIME.test(up.type || '')) return { ok: false, error: 'That upload can’t be used. Please try again.' };
+    const { data: ls } = await db.storage.from('chat-files').list(dir, { search: base, limit: 5 });
+    const obj = (ls || []).find((x) => x.name === base);
+    if (!obj) return { ok: false, error: 'The upload didn’t finish. Please try again.' };
+    const size = Number((obj.metadata as { size?: number } | null)?.size) || up.size;
+    if (size > ATT_BIG) { await db.storage.from('chat-files').remove([up.path]); return { ok: false, error: 'That file is over 20 MB. Send a smaller one.' }; }
+    att = { att_path: up.path, att_name: (up.name || 'file').slice(0, 120), att_mime: up.type, att_size: size, duration_ms: o.durationMs && up.type.startsWith('audio/') ? Math.min(o.durationMs, 600_000) : null };
+  }
   if (file) {
-    const safe = (file.name || 'file').replace(/[^\w.\- ]+/g, '_').slice(-80);
-    const path = `thread/${a.studentEmail.replace(/[^a-z0-9]+/g, '_')}/${crypto.randomUUID()}-${safe}`;
-    const up = await db.storage.from('chat-files').upload(path, Buffer.from(await file.arrayBuffer()), { contentType: file.type });
-    if (up.error) return { ok: false, error: 'Upload failed. Please try again.' };
+    const path = `thread/${slug(a.studentEmail)}/${crypto.randomUUID()}-${safeName(file.name)}`;
+    const put = await db.storage.from('chat-files').upload(path, Buffer.from(await file.arrayBuffer()), { contentType: file.type });
+    if (put.error) return { ok: false, error: 'Upload failed. Please try again.' };
     att = { att_path: path, att_name: (file.name || 'file').slice(0, 120), att_mime: file.type, att_size: file.size, duration_ms: o.durationMs && file.type.startsWith('audio/') ? Math.min(o.durationMs, 600_000) : null };
   }
   let reply_to: string | null = null;
@@ -119,8 +146,11 @@ export async function postMessage(a: Actor, o: { body: string; replyTo?: string 
   const { data: prev } = await db.from('portal_student_msgs').select('created_at').eq('student_email', a.studentEmail).eq('from_student', a.role === 'student').order('created_at', { ascending: false }).limit(1);
   const { data, error } = await db.from('portal_student_msgs').insert({ student_email: a.studentEmail, application_id: a.appId, from_student: a.role === 'student', sender_email: a.email, body, reply_to, ...att, ...(a.role === 'student' ? { student_read_at: now } : { staff_read_at: now }) }).select('id').single();
   if (error || !data) return { ok: false, error: 'Could not send. Please try again.' };
+  // tell the other side right now, while the alerts and emails below are still going out
+  const pinged = (async () => { try { await nudge(a.role === 'student' ? (await staffFor(a.appId, true)).map((email) => ({ role: 'staff' as const, email })) : [{ role: 'student' as const, email: a.studentEmail }], 'msg', { app: a.appId }); } catch { /* the regular refresh catches up */ } })();
   const quiet = !prev?.[0] || Date.now() - new Date(prev[0].created_at).getTime() > 3 * 3600_000;
-  const text = plainBody(body) || (file?.type.startsWith('image/') ? (isStickerFile(file.name, file.type) ? 'Sticker' : 'Photo') : file?.type.startsWith('audio/') ? 'Voice note' : (file?.name || 'File'));
+  const sent = file ? { name: file.name, type: file.type } : up ? { name: up.name, type: up.type } : null;
+  const text = plainBody(body) || (sent?.type.startsWith('image/') ? (isStickerFile(sent.name, sent.type) ? 'Sticker' : 'Photo') : sent?.type.startsWith('audio/') ? 'Voice note' : (sent?.name || 'File'));
   if (a.role === 'student') {
     // phone alert for the counselor (or the admins when nobody is assigned)
     try {
@@ -128,7 +158,7 @@ export async function postMessage(a: Actor, o: { body: string; replyTo?: string 
       const { data: c } = ap?.counselor ? await db.from('portal_counselors').select('email').eq('name_key', counselorKey(ap.counselor)).maybeSingle() : { data: null };
       let to = c?.email ? [c.email] : [];
       if (!to.length) { const { data: ad } = await db.from('portal_staff').select('email').eq('role', 'admin'); to = (ad || []).map((x) => x.email); }
-      await sendPush({ emails: to, title: `${(ap?.name || 'A student').split(/[\s,]+/).filter(Boolean)[0]} sent a message`, body: text, url: `/applications/${encodeURIComponent(a.appId)}?tab=messages`, tag: `chat-${a.studentEmail}`, skipIfActiveMs: 30_000, calmMs: 6 * 3600_000 });
+      await sendPush({ emails: to, title: `${(ap?.name || 'A student').split(/[\s,]+/).filter(Boolean)[0]} sent a message`, body: text, url: `/inbox?app=${encodeURIComponent(a.appId)}`, tag: `chat-${a.studentEmail}`, skipIfActiveMs: 30_000, calmMs: 6 * 3600_000 });
     } catch { /* alerts are best effort */ }
     if (quiet) { try { const { studentMessage } = await import('@/app/actions'); const fd = new FormData(); fd.set('appId', a.appId); fd.set('body', text); await studentMessage(fd); } catch { /* saved either way */ } }
   } else {
@@ -142,6 +172,7 @@ export async function postMessage(a: Actor, o: { body: string; replyTo?: string 
       try { await sendMail({ to: a.studentEmail, subject: 'New message from your counselor', body: `${who} wrote:\n\n${text}`, eyebrow: 'Message', title: 'You have a new message', greeting: `Hi ${first},`, preheader: text.slice(0, 100), sign: { name: who, title: 'Admissions Counselor', email: st.email }, blocks: [{ type: 'quote', from: who, text: text.slice(0, 600) }], cta: { label: 'Open your messages', href: `${studentSite()}/student/messages` } }); } catch { /* chat still has it */ }
     }
   }
+  await pinged;
   return { ok: true, id: data.id };
 }
 

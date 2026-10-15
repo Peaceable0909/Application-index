@@ -238,3 +238,12 @@
 .pn-box, .pn-on { min-width:0; } .pn-modes { display:grid; grid-template-columns:minmax(0,1fr); gap:8px; min-width:0; } .pn-modes button { display:grid; grid-template-columns:minmax(0,1fr); justify-content:stretch; justify-items:start; align-items:start; gap:2px; width:100%; min-width:0; white-space:normal; text-align:left; height:auto; padding:11px 14px; border-radius:14px; background:var(--st-card); color:var(--st-ink); border:1.5px solid var(--st-line); box-shadow:none; transition:border-color .2s, background .2s, transform .2s; }
 .pn-modes button:hover { background:var(--st-tint); transform:none; box-shadow:none; } .pn-modes button.on { border-color:var(--st-blue); background:var(--st-tint); } .pn-modes b { font:700 14px var(--font-ui); } .pn-modes small { font:500 12.5px var(--font-ui); color:var(--st-text); }
 @media (min-width:700px) { .pn-modes { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+
+/* ---- the student's own profile picture ---- */
+.st-photo { display:grid; justify-items:center; gap:6px; }
+.st-photo-pick { position:relative; width:92px; height:92px; padding:0; border:0; border-radius:50%; background:none; box-shadow:none; cursor:pointer; transition:transform .2s; } .st-photo-pick:hover { transform:none; box-shadow:none; } .st-photo-pick:active { transform:scale(.96); }
+.st-photo-pick .pic { box-shadow:0 6px 18px -8px rgba(13,31,77,.45); }
+.st-photo-cam { position:absolute; right:-2px; bottom:-2px; width:30px; height:30px; border-radius:50%; background:var(--st-blue, #007aff); color:#fff; display:grid; place-items:center; box-shadow:0 0 0 3px var(--st-bg, #fff), 0 4px 10px -3px rgba(0,0,0,.35); }
+.st-photo-spin { position:absolute; inset:0; border-radius:50%; background:rgba(255,255,255,.55) ; display:grid; place-items:center; } .st-photo-spin::after { content:''; width:26px; height:26px; border-radius:50%; border:3px solid rgba(0,0,0,.18); border-top-color:var(--st-blue, #007aff); animation:spin .8s linear infinite; }
+.st-photo-acts { display:flex; gap:14px; } .st-photo-acts .st-link { padding:0; border:0; background:none; box-shadow:none; height:auto; min-width:0; color:var(--st-blue, #007aff); font:600 13.5px var(--font-ui), system-ui; cursor:pointer; } .st-photo-acts .st-link.bad { color:var(--st-red, #ef4444); } .st-photo-acts .st-link:hover { transform:none; box-shadow:none; text-decoration:underline; }
+.st-photo-err { color:var(--st-red, #ef4444); font-size:12.5px; }

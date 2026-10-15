@@ -4,6 +4,8 @@ import Link from 'next/link';
 import Icon from './Icon';
 import Avatar from './Avatar';
 import Sticker from './Sticker';
+import GifPanel from './GifPanel';
+import { uploadBig, BIG_FILE } from '@/lib/directUpload';
 import { STICKERS, isStickerFile, parseSticker, plainBody, stickerToken } from '@/lib/stickers';
 import { addMine, listMine, removeMine, stickerExt, STICKER_TYPES, type MySticker } from '@/lib/myStickers';
 import type { ThreadMsg } from '@/lib/thread';
@@ -88,7 +90,7 @@ function Voice({ m }: { m: Local }) {
   );
 }
 
-export default function ChatThread({ appId, msgs, as, other: otherName, otherInit, backHref, avatar, title }: { appId: string; msgs: ThreadMsg[]; as: 'student' | 'staff'; other: string; otherInit?: Other; backHref?: string; avatar?: { name: string; url: string | null; color: string | null }; title?: string }) {
+export default function ChatThread({ appId, msgs, as, other: otherName, otherInit, backHref, onBack, fill, avatar, title }: { appId: string; msgs: ThreadMsg[]; as: 'student' | 'staff'; other: string; otherInit?: Other; backHref?: string; onBack?: () => void; fill?: boolean; avatar?: { name: string; url: string | null; color: string | null }; title?: string }) {
   const [list, setList] = useState<Local[]>(msgs);
   const [srvCall, setSrvCall] = useState<CallView | null>(null);
   const call = useCallMaybe();
@@ -140,7 +142,10 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
     const t = setInterval(() => { if (document.visibilityState === 'visible') void sync(true); }, 3000);
     const v = () => { if (document.visibilityState === 'visible') { document.title = document.title.replace(/^\(\d+\)\s*/, ''); void sync(true); } };
     document.addEventListener('visibilitychange', v);
-    return () => { clearInterval(t); document.removeEventListener('visibilitychange', v); };
+    // the server nudges us when a message or call arrives, so it shows at once
+    const nd = () => { if (document.visibilityState === 'visible') void sync(true); };
+    window.addEventListener('wr:nudge', nd);
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', v); window.removeEventListener('wr:nudge', nd); };
   }, [sync]);
 
   useEffect(() => (call ? call.registerChat() : undefined), [call?.registerChat]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -188,9 +193,16 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
       reply: o.replyTo ? { id: o.replyTo, who: 'them', preview: reply?.body.slice(0, 80) || '' } : null, reactions: {} };
     setList((l) => [...l.filter((m) => m.id !== id), local]); near.current = true;
     celebrate(o.body);
-    const fd = new FormData(); fd.set('appId', appId); fd.set('body', o.body); if (o.replyTo) fd.set('replyTo', o.replyTo); if (f) fd.set('file', f); if (o.ms) fd.set('durationMs', String(o.ms));
     try {
-      const r = await fetch('/api/thread', { method: 'POST', body: fd }), d = (await r.json()) as { ok: boolean; error?: string };
+      let r: Response;
+      if (f && f.size > BIG_FILE) {
+        const up = await uploadBig(appId, f);
+        r = await fetch('/api/thread', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ appId, body: o.body, replyTo: o.replyTo || null, durationMs: o.ms || null, uploaded: up }) });
+      } else {
+        const fd = new FormData(); fd.set('appId', appId); fd.set('body', o.body); if (o.replyTo) fd.set('replyTo', o.replyTo); if (f) fd.set('file', f); if (o.ms) fd.set('durationMs', String(o.ms));
+        r = await fetch('/api/thread', { method: 'POST', body: fd });
+      }
+      const d = (await r.json().catch(() => ({ ok: false, error: 'Could not send. Please try again.' }))) as { ok: boolean; error?: string };
       if (!d.ok) throw new Error(d.error || 'Could not send');
       setList((l) => l.filter((m) => m.id !== id)); await sync(false);
     } catch (e) { setErr((e as Error).message); setList((l) => l.map((m) => (m.id === id ? { ...m, sending: false, failed: true } : m))); }
@@ -244,7 +256,7 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
   let lastDay = '';
   const hasText = !!text.trim() || !!file;
   const addEmoji = (e: string) => { setText((t) => t + e); ta.current?.focus(); };
-  const STK_TAB = EMOJI_TABS.length;
+  const GIF_TAB = EMOJI_TABS.length, STK_TAB = EMOJI_TABS.length + 1;
   const loadMine = useCallback(async () => {
     try { const all = await listMine(); setMine((old) => { old.forEach((o) => URL.revokeObjectURL(o.url)); return all.map((x) => ({ ...x, url: URL.createObjectURL(x.blob) })); }); } catch { /* storage can be off in private windows */ }
   }, []);
@@ -265,9 +277,10 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
     try { const r = [id, ...(JSON.parse(localStorage.getItem('wr_stickers') || '[]') as string[]).filter((x) => x !== id)].slice(0, 8); localStorage.setItem('wr_stickers', JSON.stringify(r)); setRecent(r); } catch { /* optional */ }
   }
   return (
-    <div className={`st-chat wa ${backHref ? 'wa-full' : ''}`} onClick={() => emoji !== null && setEmoji(null)}>
+    <div className={`st-chat wa ${backHref ? 'wa-full' : ''} ${fill ? 'wa-fill' : ''}`} onClick={() => emoji !== null && setEmoji(null)}>
       <header className="wa-head">
         {backHref && <Link href={backHref} className="wa-back" aria-label="Back"><svg width="24" height="24" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg></Link>}
+        {!backHref && onBack && <button type="button" className="wa-back wa-back-btn" onClick={onBack} aria-label="Back to chats"><svg width="24" height="24" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg></button>}
         <Avatar name={avatar?.name || otherName} url={avatar?.url} color={avatar?.color} size={40} />
         <div className="wa-who"><b>{title || otherName}</b>{typing ? <small className="typing">typing…</small> : status ? <small>{status === 'Active now' ? 'online' : status.toLowerCase()}</small> : null}</div>
         <button type="button" className="wa-ic" onClick={(e) => { e.stopPropagation(); void call?.start(appId, 'video', { name: title || otherName, avatar: avatar || null }); }} disabled={!call || call.phase !== 'idle'} aria-label="Video call"><Icon n="video" size={21} /></button>
@@ -322,8 +335,9 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
       {file && <div className="st-attach">{file.f.type.startsWith('image/') ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={file.url} alt="" /> : <span className="ic"><Icon n="file" size={20} /></span>}<div><b>{file.f.name}</b><small>{kb(file.f.size)}</small>{STICKER_TYPES.test(file.f.type) && file.f.size <= 2 * 1024 * 1024 && <span className="stk-acts"><button type="button" onClick={() => sendAsSticker(file.f, file.f.type)}>Send as sticker</button><button type="button" onClick={async () => { const e = await addMine(file.f).catch(() => 'Could not save that on this device.'); setNote(e || 'Saved to My stickers'); setTimeout(() => setNote(''), 3000); if (e) setErr(e); }}>Save to My stickers</button></span>}</div><button onClick={() => setFile(null)} aria-label="Remove"><Icon n="x" size={16} /></button></div>}
       {emoji !== null && (
         <div className="wa-emoji" onClick={(e) => e.stopPropagation()}>
-          <div className="tabs">{EMOJI_TABS.map((t, i) => <button key={t.k} type="button" className={emoji === i ? 'on' : ''} onClick={() => setEmoji(i)} aria-label={t.k}><Icon n={t.icon} size={22} /></button>)}<button type="button" className={emoji === STK_TAB ? 'on' : ''} onClick={() => setEmoji(STK_TAB)} aria-label="Stickers"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20 12a8 8 0 10-8 8h1.2a2.8 2.8 0 002-.8l4-4A2.8 2.8 0 0020 12z" /><path d="M20 13h-3.5a2.5 2.5 0 00-2.5 2.5V20" /><circle cx="9" cy="10.5" r=".9" fill="currentColor" stroke="none" /><circle cx="14.5" cy="10.5" r=".9" fill="currentColor" stroke="none" /><path d="M8.8 14.2c.8.8 1.8 1.2 3 1.2" /></svg></button></div>
-          {emoji === STK_TAB ? (
+          <div className="tabs">{EMOJI_TABS.map((t, i) => <button key={t.k} type="button" className={emoji === i ? 'on' : ''} onClick={() => setEmoji(i)} aria-label={t.k}><Icon n={t.icon} size={22} /></button>)}<button type="button" className={emoji === GIF_TAB ? 'on' : ''} onClick={() => setEmoji(GIF_TAB)} aria-label="GIF"><Icon n="gif" size={24} /></button><button type="button" className={emoji === STK_TAB ? 'on' : ''} onClick={() => setEmoji(STK_TAB)} aria-label="Stickers"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20 12a8 8 0 10-8 8h1.2a2.8 2.8 0 002-.8l4-4A2.8 2.8 0 0020 12z" /><path d="M20 13h-3.5a2.5 2.5 0 00-2.5 2.5V20" /><circle cx="9" cy="10.5" r=".9" fill="currentColor" stroke="none" /><circle cx="14.5" cy="10.5" r=".9" fill="currentColor" stroke="none" /><path d="M8.8 14.2c.8.8 1.8 1.2 3 1.2" /></svg></button></div>
+          {emoji === GIF_TAB ? <GifPanel appId={appId} replyTo={reply?.id && !reply.id.startsWith('tmp') ? reply.id : null} onSent={() => { setEmoji(null); setReply(null); void sync(false); }} onError={setErr} onFile={(f) => { setErr(''); setEmoji(null); void post({ body: '', file: f, replyTo: reply?.id && !reply.id.startsWith('tmp') ? reply.id : null }); setReply(null); }} />
+          : emoji === STK_TAB ? (
             <div className="stk-grid">
               <p className="stk-h">My stickers <button type="button" className="stk-edit" onClick={() => setManage((v) => !v)}>{manage ? 'Done' : 'Edit'}</button></p>
               <div className="stk-mine">

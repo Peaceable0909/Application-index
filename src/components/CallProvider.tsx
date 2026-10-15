@@ -331,12 +331,12 @@ export function CallProvider({ children, enabled = true }: { children: React.Rea
 
   const registerChat = useCallback(() => { chats.current++; return () => { chats.current = Math.max(0, chats.current - 1); }; }, []);
 
-  // Background "is anyone calling me?" — only while idle, visible and no chat is polling already.
+  // Background "is anyone calling me?" (only while idle and visible).
   useEffect(() => {
     if (!enabled) return;
     let stop = false;
     const tick = async () => {
-      if (stop || document.visibilityState !== 'visible' || phaseRef.current !== 'idle' || chats.current > 0) return;
+      if (stop || document.visibilityState !== 'visible' || phaseRef.current !== 'idle') return; // runs even with a chat open: the staff messenger shows one student's chat while another student may call
       try {
         const r = await fetch('/api/call/ring', { cache: 'no-store' }); if (!r.ok) return;
         const j = (await r.json()) as Reply; if (stop) return;
@@ -344,10 +344,12 @@ export function CallProvider({ children, enabled = true }: { children: React.Rea
         else if ((phaseRef.current as Phase) === 'incoming' && chats.current === 0) { incoming.current = null; setPhase('idle'); }
       } catch { /* try next time */ }
     };
-    const t = setInterval(tick, 10_000), first = setTimeout(tick, 2500);
+    // the server nudges us the moment a call starts (RealtimeNudge); this slower check is only the safety net
+    const t = setInterval(tick, 6000), first = setTimeout(tick, 1500);
     const v = () => { if (document.visibilityState === 'visible') void tick(); };
-    document.addEventListener('visibilitychange', v);
-    return () => { stop = true; clearInterval(t); clearTimeout(first); document.removeEventListener('visibilitychange', v); };
+    const nd = (e: Event) => { const k = (e as CustomEvent<{ event?: string }>).detail?.event; if (k === 'ring' || k === 'call' || k === 'wake') void tick(); };
+    document.addEventListener('visibilitychange', v); window.addEventListener('wr:nudge', nd);
+    return () => { stop = true; clearInterval(t); clearTimeout(first); document.removeEventListener('visibilitychange', v); window.removeEventListener('wr:nudge', nd); };
   }, [enabled, offerServer]);
 
   // Closing the tab hangs up, so the other person isn't left holding the line.

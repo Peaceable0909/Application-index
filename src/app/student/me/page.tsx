@@ -9,7 +9,7 @@ import PushToggle from '@/components/PushToggle';
 import ThemePicker from '@/components/ThemePicker';
 import { cookies } from 'next/headers';
 import { COOKIE, parseTheme } from '@/lib/theme';
-import Avatar from '@/components/Avatar';
+import StudentPhotoEditor from '@/components/StudentPhotoEditor';
 
 const FAQ: [string, string][] = [
   ['How do I know my documents were received?', 'The Documents page shows a green tick next to each one, and your counselor is told straight away.'],
@@ -30,7 +30,7 @@ export default async function StudentMe() {
   return (
     <div className="st-page">
       <div className="st-prof" style={{ ['--i' as string]: 0 }}>
-        <Avatar name={me.name} size={92} />
+        <StudentPhotoEditor name={me.name} url={me.avatar_url} />
         <h1 className="st-h1">{me.name}</h1>
         <p className="st-sub">{me.email}</p>
         <span className="st-chip">{refId}</span>
