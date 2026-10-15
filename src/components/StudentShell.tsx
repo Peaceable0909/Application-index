@@ -10,7 +10,7 @@ import type { Notice } from '@/lib/notices';
 export default function StudentShell({ me, notices, unread, children }: { me: StudentView; notices: Notice[]; unread: number; children: React.ReactNode }) {
   return (
     <StudentFrame>
-      <StudentTopBar name={me.name} notices={notices} unread={unread} />
+      <StudentTopBar name={me.name} avatarUrl={me.avatar_url} notices={notices} unread={unread} />
       <main className="st-main">{children}</main>
       <StudentNav variant="bottom" unread={unread} />
       <StudentPing /><SwRegister /><PullToRefresh />

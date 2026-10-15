@@ -23,6 +23,7 @@ import { getOffer, milestones } from '@/lib/offer';
 import { saveOffer, inviteOneStudent, sendStudentReminder, saveDates, addNote, addReminder, addToMaster, completeReminder, createDraft, scanDocs, setDocType, dismissSuggestion, generateSummary, linkFolder, refreshDocuments, scanStudent, sendCounselorEmail, unlinkFolder, updateCounselor, updateRegent, updateStatus, uploadDocument } from '../../actions';
 import { loadThread } from '@/lib/thread';
 import StaffStudentPanel from '@/components/StaffStudentPanel';
+import { studentPhoto } from '@/lib/studentPhotos';
 import type { ReactNode } from 'react';
 import MoveButton from '@/components/MoveSheet';
 import { UndoMove, RetrySheet } from '@/components/MoveBits';
@@ -136,12 +137,13 @@ export default async function ApplicationPage({ params, searchParams }: { params
     </>
   );
 
+  const photo = await studentPhoto(app.email);
   return (
     <>
       <Link href={staff.role === 'counselor' ? '/my' : '/applications'} className="crumb"><Icon n="left" size={15} /> {staff.role === 'counselor' ? 'Back to My students' : 'Back to Applications'}</Link>
 
       <div className="sh">
-        <span className="avatar lg">{initials(app.name)}</span>
+        <span className={`avatar lg ${photo ? 'photo' : ''}`}>{photo ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={photo} alt={app.name} /> : initials(app.name)}</span>
         <div style={{ flex: 1, minWidth: 220 }}>
           <h1>{app.name}</h1>
           <div className="meta">{[app.programme && app.programme.toUpperCase() !== 'N/A' ? app.programme : null, schoolShort(app.school), app.city].filter(Boolean).join('  ·  ') || 'No programme set'}<MoveButton mode="one" id={id} current={{ name: app.name, school: app.school, programme: app.programme, status: app.status }} catalog={catalog} variant="icon" /></div>
@@ -475,7 +477,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
         )}
 
         {tab === 'messages' && (<>
-          <StaffStudentPanel appId={id} studentName={app.name} msgs={chatRows.msgs} otherInit={chatRows.other} items={(checkRows || []) as { id: string; text: string; due: string | null; done: boolean }[]} />
+          <StaffStudentPanel appId={id} studentName={app.name} photo={photo} msgs={chatRows.msgs} otherInit={chatRows.other} items={(checkRows || []) as { id: string; text: string; due: string | null; done: boolean }[]} />
           <div className="grid g2" style={{ alignItems: 'start' }}>
             <div>
             <div className="card ai">

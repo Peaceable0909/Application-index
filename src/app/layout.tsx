@@ -7,6 +7,7 @@ import { appIdsFor } from '@/lib/auth';
 import { inboxUnread } from '@/lib/inbox';
 import Logo from '@/components/Logo';
 import Splash from '@/components/Splash';
+import RealtimeNudge from '@/components/RealtimeNudge';
 import Nav from '@/components/Nav';
 import TopSearch from '@/components/TopSearch';
 import Bell from '@/components/Bell';
@@ -94,6 +95,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <StaffTabs role={staff.role} taskCount={taskCount} chatCount={chatCount} inboxCount={inboxCount} />
           </div>
         ) : student ? <StudentShell me={student} notices={studentNotices} unread={studentUnread}>{children}</StudentShell> : <main style={{ maxWidth: 'none' }}>{children}</main>}
+        {(staff || student) && <RealtimeNudge />}
         {(staff || student) && <CallOverlay />}
         {(staff || student) && <Haptics />}
         {(staff || student) && <ThemeColor />}

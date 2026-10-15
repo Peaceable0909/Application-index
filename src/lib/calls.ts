@@ -6,6 +6,9 @@ import { counselorKey } from './docs';
 import { canAccessApp, currentStaff } from './auth';
 import { currentStudent } from './student';
 import { shownName } from './profile';
+import { nudge, type RtEvent } from './realtime';
+import { staffFor } from './recipients';
+import { studentPhoto } from './studentPhotos';
 import type { Actor } from './thread';
 import type { CallKind, CallSignal, CallStatus, CallView } from './callTypes';
 
@@ -20,6 +23,14 @@ const RING_MS = 45_000;   // how long it rings before it counts as missed
 const BEAT_MS = 45_000;   // a live call with nobody checking in for this long is over
 const MAX_SIGNAL = 24_000, MAX_SIGNALS = 300, MAX_PER_HOUR = 12;
 const LIVE = ['ringing', 'active'];
+/** Tells everyone who could be on this call (and the student) to look again right now. */
+async function nudgeCall(c: Row, event: RtEvent) {
+  try {
+    const staff = await staffFor(c.application_id, true);
+    await nudge([{ role: 'student', email: c.student_email }, ...[...staff, ...(c.staff_email ? [c.staff_email] : [])].map((email) => ({ role: 'staff' as const, email }))], event, { call: c.id });
+  } catch { /* the regular refresh catches up */ }
+}
+const soon = (fn: () => Promise<void>) => { try { after(fn); } catch { void fn(); } };
 const missing = (m?: string) => /does not exist|schema cache|portal_calls/i.test(m || '');
 
 /** Who may see this call: the student; the staff member on it; and, while a student's call is still ringing, any staff who can see that student. */
@@ -47,6 +58,7 @@ async function logCall(c: Row) {
     if (c.caller === 'staff' && !c.answered_at && c.status === 'missed') {
       await addNotice({ email: c.student_email, applicationId: c.application_id, kind: 'message', title: `Missed ${label} from your counselor`, href: '/student/messages', by: c.caller_email });
     }
+    await nudgeCall(c, 'msg');
   } catch { /* the chat line is a nicety */ }
 }
 
@@ -55,6 +67,7 @@ async function finish(c: Row, status: CallStatus, reason: string): Promise<Row |
   const { data } = await admin().from('portal_calls').update({ status, end_reason: reason, ended_at: new Date().toISOString() }).eq('id', c.id).in('status', LIVE).select(COLS).maybeSingle();
   if (!data) return null;
   await logCall(data as Row);
+  soon(() => nudgeCall(data as Row, 'call'));
   return data as Row;
 }
 
@@ -94,7 +107,8 @@ export async function ringingFor(): Promise<RingView | null> {
         const a: Actor = { role: 'staff', email: staff.email, appId: c.application_id, studentEmail: c.student_email, staff };
         if (!visible(a, c)) continue;
         const { data: ap } = await db.from('portal_applications').select('name').eq('application_id', c.application_id).maybeSingle();
-        return { call: view(a, c), appId: c.application_id, peer: { name: (ap?.name || 'Student').trim(), avatar: null } };
+        const nm = (ap?.name || 'Student').trim();
+        return { call: view(a, c), appId: c.application_id, peer: { name: nm, avatar: { name: nm, url: await studentPhoto(c.student_email), color: null } } };
       }
       return null;
     }
@@ -113,6 +127,7 @@ async function ring(c: Row, callerName: string) {
   try {
     const db = admin();
     const text = c.kind === 'video' ? 'video call' : 'voice call';
+    const pinged = nudgeCall(c, 'ring');
     if (c.caller === 'staff') {
       await sendPush({ emails: [c.student_email], title: `${callerName} is calling`, body: `Incoming ${text}. Tap to answer.`, url: '/student/messages', tag: `call-${c.id}`, ring: true });
     } else {
@@ -120,8 +135,9 @@ async function ring(c: Row, callerName: string) {
       const { data: co } = ap?.counselor ? await db.from('portal_counselors').select('email').eq('name_key', counselorKey(ap.counselor)).maybeSingle() : { data: null };
       let to = co?.email ? [co.email] : [];
       if (!to.length) { const { data: ad } = await db.from('portal_staff').select('email').eq('role', 'admin'); to = (ad || []).map((x) => x.email); }
-      await sendPush({ emails: to, title: `${callerName} is calling`, body: `Incoming ${text}. Tap to answer.`, url: `/applications/${encodeURIComponent(c.application_id)}?tab=messages`, tag: `call-${c.id}`, ring: true });
+      await sendPush({ emails: to, title: `${callerName} is calling`, body: `Incoming ${text}. Tap to answer.`, url: `/inbox?app=${encodeURIComponent(c.application_id)}`, tag: `call-${c.id}`, ring: true });
     }
+    await pinged;
   } catch { /* the call still rings for anyone with the chat open */ }
 }
 
@@ -160,6 +176,7 @@ export async function answerCall(a: Actor, id: string): Promise<{ ok: boolean; e
   if (c.status !== 'ringing') return { ok: false, error: c.status === 'active' ? 'Someone already picked up.' : 'The call has ended.' };
   const now = new Date().toISOString();
   const { data } = await admin().from('portal_calls').update({ status: 'active', answered_at: now, beat_at: now, staff_email: a.role === 'staff' ? a.email : c.staff_email }).eq('id', id).eq('status', 'ringing').select(COLS).maybeSingle();
+  if (data) soon(() => nudgeCall(data as Row, 'call'));
   return data ? { ok: true, call: view(a, data as Row) } : { ok: false, error: 'Someone already picked up.' };
 }
 

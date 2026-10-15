@@ -6,7 +6,7 @@ import Icon from './Icon';
 type Hit = { id: string; name: string; email: string | null; school: string | null; programme: string | null; status: string | null };
 type Cmd = { id: string; label: string; icon: string; group: 'Actions' | 'Go to'; href?: string; run?: () => void; hint?: string };
 
-const GO: [string, string, string][] = [['Overview', '/', 'grid'], ['Applications', '/applications', 'file'], ['Pipeline', '/pipeline', 'bolt'], ['Deadlines', '/calendar', 'clock'], ['Interviews', '/interviews', 'video'], ['Payments', '/payments', 'trend'], ['Reports', '/reports', 'note'], ['Tasks', '/tasks', 'tasks'], ['Student inbox', '/inbox', 'mail'], ['Chat', '/chat', 'chat'], ['Documents', '/documents', 'folder'], ['Counselors', '/counselors', 'users'], ['Messages', '/messages', 'mail'], ['Team', '/team', 'user'], ['Settings', '/settings', 'settings'], ['My profile', '/profile', 'user']];
+const GO: [string, string, string][] = [['Overview', '/', 'grid'], ['Applications', '/applications', 'file'], ['Pipeline', '/pipeline', 'bolt'], ['Deadlines', '/calendar', 'clock'], ['Interviews', '/interviews', 'video'], ['Payments', '/payments', 'trend'], ['Reports', '/reports', 'note'], ['Tasks', '/tasks', 'tasks'], ['Student chats', '/inbox', 'mail'], ['Chat', '/chat', 'chat'], ['Documents', '/documents', 'folder'], ['Counselors', '/counselors', 'users'], ['Messages', '/messages', 'mail'], ['Team', '/team', 'user'], ['Settings', '/settings', 'settings'], ['My profile', '/profile', 'user']];
 
 function toggleDark() {
   const el = document.documentElement, dark = el.getAttribute('data-theme') !== 'dark', accent = el.getAttribute('data-accent') || 'blue';

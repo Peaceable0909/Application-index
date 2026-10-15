@@ -13,7 +13,7 @@ import { success } from '@/lib/haptics';
 const TITLES: [string, string][] = [['/student/interview/credibility', 'Credibility training'], ['/student/interview', 'Interview'], ['/student/documents', 'Documents'], ['/student/messages', 'Messages'], ['/student/me', 'Me'], ['/student', 'Home']];
 
 /** The student app's top bar: translucent, grows a hairline once you scroll, and the brand name gives way to the page title (like a large-title navigation bar). */
-export default function StudentTopBar({ name, notices, unread }: { name: string; notices: Notice[]; unread: number }) {
+export default function StudentTopBar({ name, avatarUrl, notices, unread }: { name: string; avatarUrl?: string | null; notices: Notice[]; unread: number }) {
   const path = usePathname() || '';
   const title = TITLES.find(([p]) => path === p || path.startsWith(p + '/'))?.[1] || '';
   const [scrolled, setScrolled] = useState(false);
@@ -29,7 +29,7 @@ export default function StudentTopBar({ name, notices, unread }: { name: string;
     <header className="st-top" data-scrolled={scrolled ? '1' : '0'}>
       <Link href="/student" className="st-brand" data-t={title ? '1' : '0'} onClick={logo} aria-label="Extravel home"><Logo height={38} className="st-logo" alt="" />{title && <span className="st-top-title" aria-hidden>{title}</span>}</Link>
       <StudentNav variant="top" unread={unread} />
-      <div className="st-me"><StudentBell initial={notices} /><Link href="/student/me" aria-label="My profile"><Avatar name={name} size={38} /></Link></div>
+      <div className="st-me"><StudentBell initial={notices} /><Link href="/student/me" aria-label="My profile"><Avatar name={name} url={avatarUrl} size={38} /></Link></div>
     </header>
   );
 }

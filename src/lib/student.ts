@@ -1,6 +1,7 @@
 import { cache } from 'react';
 import { admin, sessionClient } from './supabase';
 import { counselorKey, effType } from './docs';
+import { studentPhoto } from './studentPhotos';
 
 export type StudentApp = {
   application_id: string; name: string; email: string | null; school: string | null; programme: string | null; status: string | null; progress: number | null;
@@ -9,7 +10,7 @@ export type StudentApp = {
   phone: string | null; city: string | null; country: string | null; opp_id: string | null; student_ref: string | null; preferred_name: string | null;
 };
 export type StudentDoc = { id: string; application_id: string; name: string; type: string; added: string; size: number; mime: string };
-export type StudentView = { email: string; name: string; apps: StudentApp[]; docs: StudentDoc[]; ids: string[] };
+export type StudentView = { email: string; name: string; apps: StudentApp[]; docs: StudentDoc[]; ids: string[]; avatar_url: string | null };
 
 const COLS = 'application_id, name, email, school, programme, status, progress, counselor, intake, deadline, drive_folder_id, student_key, in_regent, payment, submitted_at, last_activity_at, phone, city, country, opp_id, student_ref, preferred_name';
 const likeEscape = (s: string) => s.replace(/[\\%_]/g, (m) => `\\${m}`);
@@ -37,7 +38,7 @@ export const currentStudent = cache(async (): Promise<StudentView | null> => {
   const ids = (sibs || []).map((s) => s.application_id);
   const { data: rows } = ids.length ? await db.from('portal_documents').select('drive_file_id, application_id, name, doc_type, type_override, created_at, size_bytes, mime_type').in('application_id', ids).order('created_at', { ascending: false }) : { data: [] };
   const docs: StudentDoc[] = (rows || []).map((d) => ({ id: d.drive_file_id, application_id: d.application_id, name: d.name, type: effType(d), added: d.created_at, size: Number(d.size_bytes || 0), mime: d.mime_type || '' }));
-  return { email, name: apps[0].name, apps, docs, ids };
+  return { email, name: apps[0].name, apps, docs, ids, avatar_url: await studentPhoto(email) };
 });
 
 /** Can this signed-in student open this application / file? */
