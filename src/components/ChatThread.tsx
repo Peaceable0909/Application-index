@@ -149,7 +149,7 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
   }, [sync]);
 
   useEffect(() => (call ? call.registerChat() : undefined), [call?.registerChat]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { call?.offerServer(appId, srvCall, { name: title || otherName, avatar: avatar || null }); }, [srvCall]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { call?.offerServer(appId, srvCall, { name: title || otherName, sub: as === 'staff' ? 'Student' : 'Your counselor', avatar: avatar || null }); }, [srvCall]); // eslint-disable-line react-hooks/exhaustive-deps
   const callPhase = call?.phase;
   useEffect(() => { if (callPhase === 'ended') { const t = setTimeout(() => void sync(false), 600); return () => clearTimeout(t); } }, [callPhase, sync]);
   useEffect(() => { if (near.current) end.current?.scrollIntoView({ block: 'end' }); }, [list.length]);
@@ -283,8 +283,8 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
         {!backHref && onBack && <button type="button" className="wa-back wa-back-btn" onClick={onBack} aria-label="Back to chats"><svg width="24" height="24" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg></button>}
         <Avatar name={avatar?.name || otherName} url={avatar?.url} color={avatar?.color} size={40} />
         <div className="wa-who"><b>{title || otherName}</b>{typing ? <small className="typing">typing…</small> : status ? <small>{status === 'Active now' ? 'online' : status.toLowerCase()}</small> : null}</div>
-        <button type="button" className="wa-ic" onClick={(e) => { e.stopPropagation(); void call?.start(appId, 'video', { name: title || otherName, avatar: avatar || null }); }} disabled={!call || call.phase !== 'idle'} aria-label="Video call"><Icon n="video" size={21} /></button>
-        <button type="button" className="wa-ic" onClick={(e) => { e.stopPropagation(); void call?.start(appId, 'voice', { name: title || otherName, avatar: avatar || null }); }} disabled={!call || call.phase !== 'idle'} aria-label="Voice call"><Icon n="phone" size={20} /></button>
+        <button type="button" className="wa-ic" onClick={(e) => { e.stopPropagation(); void call?.start(appId, 'video', { name: title || otherName, sub: as === 'staff' ? 'Student' : 'Your counselor', avatar: avatar || null }); }} disabled={!call || call.phase !== 'idle'} aria-label="Video call"><Icon n="video" size={21} /></button>
+        <button type="button" className="wa-ic" onClick={(e) => { e.stopPropagation(); void call?.start(appId, 'voice', { name: title || otherName, sub: as === 'staff' ? 'Student' : 'Your counselor', avatar: avatar || null }); }} disabled={!call || call.phase !== 'idle'} aria-label="Voice call"><Icon n="phone" size={20} /></button>
         <button type="button" className="wa-ic" onClick={(e) => { e.stopPropagation(); setSearch(search ? null : { q: '', i: 0 }); }} aria-label="Search this chat"><Icon n="search" size={20} /></button>
       </header>
       {search && <div className="wa-search"><input autoFocus value={search.q} onChange={(e) => setSearch({ q: e.target.value, i: 0 })} placeholder="Search messages" onKeyDown={(e) => { if (e.key === 'Enter') step(e.shiftKey ? -1 : 1); if (e.key === 'Escape') setSearch(null); }} /><span>{search.q.trim().length > 1 ? (hits.length ? `${Math.min(search.i, hits.length - 1) + 1}/${hits.length}` : 'No matches') : ''}</span><button type="button" onClick={() => step(-1)} aria-label="Previous match" disabled={!hits.length}>↑</button><button type="button" onClick={() => step(1)} aria-label="Next match" disabled={!hits.length}>↓</button><button type="button" onClick={() => setSearch(null)} aria-label="Close search"><Icon n="x" size={18} /></button></div>}
