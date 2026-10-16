@@ -13,7 +13,7 @@ export type ViewerDoc = {
 const INLINE_LIMIT = 4 * 1024 * 1024; // larger files can't be streamed through the portal
 const isOffice = (m: string, n: string) => /officedocument|msword|ms-excel|ms-powerpoint/.test(m) || /\.(docx?|xlsx?|pptx?)$/i.test(n);
 
-export type ViewerScan = { flags: { kind: string; text: string; detected?: string }[]; detected: string | null; readable: boolean };
+export type ViewerScan = { flags: { kind: string; text: string; detected?: string }[]; detected: string | null; readable: boolean; facts?: { label: string; value: string }[] };
 
 export default function DocViewer({ appId, docs, missing, initial, canUpload, scans, scanOn }: {
   appId: string; docs: ViewerDoc[]; missing: string[]; initial: string | null; canUpload: boolean; scans: Record<string, ViewerScan>; scanOn: boolean;
@@ -86,6 +86,7 @@ export default function DocViewer({ appId, docs, missing, initial, canUpload, sc
                 <div style={{ flex: 1, fontSize: 13.5 }}>
                   {!sc && <span className="muted">AI check — not run on this file. Sends its text to Qwen; results are observations to review.</span>}
                   {sc && !sc.flags.length && <span><b style={{ color: 'var(--green)' }}>AI check: looks fine</b>{sc.detected ? ` — reads as a ${sc.detected}` : ''}.</span>}
+                  {sc && !!sc.facts?.length && <div className="chips" style={{ margin: '6px 0' }}>{sc.facts.map((f, i) => <span key={i} className="badge plain" title={f.label}>{f.label}: <b>{f.value}</b></span>)}</div>}
                   {sc && sc.flags.map((f, i) => <div key={i}><b style={{ color: 'var(--amber)' }}>AI observation (review needed):</b> {f.text}
                     {f.kind === 'type' && f.detected && <form action={setDocType} style={{ display: 'inline-block', marginLeft: 8 }}><input type="hidden" name="id" value={appId} /><input type="hidden" name="fileId" value={doc.id} /><input type="hidden" name="docType" value={f.detected} /><input type="hidden" name="returnTo" value={returnTo} /><Btn className="ghost sm">Use “{f.detected}”</Btn></form>}</div>)}
                 </div>

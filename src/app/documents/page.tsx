@@ -9,7 +9,10 @@ import Btn from '@/components/Btn';
 import Icon from '@/components/Icon';
 import Fold from '@/components/Fold';
 import DocTypeSelect from '@/components/DocTypeSelect';
-import { uploadDocument } from '../actions';
+import ScanAll from '@/components/ScanAll';
+import { docScanEnabled } from '@/lib/docscan';
+import { scanStatus, typeSuggestions } from '@/lib/scanQueue';
+import { applyTypeSuggestions, setDocType, uploadDocument } from '../actions';
 
 const kb = (n: number | null) => (n ? `${Math.max(1, Math.round(n / 1024))} KB` : '');
 
@@ -17,6 +20,8 @@ export default async function Documents({ searchParams }: { searchParams: Promis
   await requireTeam();
   const sp = await searchParams;
   const db = admin();
+  const scanOn = docScanEnabled();
+  const [status, sugg] = scanOn ? await Promise.all([scanStatus(), typeSuggestions()]) : [null, []];
   const [{ rows }, { data: docs }] = await Promise.all([
     loadStudents(),
     db.from('portal_documents').select('*, portal_applications(name, application_id)').order('created_at', { ascending: false }).limit(1500),
@@ -41,6 +46,25 @@ export default async function Documents({ searchParams }: { searchParams: Promis
             <div className="bar wide"><i style={{ width: `${pct}%` }} /></div>
           </Link>); })}
       </div>
+
+      {status && <ScanAll initial={status} />}
+      {sugg.length > 0 && (
+        <div className="card">
+          <h2><Icon n="spark" size={17} /> Suggested document types <span className="badge plain">{sugg.length}</span></h2>
+          <p className="muted" style={{ marginTop: 0 }}>The reader thinks these files are filed as the wrong type. Nothing changes until you accept.</p>
+          {sugg.some((x) => x.filedAs === 'Other' && x.confidence >= 0.85) && <form action={applyTypeSuggestions} style={{ marginBottom: 10 }}><Btn className="primary sm" data-busy="Updating…">Accept every confident “Other” ({sugg.filter((x) => x.filedAs === 'Other' && x.confidence >= 0.85).length})</Btn></form>}
+          <div className="scroll"><table className="mcards">
+            <thead><tr><th>Student</th><th>File</th><th>Filed as</th><th>Looks like</th><th /></tr></thead>
+            <tbody>{sugg.slice(0, 60).map((x) => (
+              <tr key={x.fileId} className="row">
+                <td className="mc-name"><Link href={`/applications/${x.appId}/documents?file=${x.fileId}`}><b>{x.student}</b></Link></td>
+                <td data-l="File">{x.file}</td><td data-l="Filed as"><span className="badge plain">{x.filedAs}</span></td>
+                <td data-l="Looks like"><span className="badge plain blue">{x.detected}</span> <span className="muted">{Math.round(x.confidence * 100)}%</span></td>
+                <td className="mc-act"><form action={setDocType}><input type="hidden" name="id" value={x.appId} /><input type="hidden" name="fileId" value={x.fileId} /><input type="hidden" name="docType" value={x.detected} /><input type="hidden" name="returnTo" value="/documents" /><Btn className="ghost sm">Use “{x.detected}”</Btn></form></td>
+              </tr>))}</tbody></table></div>
+          {sugg.length > 60 && <p className="muted" style={{ marginBottom: 0 }}>Showing the first 60 of {sugg.length}.</p>}
+        </div>
+      )}
 
       <Fold label="Upload a document" icon="upload">
       <div className="card" id="upload">

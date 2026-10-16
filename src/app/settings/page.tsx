@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { addStaff, backupNow, removeStaff, sendTestEmails, testConnection } from '../actions';
 import { listBackups } from '@/lib/backup';
 import Icon from '@/components/Icon';
+import PrivacyCheck from '@/components/PrivacyCheck';
 
 export default async function Settings({ searchParams }: { searchParams: Promise<{ msg?: string; err?: string }> }) {
   const me = await requireTeam();
@@ -86,6 +87,8 @@ export default async function Settings({ searchParams }: { searchParams: Promise
         </dl>
         <p className="muted" style={{ marginBottom: 0 }}>The limit and key live in your settings: <code>AI_DAILY_LIMIT</code> (Vercel) and <code>QWEN_API_KEY</code> (Apps Script).</p>
       </div>
+
+      {me.role === 'admin' && <PrivacyCheck />}
 
       <div className="card">
         <h2>Counselors</h2>
