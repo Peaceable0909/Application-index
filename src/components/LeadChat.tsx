@@ -31,7 +31,7 @@ export default function LeadChat({ ws, country }: { ws: string; country: string 
   return (
     <div className="hello-chat">
       <div className="hello-log" aria-live="polite">
-        <div className="hello-note">You’re chatting with Extravel’s AI assistant. It answers from what our team has taught it, and a counselor can step in. Please don’t share passport numbers or bank details here.</div>
+        <div className="hello-note">You’re chatting with WhiteRock’s AI assistant. It answers from what our team has taught it, and a counselor can step in. Please don’t share passport numbers or bank details here.</div>
         {!started && ready && <div className="hello-b them"><p>Hi! I can help with studying in {country}: schools, requirements, costs and next steps. What would you like to study, and when are you hoping to start?</p><span className="meta"><i className="ai-tag">AI assistant</i></span></div>}
         {msgs.map((m) => (
           <div key={m.id} className={`hello-b ${m.mine ? 'me' : 'them'}`}>
@@ -43,7 +43,7 @@ export default function LeadChat({ ws, country }: { ws: string; country: string 
         <div ref={end} />
       </div>
       {!started && (
-        <label className="hello-consent"><input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} /> I agree that Extravel keeps this chat and may contact me about studying abroad.</label>
+        <label className="hello-consent"><input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} /> I agree that WhiteRock keeps this chat and may contact me about studying abroad.</label>
       )}
       {err && <p className="hello-err">{err}</p>}
       <form className="hello-send" onSubmit={send}>
