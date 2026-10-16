@@ -41,7 +41,9 @@ function portalDispatch_(e) {
     const p = e.parameter.payload ? JSON.parse(e.parameter.payload) : {};
     switch (e.parameter.action) {
       case 'listApplications': return portalJson_({ ok: true, data: portalListApplications_() });
-      case 'listMaster':       return portalJson_({ ok: true, data: portalListMaster_() });
+      case 'createStudentFolder': return portalJson_({ ok: true, data: portalCreateStudentFolder_(p) });
+      case 'tabSupport':       return portalJson_({ ok: true, data: { tabs: true } });
+      case 'listMaster':       return portalJson_({ ok: true, data: p.tab ? { tab: String(p.tab), rows: portalListMaster_(p.tab) } : portalListMaster_() });
       case 'updateMaster':     return portalJson_({ ok: true, data: portalUpdateMaster_(p) });
       case 'addMaster':        return portalJson_({ ok: true, data: portalAddMaster_(p) });
       case 'listRegent':       return portalJson_({ ok: true, data: portalListRegent_() });
@@ -224,8 +226,8 @@ function portalSchoolKey_(school) {
 function portalCell_(v) { return v instanceof Date ? v.toISOString() : String(v == null ? '' : v); }
 
 // Rows of the hand-maintained master sheet (A..N).
-function portalListMaster_() {
-  const sheet = portalTab_(MASTER_SHEET_NAME);
+function portalListMaster_(tab) {
+  const sheet = portalTab_(tab || MASTER_SHEET_NAME);   // another country's students live on their own tab
   const last = sheet.getLastRow();
   if (last < 2) return [];
   const vals = sheet.getRange(2, 1, last - 1, 14).getValues();
@@ -305,7 +307,7 @@ function portalUpdateMaster_(p) {
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
-    const sheet = portalTab_(MASTER_SHEET_NAME);
+    const sheet = portalTab_(p.tab || MASTER_SHEET_NAME);
     const last = sheet.getLastRow();
     const vals = sheet.getRange(2, 1, Math.max(last - 1, 1), 14).getValues();
     const email = String(p.email || '').trim().toLowerCase();
@@ -341,7 +343,7 @@ function portalAddMaster_(p) {
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
-    const sheet = portalTab_(MASTER_SHEET_NAME);
+    const sheet = portalTab_(p.tab || MASTER_SHEET_NAME);
     const maxRows = sheet.getMaxRows();
     const names = sheet.getRange(1, 2, maxRows, 1).getValues();
     let last = 1;
@@ -560,6 +562,16 @@ function lockDownExistingFolders() {
     n++;
   }
   Logger.log('Locked down ' + n + ' folders');
+}
+
+// p = { rootName, name }. Makes a private (team-only) folder for a student under that country's main Drive folder.
+function portalCreateStudentFolder_(p) {
+  if (!p.rootName || !p.name) throw new Error('rootName and name are required');
+  const root = getOrCreateFolder_(String(p.rootName).slice(0, 100));
+  const f = root.createFolder(String(p.name).replace(/[\\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 100) || 'Student');
+  f.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE);
+  portalShareFolderPrivately_(f);
+  return { id: f.getId(), url: f.getUrl(), name: f.getName() };
 }
 
 // READ-ONLY. Reports who can open the student folders: any folder or file reachable by a link (or the whole domain), and every

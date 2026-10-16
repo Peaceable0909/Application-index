@@ -31,3 +31,10 @@ export async function deleteBrainNote(f: FormData) {
   await admin().from('portal_brain_notes').delete().eq('id', txt(f, 'id')).eq('workspace', await currentWorkspace());
   done('Note deleted.');
 }
+
+export async function saveCountryBrief(f: FormData) {
+  await requireTeam();
+  const brief = txt(f, 'brief').slice(0, 3000) || null;
+  await admin().from('portal_workspaces').update({ brief }).eq('key', await currentWorkspace());
+  done('Saved. The Brain will use this for every student in this workspace.');
+}

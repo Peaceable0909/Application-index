@@ -5,6 +5,9 @@ import { callScript, DriveFile, MasterRow, RegentRow, SheetRow } from './appsScr
 import { canonicalStatus, counselorKey, docTypeFromName, normEmail, normName, progressFor, schoolDisplay, schoolKey, studentKey } from './docs';
 import { pick, resolveMoved, type Moved } from './moves';
 import { pushPendingMoves } from './moveCore';
+import { listMasterFor } from './sheets';
+import { DEFAULT_WS, wsKey } from './workspaceCore';
+import type { Workspace } from './workspace';
 
 const RECENT_MS = 3 * 24 * 3600 * 1000;
 
@@ -74,15 +77,17 @@ const isStub = (id: string) => /^(stub|master|regent):/.test(id);
  *  - Applications (raw form log): submission time, contact details, Drive documents.
  * A student found in only some of them still appears, flagged, so nothing is hidden.
  */
-export async function syncAll(opts: { full?: boolean } = {}) {
-  const db = admin();
-  const [raw, master, regent] = await Promise.all([
-    callScript<SheetRow[]>('listApplications'), callScript<MasterRow[]>('listMaster'), callScript<RegentRow[]>('listRegent'),
-  ]);
+async function syncWorkspace(w: Workspace, opts: { full?: boolean } = {}) {
+  const db = admin(), isDefault = w.key === DEFAULT_WS;
+  // The original workspace reads the form log, Sheet1 and Regent Only. Any other country reads its own tab only.
+  const [raw, master, regent] = isDefault
+    ? await Promise.all([callScript<SheetRow[]>('listApplications'), callScript<MasterRow[]>('listMaster'), callScript<RegentRow[]>('listRegent')])
+    : [[] as SheetRow[], await listMasterFor<MasterRow>(w.key, w.master_tab), [] as RegentRow[]];
   const M = makeFinder(master), G = makeFinder(regent);
+  const sKey = (email: string | null, school: string | null, name: string) => wsKey(w.key, studentKey(email, school, name));
 
   const { data: existing } = await db.from('portal_applications')
-    .select('application_id, status, counselor, docs_synced_at, student_key, payment, interview, extra_folder_ids, moved');
+    .select('application_id, status, counselor, docs_synced_at, student_key, payment, interview, extra_folder_ids, moved').eq('workspace', w.key);
   const known = new Map((existing || []).map((r) => [r.application_id, r]));
 
   const usedM = new Set<MasterRow>(), usedG = new Set<RegentRow>();
@@ -119,7 +124,7 @@ export async function syncAll(opts: { full?: boolean } = {}) {
       mv.dropped.filter((d) => d.why === 'sheet-changed').forEach((d) => activity.push({ application_id: id, actor: 'sheet', kind: 'move_reset', detail: { field: d.kind, value: d.kind === 'school' ? school : programme } }));
     }
     return {
-      application_id: id, sheet_row: r?.row ?? null, master_row: m?.row ?? null, regent_row: g?.row ?? null,
+      application_id: id, workspace: w.key, sheet_row: r?.row ?? null, master_row: m?.row ?? null, regent_row: g?.row ?? null,
       submitted_at: submitted, name, email: pick(r?.email, m?.email, g?.email), phone: pick(r?.phone, m?.phone, g?.phone),
       school, programme, moved: mv.moved, country: pick(m?.country, g?.country, r?.country),
       city: pick(r?.city, m?.city, g?.city), gender: pick(r?.gender, m?.gender, g?.gender), dob: pick(r?.dob, m?.dob), age: pick(r?.age, m?.age),
@@ -130,7 +135,7 @@ export async function syncAll(opts: { full?: boolean } = {}) {
       drive_folder_id: r?.driveFolderId || prev?.extra_folder_ids?.[0] || null,
       drive_folder_url: (r?.driveFolderId || prev?.extra_folder_ids?.[0]) ? `https://drive.google.com/drive/folders/${r?.driveFolderId || prev?.extra_folder_ids?.[0]}` : null,
       extra_folder_ids: prev?.extra_folder_ids || [],
-      student_key: studentKey(pick(r?.email, m?.email, g?.email), school, name),
+      student_key: sKey(pick(r?.email, m?.email, g?.email), school, name),
       in_master: !!m, in_regent: !!g, has_raw: !!r, master_data: m, regent_data: g, raw_data: r, synced_at: new Date().toISOString(),
     };
   };
@@ -151,7 +156,7 @@ export async function syncAll(opts: { full?: boolean } = {}) {
   const stubIdByKey = new Map<string, string>();
   for (const [kid, prev] of known) if (kid.startsWith('stub:') && prev.student_key) stubIdByKey.set(prev.student_key, kid);
   const stubFor = (m: MasterRow | null, g: RegentRow | null) => {
-    const key = studentKey(pick(m?.email, g?.email), schoolDisplay(pick(m?.school, g?.school)), pick(m?.name, g?.name) || '');
+    const key = sKey(pick(m?.email, g?.email), schoolDisplay(pick(m?.school, g?.school)), pick(m?.name, g?.name) || '');
     const std = 'stub:' + createHash('sha1').update(key).digest('hex').slice(0, 16);
     const id = known.has(std) ? std : stubIdByKey.get(key) || std;
     if (!stubs.has(id)) stubs.set(id, build(id, null, m, g));
@@ -197,13 +202,27 @@ export async function syncAll(opts: { full?: boolean } = {}) {
     }).map(({ r, folders }) => ({ id: r.application_id, folders }));
   await syncFolders(needFiles);
 
-  try { await pushPendingMoves(); } catch { /* moves the sheet missed are tried again next time */ }
-  try { const { listWorkspaces } = await import('./workspace'); for (const w of await listWorkspaces()) await refreshTasks(undefined, w.key); } catch { /* tasks refresh again when the overview is opened */ }
-
   return {
     total: all.length, created, formSubmissions: rows.length,
     inMaster: all.filter((r) => r.in_master).length, inRegent: all.filter((r) => r.in_regent).length,
     formOnly: rows.filter((r) => !r.in_master).length, noForm: stubs.size,
     statusChangedInSheet: changedBySheet, foldersRefreshed: needFiles.length,
   };
+}
+
+/** Syncs every active workspace (country). One country failing never stops the others; the first problem is reported at the end. */
+export async function syncAll(opts: { full?: boolean } = {}) {
+  const { listWorkspaces } = await import('./workspace');
+  const all = (await listWorkspaces()).filter((w) => w.active);
+  const results: Awaited<ReturnType<typeof syncWorkspace>>[] = [];
+  const warnings: string[] = [];
+  const byWorkspace: Record<string, number> = {};
+  for (const w of all) {
+    try { const r = await syncWorkspace(w, opts); results.push(r); byWorkspace[w.key] = r.total; }
+    catch (e) { if (w.key === DEFAULT_WS) throw e; warnings.push(`${w.name}: ${(e as Error).message}`); }
+  }
+  try { await pushPendingMoves(); } catch { /* moves the sheet missed are tried again next time */ }
+  try { for (const w of all) await refreshTasks(undefined, w.key); } catch { /* tasks refresh again when the overview is opened */ }
+  const sum = (k: 'total' | 'created' | 'formSubmissions' | 'inMaster' | 'inRegent' | 'formOnly' | 'noForm' | 'statusChangedInSheet' | 'foldersRefreshed') => results.reduce((n, r) => n + r[k], 0);
+  return { total: sum('total'), created: sum('created'), formSubmissions: sum('formSubmissions'), inMaster: sum('inMaster'), inRegent: sum('inRegent'), formOnly: sum('formOnly'), noForm: sum('noForm'), statusChangedInSheet: sum('statusChangedInSheet'), foldersRefreshed: sum('foldersRefreshed'), byWorkspace, warnings };
 }

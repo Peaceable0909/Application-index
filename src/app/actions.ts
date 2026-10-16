@@ -10,6 +10,9 @@ import { counselorKey, docTypeFromName, dobForMaster, progressFor, schoolDisplay
 import { createHash } from 'crypto';
 import { ALL_DOC_TYPES, CAS_STATUSES, VISA_STATUSES } from '@/lib/constants';
 import { syncAll, syncFolders } from '@/lib/sync';
+import { tabArgs } from '@/lib/sheets';
+import { ensureFolder } from '@/lib/driveFolders';
+import { wsKey } from '@/lib/workspaceCore';
 import { STATUSES } from '@/lib/constants';
 import { requestDocs, summarise, digestEmail, sendPaymentReminders, summariseReminders } from '@/lib/requests';
 import { sendMail } from '@/lib/mail';
@@ -52,11 +55,11 @@ async function log(applicationId: string, actor: string, kind: string, detail: o
 // otherwise they go to the raw Applications sheet. Notes are appended, never overwritten.
 async function writeBack(id: string, fields: Record<string, string>, notesAppend?: string, by?: string) {
   const { data: app } = await admin().from('portal_applications')
-    .select('in_master, has_raw, master_data').eq('application_id', id).single();
+    .select('in_master, has_raw, master_data, workspace').eq('application_id', id).single();
   if (!app) throw new Error('Application not found');
   if (app.in_master && app.master_data) {
     const m = app.master_data as { email: string; name: string; school: string };
-    await callScript('updateMaster', { email: m.email, name: m.name, school: m.school, fields, notesAppend, by });
+    await callScript('updateMaster', { email: m.email, name: m.name, school: m.school, fields, notesAppend, by, ...(await tabArgs(app.workspace)) });
   } else if (app.has_raw) {
     await callScript('updateRow', { applicationId: id, fields, notesAppend, by });
   }
@@ -93,7 +96,7 @@ export async function syncNow(f: FormData) {
   try {
     const r = await syncAll({ full: f.get('full') === '1' });
     const pending = await pushPendingMoves({ max: 25, budgetMs: 15_000 }).catch(() => ({ tried: 0, done: 0 }));   // moves the sheet missed
-    msg = `${pending.done ? `${pending.done} moved student${pending.done === 1 ? '' : 's'} written to Sheet1. ` : ''}Synced ${r.total} students · ${r.formSubmissions} with a form submission · ${r.inMaster} in Sheet1 · ${r.inRegent} in Regent Only · ${r.formOnly} not yet in Sheet1 · ${r.created} new.`;
+    msg = `${pending.done ? `${pending.done} moved student${pending.done === 1 ? '' : 's'} written to Sheet1. ` : ''}Synced ${r.total} students · ${r.formSubmissions} with a form submission · ${r.inMaster} in Sheet1 · ${r.inRegent} in Regent Only · ${r.formOnly} not yet in Sheet1 · ${r.created} new.${r.warnings.length ? ` Warning: ${r.warnings.join('; ')}` : ''}`;
   } catch (e) { rethrow(e); msg = `Sync failed: ${(e as Error).message}`; }
   revalidatePath('/');
   redirect(`${ret}?msg=${encodeURIComponent(msg)}`);
@@ -106,7 +109,7 @@ async function pushToMaster(id: string, actor: string, status: string, counselor
   if (!a) return 'Application not found';
   if (a.in_master) return 'exists';
   const r = await callScript<{ exists: boolean; row: number }>('addMaster', {
-    date: a.submitted_at, name: a.name, email: a.email || '', phone: a.phone || '', school: schoolShort(a.school),
+    ...(await tabArgs(a.workspace)), date: a.submitted_at, name: a.name, email: a.email || '', phone: a.phone || '', school: schoolShort(a.school),
     programme: a.programme && a.programme.toUpperCase() !== 'N/A' ? a.programme : '', country: a.country || '',
     city: a.city || '', gender: a.gender || '', dob: dobForMaster(a.dob), age: a.age || '',
     counselor: counselor ?? a.counselor ?? '', status,
@@ -338,7 +341,9 @@ export async function uploadDocument(f: FormData) {
   const file = f.get('file') as File | null;
   if (!file || !file.size) return back(id, 'Choose a file', true, ret);
   const db = admin();
-  const { data: app } = await db.from('portal_applications').select('name, drive_folder_id').eq('application_id', id).single();
+  const { data: app0 } = await db.from('portal_applications').select('name, drive_folder_id, workspace').eq('application_id', id).single();
+  if (app0 && !app0.drive_folder_id && app0.workspace !== 'uk') { try { app0.drive_folder_id = await ensureFolder(id); } catch (e) { return back(id, (e as Error).message, true, ret); } }
+  const app = app0;
   if (!app?.drive_folder_id) return back(id, 'This application has no Drive folder', true, ret);
   const ext = (file.name.match(/\.[^.]+$/) || ['.pdf'])[0];
   let label: ReturnType<typeof resolveLabel> | null = null;
@@ -722,7 +727,7 @@ export async function createApplication(f: FormData) {
   const cat = await getCatalog();
   const school = canonicalSchool(s(f, 'school'), cat) || null, counselor = s(f, 'counselor') || null;
   const addWs = await currentWorkspace();
-  const key = addWs === 'uk' ? studentKey(email, school, name) : `${addWs}:${studentKey(email, school, name)}`;
+  const key = wsKey(addWs, studentKey(email, school, name));
   const id = 'stub:' + createHash('sha1').update(key).digest('hex').slice(0, 16);
   const db = admin();
 
@@ -751,7 +756,7 @@ export async function createApplication(f: FormData) {
   let sheet = '', sheetFailed = false;
   try {
     const r = await callScript<{ exists: boolean; row: number }>('addMaster', {
-      date: now, name, email, ...fields, school: schoolShort(school), counselor: counselor || '', status,
+      ...(await tabArgs(addWs)), date: now, name, email, ...fields, school: schoolShort(school), counselor: counselor || '', status,
     });
     await log(id, staff.email, 'moved_to_master', { row: r.row, status, exists: r.exists });
     try { await syncAll(); } catch { /* the next sync links the row */ }
@@ -1023,9 +1028,10 @@ export async function studentUpload(f: FormData): Promise<{ ok: boolean; error?:
   const buf = Buffer.from(await file.arrayBuffer());
   if (!sniff(buf)) return { ok: false, error: 'That doesn’t look like a PDF, photo or Word file.' };
   const db = admin();
-  const { data: app } = await db.from('portal_applications').select('name, drive_folder_id, student_key').eq('application_id', appId).single();
+  const { data: app } = await db.from('portal_applications').select('name, drive_folder_id, student_key, workspace').eq('application_id', appId).single();
   let folder = app?.drive_folder_id || null;
   if (!folder && app) { const { data: sib } = await db.from('portal_applications').select('drive_folder_id').eq('student_key', app.student_key).not('drive_folder_id', 'is', null).limit(1); folder = sib?.[0]?.drive_folder_id || null; }
+  if (!folder && app && app.workspace !== 'uk') { try { folder = await ensureFolder(appId); } catch (e) { return { ok: false, error: `Couldn’t set up your document folder: ${(e as Error).message.slice(0, 120)}` }; } }
   if (!folder || !app) return { ok: false, error: 'Uploads aren’t switched on for your application yet. Please message your counselor.' };
   const day = new Date(Date.now() - 864e5).toISOString();
   const { count } = await db.from('portal_documents').select('drive_file_id', { count: 'exact', head: true }).eq('uploaded_by', me.email).gte('created_at', day);

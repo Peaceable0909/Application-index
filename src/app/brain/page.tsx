@@ -5,7 +5,7 @@ import { brainEnabled } from '@/lib/brain';
 import Btn from '@/components/Btn';
 import Icon from '@/components/Icon';
 import BrainTest from '@/components/BrainTest';
-import { addBrainNote, deleteBrainNote, toggleBrainNote } from '../brainActions';
+import { addBrainNote, deleteBrainNote, saveCountryBrief, toggleBrainNote } from '../brainActions';
 
 export const metadata = { title: 'AI Brain' };
 
@@ -13,6 +13,7 @@ export default async function Brain({ searchParams }: { searchParams: Promise<{ 
   await requireTeam();
   const sp = await searchParams;
   const db = admin(), ws = await currentWorkspace();
+  const { data: wsRow } = await db.from('portal_workspaces').select('name, brief').eq('key', ws).maybeSingle();
   const [{ data: notes }, { data: schools }] = await Promise.all([
     db.from('portal_brain_notes').select('*').eq('workspace', ws).order('updated_at', { ascending: false }),
     db.from('portal_applications').select('school').eq('workspace', ws).not('school', 'is', null).limit(1500),
@@ -41,6 +42,15 @@ export default async function Brain({ searchParams }: { searchParams: Promise<{ 
           <li>It never sends anything. Every message goes out only when a person presses send.</li>
           <li>Each draft uses one of the daily AI calls (limit in Settings → AI usage).</li>
         </ul>
+      </div>
+
+      <div className="card">
+        <h2><Icon n="globe" size={17} /> About {wsRow?.name || 'this country'}</h2>
+        <p className="muted" style={{ marginTop: 0 }}>A short overview the Brain reads before every reply for this workspace: how applying works here, the usual steps, who the students are, how you want it to sound.</p>
+        <form action={saveCountryBrief} className="grid" style={{ gap: 8 }}>
+          <textarea name="brief" rows={5} maxLength={3000} defaultValue={wsRow?.brief || ''} placeholder="e.g. Students apply to Canadian colleges through ... The usual order is: documents, offer letter, study permit ..." />
+          <div><Btn>Save</Btn></div>
+        </form>
       </div>
 
       <div className="card">

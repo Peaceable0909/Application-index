@@ -404,7 +404,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
               </div>
             )}
             <div style={{ marginTop: 16 }} className="chips"><b>Missing</b>{!judged ? <span className="muted">not checked — link a Drive folder</span> : missing.length ? missing.map((m) => <span key={m} className="badge amber">{m}</span>) : <span className="badge green">nothing — complete</span>}</div>
-            {app.drive_folder_id && (
+            {(app.drive_folder_id || app.workspace !== 'uk') && (
               <div className="filters" style={{ marginTop: 16 }}>
                 <form action={uploadDocument} className="filters"><input type="hidden" name="id" value={id} /><input type="hidden" name="returnTo" value={ret('documents')} />
                   <DocTypeSelect types={ALL_DOC_TYPES} defaultValue={missing[0] || 'Other'} compact /><input type="file" name="file" required /><Btn>Upload to Drive</Btn></form>
