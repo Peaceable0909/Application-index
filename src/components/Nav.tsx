@@ -15,6 +15,7 @@ const ITEMS = [
   { href: '/tasks', label: 'Tasks', icon: 'tasks', badge: 'tasks' },
   { href: '/inbox', label: 'Student chats', icon: 'mail', badge: 'inbox' },
   { href: '/credibility', label: 'Credibility training', icon: 'spark' },
+  { href: '/brain', label: 'AI Brain', icon: 'bolt' },
   { href: '/chat', label: 'Chat', icon: 'chat', badge: 'chat' },
   { href: '/documents', label: 'Documents', icon: 'folder' },
   { href: '/extracted', label: 'Extracted text', icon: 'note' },
