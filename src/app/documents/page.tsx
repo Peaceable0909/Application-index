@@ -1,9 +1,9 @@
-import { currentWorkspace } from '@/lib/workspace';
+import { currentWorkspace, requiredDocs } from '@/lib/workspace';
 import Link from 'next/link';
 import { requireTeam } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
 import { loadStudents } from '@/lib/overview';
-import { ALL_DOC_TYPES, REQUIRED_DOCS } from '@/lib/constants';
+import { ALL_DOC_TYPES } from '@/lib/constants';
 import { effType } from '@/lib/docs';
 import { dateTime } from '@/lib/format';
 import Btn from '@/components/Btn';
@@ -20,7 +20,7 @@ const kb = (n: number | null) => (n ? `${Math.max(1, Math.round(n / 1024))} KB` 
 export default async function Documents({ searchParams }: { searchParams: Promise<{ type?: string; q?: string; msg?: string; err?: string }> }) {
   await requireTeam();
   const sp = await searchParams;
-  const db = admin(), ws = await currentWorkspace();
+  const db = admin(), ws = await currentWorkspace(), REQUIRED_DOCS = await requiredDocs(ws), DOC_TYPES = [...REQUIRED_DOCS, ...ALL_DOC_TYPES.filter((t) => !REQUIRED_DOCS.includes(t))];
   const scanOn = docScanEnabled();
   const [status, sugg] = scanOn ? await Promise.all([scanStatus(), typeSuggestions()]) : [null, []];
   const [{ rows }, { data: docs }] = await Promise.all([
@@ -73,7 +73,7 @@ export default async function Documents({ searchParams }: { searchParams: Promis
         <form action={uploadDocument} className="filters">
           <input type="hidden" name="returnTo" value="/documents" />
           <select name="id" required style={{ minWidth: 240 }}><option value="">Choose a student…</option>{uploadable.map((r) => <option key={r.a.application_id} value={r.a.application_id}>{r.a.name} — {r.a.school || ''}</option>)}</select>
-          <DocTypeSelect types={ALL_DOC_TYPES} defaultValue="CV" compact />
+          <DocTypeSelect types={DOC_TYPES} defaultValue="CV" compact />
           <input type="file" name="file" required /><Btn>Upload to Drive</Btn>
         </form>
         <p className="muted" style={{ marginBottom: 0 }}>Only students with a linked Drive folder are listed. Link folders under <Link href="/drive">Drive matches</Link>.</p>
@@ -83,7 +83,7 @@ export default async function Documents({ searchParams }: { searchParams: Promis
       <Fold label="Search & filters" badge={sp.q || sp.type ? 'on' : undefined}>
       <form className="card toolbar filters" method="get">
         <div className="search"><input name="q" placeholder="Search file or student…" defaultValue={sp.q} /></div>
-        <select name="type" defaultValue={sp.type || ''}><option value="">All types</option>{ALL_DOC_TYPES.map((t) => <option key={t}>{t}</option>)}</select>
+        <select name="type" defaultValue={sp.type || ''}><option value="">All types</option>{DOC_TYPES.map((t) => <option key={t}>{t}</option>)}</select>
         <Btn>Apply</Btn>{(sp.q || sp.type) && <Link href="/documents" className="muted">Clear</Link>}
       </form>
       </Fold>

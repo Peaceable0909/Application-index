@@ -1,3 +1,4 @@
+import { requiredDocs } from '@/lib/workspace';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requireStaff, canAccessApp } from '@/lib/auth';
@@ -25,7 +26,7 @@ export default async function Documents({ params, searchParams }: { params: Prom
   }));
   const { data: scanRows } = await db.from('portal_doc_scans').select('drive_file_id,flags,detected_type,readable,facts').in('drive_file_id', docs.map((d) => d.id));
   const scans: Record<string, ViewerScan> = Object.fromEntries((scanRows || []).map((r) => [r.drive_file_id, { flags: r.flags || [], detected: r.detected_type, readable: r.readable, facts: r.facts || [] }]));
-  const missing = (app.has_raw && app.submitted_at) || app.drive_folder_id ? missingDocs(docs.map((d) => d.type)) : [];
+  const missing = (app.has_raw && app.submitted_at) || app.drive_folder_id ? missingDocs(docs.map((d) => d.type), await requiredDocs(app.workspace)) : [];
 
   return (
     <>

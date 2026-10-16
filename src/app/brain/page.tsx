@@ -5,7 +5,8 @@ import { brainEnabled } from '@/lib/brain';
 import Btn from '@/components/Btn';
 import Icon from '@/components/Icon';
 import BrainTest from '@/components/BrainTest';
-import { addBrainNote, deleteBrainNote, saveCountryBrief, toggleBrainNote } from '../brainActions';
+import { addBrainNote, deleteBrainNote, saveCountryBrief, saveRequiredDocs, toggleBrainNote } from '../brainActions';
+import { requiredDocs } from '@/lib/workspace';
 
 export const metadata = { title: 'AI Brain' };
 
@@ -13,7 +14,8 @@ export default async function Brain({ searchParams }: { searchParams: Promise<{ 
   await requireTeam();
   const sp = await searchParams;
   const db = admin(), ws = await currentWorkspace();
-  const { data: wsRow } = await db.from('portal_workspaces').select('name, brief').eq('key', ws).maybeSingle();
+  const { data: wsRow } = await db.from('portal_workspaces').select('name, brief, required_docs').eq('key', ws).maybeSingle();
+  const required = await requiredDocs(ws);
   const [{ data: notes }, { data: schools }] = await Promise.all([
     db.from('portal_brain_notes').select('*').eq('workspace', ws).order('updated_at', { ascending: false }),
     db.from('portal_applications').select('school').eq('workspace', ws).not('school', 'is', null).limit(1500),
@@ -50,6 +52,15 @@ export default async function Brain({ searchParams }: { searchParams: Promise<{ 
         <form action={saveCountryBrief} className="grid" style={{ gap: 8 }}>
           <textarea name="brief" rows={5} maxLength={3000} defaultValue={wsRow?.brief || ''} placeholder="e.g. Students apply to Canadian colleges through ... The usual order is: documents, offer letter, study permit ..." />
           <div><Btn>Save</Btn></div>
+        </form>
+      </div>
+
+      <div className="card">
+        <h2><Icon n="file" size={17} /> Documents students need{wsRow?.name ? ` · ${wsRow.name}` : ''}</h2>
+        <p className="muted" style={{ marginTop: 0 }}>One per line. These decide what counts as “missing”, what students are asked to upload, and what the Brain says is still needed. Leave it empty to use the original list.{wsRow?.required_docs ? '' : ' Right now it is the original list.'}</p>
+        <form action={saveRequiredDocs} className="grid" style={{ gap: 8 }}>
+          <textarea name="docs" rows={7} maxLength={900} defaultValue={required.join('\n')} placeholder={'Passport\nTranscript\nBank statement'} />
+          <div><Btn>Save the list</Btn></div>
         </form>
       </div>
 

@@ -16,9 +16,9 @@ export function docTypeFromName(fileName: string): string {
   return 'Other';
 }
 
-export function missingDocs(presentTypes: Iterable<string>): string[] {
+export function missingDocs(presentTypes: Iterable<string>, required: readonly string[] = REQUIRED_DOCS): string[] {
   const have = new Set(presentTypes);
-  return REQUIRED_DOCS.filter((d) => !have.has(d));
+  return required.filter((d) => !have.has(d));
 }
 
 // "RCL" (master sheet) and "Regent College London (RCL)" (form) are the same school.

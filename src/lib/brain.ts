@@ -1,6 +1,7 @@
 import { admin } from './supabase';
 import { generateOnce, numbersWithin } from './ai';
 import { missingDocs, schoolKey, schoolDisplay } from './docs';
+import { requiredDocs } from './workspace';
 import { effType } from './docs';
 
 // The AI Brain: reads ONE student's file plus the team's written notes and drafts a reply for a staff member to check and send.
@@ -34,7 +35,7 @@ export async function brainContext(appId: string) {
     university: schoolDisplay(app.school) || null, programme: app.programme || null, stage: app.status || null, country: app.country || null,
     interviewStatus: app.interview || null, paymentRecorded: !!app.payment,
     daysSinceSubmitted: app.submitted_at ? Math.floor((Date.now() - new Date(app.submitted_at).getTime()) / SOFT_DAY) : null,
-    documentsReceived: [...new Set(have)], documentsStillMissing: missingDocs(have), documentDetails: read,
+    documentsReceived: [...new Set(have)], documentsStillMissing: missingDocs(have, await requiredDocs(app.workspace)), documentDetails: read,
   };
   return { first: (app.name || '').split(/[\s,]+/).filter(Boolean)[0] || 'there', country: wsRow?.name || 'the UK', brief: wsRow?.brief || null, facts, notes: rel.map((n) => ({ topic: n.title, info: n.body })), chat };
 }

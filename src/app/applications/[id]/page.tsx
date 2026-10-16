@@ -3,11 +3,12 @@ import Who from '@/components/Who';
 import Avatar from '@/components/Avatar';
 import { loadPeople, personFor } from '@/lib/people';
 import { notFound } from 'next/navigation';
-import { requireStaff, canSee } from '@/lib/auth';
+import { requireStaff, canAccessApp } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
 import { attentionReasons, AppRow, isFormSubmission } from '@/lib/attention';
 import { missingDocs, counselorKey, effType, schoolShort } from '@/lib/docs';
-import { ALL_DOC_TYPES, CAS_STATUSES, REQUIRED_DOCS, STATUSES, VISA_STATUSES } from '@/lib/constants';
+import { ALL_DOC_TYPES, CAS_STATUSES, STATUSES, VISA_STATUSES } from '@/lib/constants';
+import { requiredDocs } from '@/lib/workspace';
 import { statusTone } from '@/lib/ui';
 import { ago, dateTime, decodeId, describeActivity, initials, shortDate, STEPS, stepIndex } from '@/lib/format';
 import { hashOf } from '@/lib/ai';
@@ -45,7 +46,8 @@ export default async function ApplicationPage({ params, searchParams }: { params
   const id = decodeId(rawParams.id);
   const db = admin();
   const { data: app } = await db.from('portal_applications').select('*').eq('application_id', id).maybeSingle();
-  if (!app || !canSee(staff, app.counselor)) notFound();
+  if (!app || !(await canAccessApp(staff, id))) notFound();
+  const REQUIRED_DOCS = await requiredDocs(app.workspace), DOC_TYPES = [...REQUIRED_DOCS, ...ALL_DOC_TYPES.filter((t) => !REQUIRED_DOCS.includes(t))];
 
   // everything below only needs the application row, so it all loads at the same time
   const [{ data: siblings }, { data: notes }, { data: activity }, { data: counselors }, { data: suggestions }, { data: messages }, { data: reminders }, offerRow, chatRows, { data: checkRows }, { data: cached }, { data: draftRow }, catalog] = await Promise.all([
@@ -70,7 +72,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
   const { data: scanRows } = await db.from('portal_doc_scans').select('*').in('drive_file_id', (docs || []).map((d) => d.drive_file_id));
   const scans = new Map((scanRows || []).map((r) => [r.drive_file_id as string, r as Scan]));
   const types = (docs || []).map(effType);
-  const missing = judged ? missingDocs(types) : [];
+  const missing = judged ? missingDocs(types, REQUIRED_DOCS) : [];
   const presentRequired = REQUIRED_DOCS.filter((d) => types.includes(d)).length;
   const reasons = attentionReasons(app as AppRow, missing, (docs || []).length);
   const counselor = (counselors || []).find((c) => counselorKey(c.name) === counselorKey(app.counselor));
@@ -80,7 +82,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
   const tabHref = (k: string) => `/applications/${id}${k === 'overview' ? '' : `?tab=${k}`}`;
   const previewDoc = sp.preview ? (docs || []).find((d) => d.drive_file_id === sp.preview) : null;
 
-  const facts = studentFacts(app as AppFull, { have: new Set(types), docCount: (docs || []).length, missing, judged, submissions: (siblings || []).length });
+  const facts = studentFacts(app as AppFull, { have: new Set(types), docCount: (docs || []).length, missing, judged, submissions: (siblings || []).length, required: REQUIRED_DOCS });
   const summary = cached?.output as StudentSummary | undefined;
   const summaryStale = !!cached && cached.input_hash !== hashOf(facts);
 
@@ -407,7 +409,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
             {(app.drive_folder_id || app.workspace !== 'uk') && (
               <div className="filters" style={{ marginTop: 16 }}>
                 <form action={uploadDocument} className="filters"><input type="hidden" name="id" value={id} /><input type="hidden" name="returnTo" value={ret('documents')} />
-                  <DocTypeSelect types={ALL_DOC_TYPES} defaultValue={missing[0] || 'Other'} compact /><input type="file" name="file" required /><Btn>Upload to Drive</Btn></form>
+                  <DocTypeSelect types={DOC_TYPES} defaultValue={missing[0] || 'Other'} compact /><input type="file" name="file" required /><Btn>Upload to Drive</Btn></form>
                 <form action={refreshDocuments}><input type="hidden" name="id" value={id} /><input type="hidden" name="returnTo" value={ret('documents')} /><Btn className="ghost">Refresh from Drive</Btn></form>
               </div>
             )}

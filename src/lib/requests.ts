@@ -3,7 +3,7 @@ import { sendMail, signFor } from './mail';
 import { addNotice } from './notices';
 import { site, studentSite } from './emailTemplate';
 import { counselorKey, schoolShort } from './docs';
-import { FINAL_STATUSES, REQUIRED_DOCS } from './constants';
+import { FINAL_STATUSES } from './constants';
 import { loadStudents } from './overview';
 import type { SRow } from './overview';
 
@@ -17,7 +17,7 @@ const tidy = (v: string | null) => (v && v.toUpperCase() !== 'N/A' ? v : '');
 export function docRequestEmail(r: SRow, replyTo: string) {
   const a = r.a;
   const uni = [schoolShort(a.school), tidy(a.programme)].filter(Boolean).join(' · ');
-  const n = r.missing.length, total = REQUIRED_DOCS.length;
+  const n = r.missing.length, total = r.required.length;
   const subject = `Documents needed for your application${a.school ? ` — ${schoolShort(a.school)}` : ''}`;
   const body = `Hi ${firstName(a.preferred_name || a.name)},\n\nWe still need ${n === 1 ? 'this document' : 'these documents'}${uni ? ` for ${uni}` : ''}:\n\n${r.missing.map((d) => `• ${d}`).join('\n')}\n\nUpload ${n === 1 ? 'it' : 'them'} here (sign in with this email): ${studentSite()}/student/login, or reply with scans attached.`;
   const html = {

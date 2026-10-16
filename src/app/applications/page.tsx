@@ -4,7 +4,8 @@ import { admin } from '@/lib/supabase';
 import { AppRow, isFormSubmission } from '@/lib/attention';
 import { loadStudents } from '@/lib/overview';
 import { filterRows, viewPredicates } from '@/lib/filters';
-import { REQUIRED_DOCS, STATUSES } from '@/lib/constants';
+import { STATUSES } from '@/lib/constants';
+import { currentWorkspace, requiredDocs } from '@/lib/workspace';
 import { bulkAddToMaster, bulkAssign, bulkEmailCounselors, bulkSetStatus, syncNow } from '../actions';
 import Btn from '@/components/Btn';
 import Icon from '@/components/Icon';
@@ -23,6 +24,7 @@ const uniq = (xs: (string | null)[]) => [...new Set(xs.filter(Boolean) as string
 export default async function Dashboard({ searchParams }: { searchParams: Promise<SP> }) {
   const staff = await requireTeam();
   const sp = await searchParams;
+  const REQUIRED_DOCS = await requiredDocs(await currentWorkspace());
   const [{ rows }, { data: counselorList }] = await Promise.all([
     loadStudents({ dups: !!sp.dups }),
     admin().from('portal_counselors').select('name').eq('active', true).order('name'),

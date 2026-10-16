@@ -1,5 +1,5 @@
 import { admin } from './supabase';
-import { REQUIRED_DOCS } from './constants';
+import { requiredDocs } from './workspace';
 import { counselorKey } from './docs';
 import { googleCalUrl, MIN_NOTICE_H } from './interviews';
 import { providerName } from './meet';
@@ -8,7 +8,7 @@ import type { StudentApp, StudentDoc, StudentView } from './student';
 import type { MyBooking, SlotView } from '@/components/StudentInterviews';
 
 export type Counselor = { name: string; email: string | null; display: string; title: string; avatar_url: string | null; color: string | null } | null;
-export type Card = { a: StudentApp; ids: string[]; docs: StudentDoc[]; folderApp: StudentApp; counselor: Counselor; missing: string[]; offer: Offer | null; canUpload: boolean };
+export type Card = { required: string[]; a: StudentApp; ids: string[]; docs: StudentDoc[]; folderApp: StudentApp; counselor: Counselor; missing: string[]; offer: Offer | null; canUpload: boolean };
 export type CheckItem = { id: string; application_id: string; text: string; due: string | null; done: boolean };
 
 /** Everything the student screens need, loaded once per page. */
@@ -24,6 +24,7 @@ export async function loadStudentData(me: StudentView) {
 
   const byKey = new Map<string, StudentApp[]>();
   me.apps.forEach((a) => byKey.set(a.student_key, [...(byKey.get(a.student_key) || []), a]));
+  const reqBy = new Map(await Promise.all([...new Set(me.apps.map((x) => x.workspace))].map(async (w) => [w, await requiredDocs(w)] as const)));
   const cards: Card[] = [...byKey.values()].map((list) => {
     const a = list[0], ids = list.map((x) => x.application_id);
     const docs = me.docs.filter((d) => ids.includes(d.application_id));
@@ -32,7 +33,8 @@ export async function loadStudentData(me: StudentView) {
     const p = c?.email ? (profiles || []).find((x) => x.email.toLowerCase() === c.email!.toLowerCase()) : null;
     const counselor: Counselor = c ? { name: c.name, email: c.email, display: p?.display_name || c.name, title: p?.title || 'Admissions Counselor', avatar_url: p?.avatar_url || null, color: p?.color || null } : null;
     const offer = ((offerRows || []).filter((o) => ids.includes(o.application_id)).sort((x, y) => y.updated_at.localeCompare(x.updated_at))[0] as unknown as Offer | undefined) || null;
-    return { a, ids, docs, folderApp, counselor, missing: REQUIRED_DOCS.filter((t) => !docs.some((d) => d.type === t)), offer, canUpload: !!folderApp.drive_folder_id || folderApp.workspace !== 'uk' };
+    const required = reqBy.get(a.workspace) || [];
+    return { required, a, ids, docs, folderApp, counselor, missing: required.filter((t) => !docs.some((d) => d.type === t)), offer, canUpload: !!folderApp.drive_folder_id || folderApp.workspace !== 'uk' };
   });
 
   // interview training

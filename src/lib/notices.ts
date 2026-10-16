@@ -1,5 +1,5 @@
 import { admin } from './supabase';
-import { REQUIRED_DOCS } from './constants';
+import { requiredDocs } from './workspace';
 import type { StudentView } from './student';
 import { sendPush } from './push';
 
@@ -24,7 +24,7 @@ export async function addNotice(o: { email: string | null | undefined; applicati
 export async function noticesFor(me: StudentView): Promise<Notice[]> {
   const { data } = await admin().from('portal_student_notices').select('id, kind, title, body, href, created_at, read_at').eq('email', me.email).order('created_at', { ascending: false }).limit(30);
   const have = new Set(me.docs.map((d) => d.type));
-  const docsDone = REQUIRED_DOCS.every((t) => have.has(t));
+  const docsDone = (await requiredDocs(me.apps[0]?.workspace || 'uk')).every((t) => have.has(t));
   const paid = me.apps.some((a) => a.in_regent && /^paid/i.test(a.payment || ''));
   return (data || []).map((n) => ({ id: n.id, kind: n.kind as NoticeKind, title: n.title, body: n.body, href: n.href, created_at: n.created_at, read: !!n.read_at,
     done: (n.kind === 'docs' && docsDone) || (n.kind === 'payment' && paid) }));

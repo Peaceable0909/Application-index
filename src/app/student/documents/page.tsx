@@ -2,14 +2,13 @@ import { redirect } from 'next/navigation';
 import { currentStaff } from '@/lib/auth';
 import { currentStudent } from '@/lib/student';
 import { loadStudentData } from '@/lib/studentData';
-import { ALL_DOC_TYPES, REQUIRED_DOCS } from '@/lib/constants';
+import { ALL_DOC_TYPES } from '@/lib/constants';
 import { schoolShort } from '@/lib/docs';
 import { DOC_TIPS } from '@/lib/docTips';
 import DocRow from '@/components/DocRow';
 import StudentUploader from '@/components/StudentUploader';
 import ProgressRing from '@/components/ProgressRing';
 
-const OTHER_TYPES = ALL_DOC_TYPES.filter((t) => !(REQUIRED_DOCS as readonly string[]).includes(t));
 
 export default async function StudentDocuments() {
   if (await currentStaff()) redirect('/');
@@ -21,8 +20,9 @@ export default async function StudentDocuments() {
       <h1 className="st-h1">Documents</h1>
       <p className="st-sub">Scan with your phone camera or upload a file. Your documents are stored privately and only your counselors can see them.</p>
       {d.cards.map((c, ci) => {
+        const REQUIRED_DOCS = c.required, OTHER_TYPES = ALL_DOC_TYPES.filter((t) => !REQUIRED_DOCS.includes(t));
         const done = REQUIRED_DOCS.length - c.missing.length;
-        const extra = c.docs.filter((x) => !(REQUIRED_DOCS as readonly string[]).includes(x.type));
+        const extra = c.docs.filter((x) => !REQUIRED_DOCS.includes(x.type));
         return (
           <section key={c.a.application_id} className="st-card" style={{ '--i': ci } as React.CSSProperties}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14 }}>

@@ -1,4 +1,4 @@
-import { currentWorkspace } from './workspace';
+import { currentWorkspace, requiredDocs } from './workspace';
 import { admin } from './supabase';
 import { AppRow, attentionReasons, isFormSubmission } from './attention';
 import { effType, missingDocs } from './docs';
@@ -6,14 +6,14 @@ import { FINAL_STATUSES, REQUIRED_DOCS, STALE_DAYS } from './constants';
 import { askAi, hashOf, numbersWithin } from './ai';
 
 export type AppFull = AppRow & { created_at: string; dob: string | null; age: string | null; intake: string | null; deadline: string | null; preferred_name: string | null };
-export type SRow = { a: AppFull; have: Set<string>; docCount: number; judged: boolean; missing: string[]; reasons: string[]; submissions: number };
+export type SRow = { a: AppFull; have: Set<string>; docCount: number; judged: boolean; missing: string[]; reasons: string[]; submissions: number; required: string[] };
 
 const COLS = 'application_id,name,email,phone,school,programme,country,city,counselor,status,submitted_at,created_at,last_activity_at,student_key,in_master,has_raw,progress,in_regent,payment,interview,opp_id,drive_folder_id,dob,age,intake,deadline,preferred_name';
 const DAY = 864e5;
 
 /** One row per student (newest submission), with documents pooled across their submissions. */
 export async function loadStudents(opts: { dups?: boolean; workspace?: string } = {}): Promise<{ rows: SRow[]; all: AppFull[] }> {
-  const db = admin(), ws = opts.workspace ?? (await currentWorkspace());
+  const db = admin(), ws = opts.workspace ?? (await currentWorkspace()), required = await requiredDocs(ws);
   const [{ data: apps }, { data: docs }] = await Promise.all([
     db.from('portal_applications').select(COLS).eq('workspace', ws).or('email.is.null,email.neq.test@example.com').order('submitted_at', { ascending: false, nullsFirst: false }).limit(5000),
     db.from('portal_documents').select('application_id,doc_type,type_override').limit(50000),
@@ -32,9 +32,9 @@ export async function loadStudents(opts: { dups?: boolean; workspace?: string } 
   const rows = all.filter((a) => (opts.dups ? true : seen.has(a.student_key) ? false : (seen.add(a.student_key), true))).map((a) => {
     const have = types.get(a.student_key) || new Set<string>();
     const judged = isFormSubmission(a) || !!a.drive_folder_id;
-    const missing = judged ? missingDocs(have) : [];
+    const missing = judged ? missingDocs(have, required) : [];
     const docCount = counts.get(a.student_key) || 0;
-    return { a, have, docCount, judged, missing, reasons: attentionReasons(a, missing, docCount), submissions: per.get(a.student_key) || 1 };
+    return { a, have, docCount, judged, missing, reasons: attentionReasons(a, missing, docCount), submissions: per.get(a.student_key) || 1, required };
   });
   return { rows, all };
 }
@@ -156,12 +156,12 @@ export async function aiOverview(facts: Facts, force = false) {
 // ---------- AI summary for one student ----------
 export type StudentSummary = { observations: string[]; recommendedActions: string[]; uncertainty: string };
 
-export function studentFacts(a: AppFull, p: { have: Set<string>; docCount: number; missing: string[]; judged: boolean; submissions: number }) {
+export function studentFacts(a: AppFull, p: { have: Set<string>; docCount: number; missing: string[]; judged: boolean; submissions: number; required?: string[] }) {
   const gaps = [!a.programme || a.programme.toUpperCase() === 'N/A' ? 'programme' : '', !a.phone ? 'phone' : '', !a.email ? 'email' : '', !a.dob ? 'date of birth' : '', !a.counselor ? 'counselor' : ''].filter(Boolean);
   return {
     programme: a.programme || null, university: a.school || null, status: a.status || null, country: a.country || null,
     counselorAssigned: !!a.counselor, inSheet1: a.in_master, hasFormSubmission: isFormSubmission(a), submissionsFromThisStudent: p.submissions,
-    documentsChecked: p.judged, requiredDocuments: [...REQUIRED_DOCS], documentsPresent: [...p.have], documentsMissing: p.missing, filesInDrive: p.docCount,
+    documentsChecked: p.judged, requiredDocuments: [...(p.required || REQUIRED_DOCS)], documentsPresent: [...p.have], documentsMissing: p.missing, filesInDrive: p.docCount,
     daysSinceSubmitted: a.submitted_at ? Math.floor((Date.now() - new Date(a.submitted_at).getTime()) / DAY) : null,
     paymentRecorded: !!a.payment, interviewStatus: a.interview || null, missingInformation: gaps, flags: attentionReasons(a, p.missing, p.docCount),
   };
