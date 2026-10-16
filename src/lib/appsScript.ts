@@ -5,17 +5,23 @@ export async function callScript<T>(action: string, payload: unknown = {}): Prom
   const url = process.env.APPS_SCRIPT_URL;
   const token = process.env.APPS_SCRIPT_TOKEN;
   if (!url || !token) throw new Error('APPS_SCRIPT_URL / APPS_SCRIPT_TOKEN are not set');
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ action, token, payload: JSON.stringify(payload) }),
-    redirect: 'follow',
-    cache: 'no-store',
-  });
-  const text = await res.text();
-  let json: Reply<T>;
-  try { json = JSON.parse(text); } catch {
-    if (res.status === 404) throw new Error('Google says the Apps Script web app address no longer exists (404). Redeploy it, copy the new Web app URL, and update APPS_SCRIPT_URL in Vercel, then redeploy the portal.');
+  let res!: Response, text = '', json: Reply<T> | undefined;
+  // Google now and then answers a good request with "Script function not found: doGet" (its redirect landed as a plain GET, so our code never ran).
+  // Nothing was done in that case, so asking once more is safe.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ action, token, payload: JSON.stringify(payload) }),
+      redirect: 'follow',
+      cache: 'no-store',
+    });
+    text = await res.text();
+    if (attempt === 0 && /Script function not found:\s*doGet/i.test(text)) { await new Promise((r) => setTimeout(r, 1200)); continue; }
+    break;
+  }
+  try { json = JSON.parse(text) as Reply<T>; } catch {
+    if (res.status === 404) throw new Error('Google says the Apps Script web app address no longer exists (404). Redeploy it, copy the new Web app URL, and update APPS_SCRIPT_URL in Vercel, then redeploy the portal.')
     if (/accounts\.google\.com|sign in/i.test(text)) throw new Error('The Apps Script web app asks for a Google sign-in. In Deploy → Manage deployments, set “Who has access” to Anyone.');
     // keep what Google actually said (tags stripped) so the cause is visible instead of a generic message
     const said = text.replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&[a-z#0-9]+;/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
