@@ -2,6 +2,7 @@ import { admin } from './supabase';
 import { generateOnce, numbersWithin } from './ai';
 import { missingDocs, schoolKey, schoolDisplay } from './docs';
 import { requiredDocs } from './workspace';
+import { relevantPassages } from './brainDocs';
 import { effType } from './docs';
 
 // The AI Brain: reads ONE student's file plus the team's written notes and drafts a reply for a staff member to check and send.
@@ -14,7 +15,7 @@ const strip = (t: string) => t.replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, '[email remo
 const SOFT_DAY = 864e5;
 
 /** Everything the Brain may use for this student, with no name, email or phone. Returned with the text of what they last wrote. */
-export async function brainContext(appId: string) {
+export async function brainContext(appId: string, question?: string) {
   const db = admin();
   const { data: app } = await db.from('portal_applications').select('name, school, programme, status, country, interview, submitted_at, student_key, counselor, payment, workspace').eq('application_id', appId).maybeSingle();
   if (!app) return null;
@@ -37,22 +38,24 @@ export async function brainContext(appId: string) {
     daysSinceSubmitted: app.submitted_at ? Math.floor((Date.now() - new Date(app.submitted_at).getTime()) / SOFT_DAY) : null,
     documentsReceived: [...new Set(have)], documentsStillMissing: missingDocs(have, await requiredDocs(app.workspace)), documentDetails: read,
   };
-  return { first: (app.name || '').split(/[\s,]+/).filter(Boolean)[0] || 'there', country: wsRow?.name || 'the UK', brief: wsRow?.brief || null, facts, notes: rel.map((n) => ({ topic: n.title, info: n.body })), chat };
+  const asked = chat.filter((m) => m.from === 'student').slice(-2).map((m) => m.text).join(' ');
+  const files = await relevantPassages(app.workspace, app.school, `${asked} ${question || ''}`);
+  return { files, first: (app.name || '').split(/[\s,]+/).filter(Boolean)[0] || 'there', country: wsRow?.name || 'the UK', brief: wsRow?.brief || null, facts, notes: rel.map((n) => ({ topic: n.title, info: n.body })), chat };
 }
 
 const system = (country: string) =>
   `You write chat replies, for a human counselor to review, to a student of an education-advice company that helps students apply to universities in: ${country}. ` +
-  'Use ONLY the "facts", "countryBrief" and "teamNotes" in the JSON, and the conversation. If the answer is not there, do not guess: set needsHuman to true and write a short, kind holding reply that says the team will check and come back. ' +
+  'Use ONLY the "facts", "countryBrief", "teamNotes" and "fileExcerpts" in the JSON, and the conversation. If the answer is not there, do not guess: set needsHuman to true and write a short, kind holding reply that says the team will check and come back. ' +
   'Write like a warm, clear text message: plain English, at most 80 words, no signature, no headings, at most one emoji. Address the student as {{FIRST_NAME}} only when it feels natural. ' +
   'NEVER invent dates, deadlines, fees, links, phone numbers or email addresses, and NEVER promise or hint at admission, an offer, a visa or any outcome. Do not give legal or immigration advice. ' +
   'If the student sounds upset, unwell, unsafe or mentions money problems, set needsHuman to true. When asked for a document, name it exactly as in the facts. ' +
   'Reply as JSON: {"reply": "<the message>", "needsHuman": true|false, "why": "<one short line for the counselor: what you based this on, or what you could not answer>"}.';
 
 export async function suggestReply(appId: string, o: { question?: string; instruction?: string } = {}): Promise<BrainReply> {
-  const ctx = await brainContext(appId);
+  const ctx = await brainContext(appId, o.question);
   if (!ctx) throw new Error('Student not found.');
   const chat = o.question ? [...ctx.chat, { from: 'student', text: strip(o.question).slice(0, 400) }] : ctx.chat;
-  const userJson = JSON.stringify({ facts: ctx.facts, countryBrief: ctx.brief, teamNotes: ctx.notes, conversation: chat, counselorInstruction: o.instruction ? strip(o.instruction).slice(0, 200) : null });
+  const userJson = JSON.stringify({ facts: ctx.facts, countryBrief: ctx.brief, teamNotes: ctx.notes, fileExcerpts: ctx.files, conversation: chat, counselorInstruction: o.instruction ? strip(o.instruction).slice(0, 200) : null });
   // Numbers the reply may contain: those already in the file, the notes or the conversation (so it can't invent a figure).
   const allowed = (userJson.match(/\d+/g) || []).map(Number);
   const r = await generateOnce<BrainReply>({

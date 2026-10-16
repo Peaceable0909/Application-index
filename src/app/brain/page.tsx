@@ -5,17 +5,19 @@ import { brainEnabled } from '@/lib/brain';
 import Btn from '@/components/Btn';
 import Icon from '@/components/Icon';
 import BrainTest from '@/components/BrainTest';
-import { addBrainNote, deleteBrainNote, saveCountryBrief, saveRequiredDocs, toggleBrainNote } from '../brainActions';
+import { addBrainNote, deleteBrainDoc, deleteBrainNote, saveCountryBrief, saveRequiredDocs, setAutoReply, toggleBrainDoc, toggleBrainNote } from '../brainActions';
+import BrainLearn from '@/components/BrainLearn';
 import { requiredDocs } from '@/lib/workspace';
 
 export const metadata = { title: 'AI Brain' };
 
 export default async function Brain({ searchParams }: { searchParams: Promise<{ msg?: string; err?: string }> }) {
-  await requireTeam();
+  const me = await requireTeam();
   const sp = await searchParams;
   const db = admin(), ws = await currentWorkspace();
-  const { data: wsRow } = await db.from('portal_workspaces').select('name, brief, required_docs').eq('key', ws).maybeSingle();
+  const { data: wsRow } = await db.from('portal_workspaces').select('name, brief, required_docs, auto_reply').eq('key', ws).maybeSingle();
   const required = await requiredDocs(ws);
+  const { data: docs } = await db.from('portal_brain_docs').select('id, title, school, chars, active, created_at, created_by').eq('workspace', ws).order('created_at', { ascending: false });
   const [{ data: notes }, { data: schools }] = await Promise.all([
     db.from('portal_brain_notes').select('*').eq('workspace', ws).order('updated_at', { ascending: false }),
     db.from('portal_applications').select('school').eq('workspace', ws).not('school', 'is', null).limit(1500),
@@ -37,11 +39,26 @@ export default async function Brain({ searchParams }: { searchParams: Promise<{ 
       </div>
 
       <div className="card">
+        <h2><Icon n="chat" size={17} /> Automatic replies <span className={`badge plain ${wsRow?.auto_reply ? 'green' : ''}`} style={{ marginLeft: 6 }}>{wsRow?.auto_reply ? 'on' : 'off'}</span></h2>
+        <p className="muted" style={{ marginTop: 0 }}>{wsRow?.auto_reply
+          ? 'On for this country. When a student writes, the Brain answers by itself if it is sure, and labels the message “AI assistant”. If it is not sure it tells the student a counselor will reply, and leaves it to you.'
+          : 'Off. Today the Brain only drafts and a person sends. You can let it answer by itself, the way an assistant on WhatsApp Business does.'}</p>
+        <ul style={{ margin: '0 0 12px', paddingLeft: 20, lineHeight: 1.7 }}>
+          <li>It steps back for 30 minutes whenever a person writes in that chat, and you can pause it for one student from the chat itself.</li>
+          <li>It ignores “ok” and “thanks”, sends at most 6 automatic messages per student a day, and hands over to a person when a student sounds upset or worried about money.</li>
+          <li>Every automatic message is labelled, and you can read all of them in the chat.</li>
+        </ul>
+        {me.role === 'admin'
+          ? <form action={setAutoReply}><input type="hidden" name="on" value={wsRow?.auto_reply ? '0' : '1'} /><Btn className={wsRow?.auto_reply ? 'ghost' : 'primary'}>{wsRow?.auto_reply ? 'Turn automatic replies off' : `Turn on for ${wsRow?.name || 'this country'}`}</Btn></form>
+          : <p className="muted" style={{ margin: 0 }}>Only admins can change this.</p>}
+      </div>
+
+      <div className="card">
         <h2>How it behaves</h2>
         <ul style={{ margin: 0, paddingLeft: 20, lineHeight: 1.7 }}>
-          <li>It uses only the student’s file, the notes below and the recent chat. If the answer isn’t there it says the team will check, and flags the draft for a closer look.</li>
+          <li>It uses only the student’s file, the notes and files below, and the recent chat. If the answer isn’t there it says the team will check, and flags the draft for a closer look.</li>
           <li>It never invents dates, fees, links, phone numbers or emails, and never promises an offer, admission or visa. Drafts that try are thrown away.</li>
-          <li>It never sends anything. Every message goes out only when a person presses send.</li>
+          <li>Unless automatic replies are on, it never sends anything: every message goes out only when a person presses send.</li>
           <li>Each draft uses one of the daily AI calls (limit in Settings → AI usage).</li>
         </ul>
       </div>
@@ -62,6 +79,25 @@ export default async function Brain({ searchParams }: { searchParams: Promise<{ 
           <textarea name="docs" rows={7} maxLength={900} defaultValue={required.join('\n')} placeholder={'Passport\nTranscript\nBank statement'} />
           <div><Btn>Save the list</Btn></div>
         </form>
+      </div>
+
+      <div className="card">
+        <h2><Icon n="upload" size={17} /> Teach from a file</h2>
+        <p className="muted" style={{ marginTop: 0 }}>Upload a school handbook, a requirements sheet or a price list. The Brain keeps the text and quotes the parts that match what a student asks. Pick a school to use it only for that school’s students.</p>
+        <BrainLearn schools={schoolList} />
+        {(docs || []).length > 0 && (
+          <div className="grid" style={{ gap: 10, marginTop: 16 }}>
+            {(docs || []).map((d) => (
+              <div key={d.id} className="callout" style={{ opacity: d.active ? 1 : .55, alignItems: 'center' }}>
+                <div style={{ flex: 1 }}><b>{d.title}</b> <span className="badge plain">{d.school || 'All schools'}</span>{!d.active && <> <span className="badge plain amber">off</span></>}
+                  <div className="muted" style={{ fontSize: 12.5 }}>{d.chars.toLocaleString()} characters · added {new Date(d.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</div></div>
+                <div className="filters">
+                  <form action={toggleBrainDoc}><input type="hidden" name="id" value={d.id} /><Btn className="ghost sm">{d.active ? 'Switch off' : 'Switch on'}</Btn></form>
+                  <form action={deleteBrainDoc}><input type="hidden" name="id" value={d.id} /><Btn className="ghost sm">Delete</Btn></form>
+                </div>
+              </div>))}
+          </div>
+        )}
       </div>
 
       <div className="card">
