@@ -447,7 +447,7 @@ function portalExtractText_(fileId) {
     finally { try { Drive.Files.remove(tmp.id); } catch (e) { Logger.log('temp cleanup failed: ' + e); } }
   }
   text = String(text || '').replace(/\s+/g, ' ').trim();
-  return { text: text.slice(0, 5000), chars: text.length };
+  return { text: text.slice(0, 5000), chars: text.length, tail: text.slice(-700) };   // the tail is where a passport's machine-readable lines are
 }
 
 // Creates a calendar event on the script owner's calendar with its own Google Meet link, and returns the link.

@@ -33,3 +33,8 @@
 - The Brain (`src/lib/brain.ts`) drafts replies from one student's file, the workspace's brief, notes and uploaded files (`portal_brain_docs`, passages picked by `src/lib/brainDocs.ts`), and the student's memory. It sends no names, emails or phone numbers to the model. Opt-in with `AI_BRAIN=on`. Automatic replies (`src/lib/autoReply.ts`) are a per-workspace switch, off by default; automatic messages are `by_ai` and shown with an "AI assistant" tag.
 - Memory (`src/lib/memory.ts`): after a student's new messages the conversation is summarised into `portal_student_memory` and one pinned note (`portal_notes.ai_key = 'memory'`, author `ai`). Notes with an `ai_key` are replaced, never piled up.
 - The new-student chat is public: `/hello/<workspace>` and `/api/hello/*` are open in `middleware.ts`, closed per workspace until an admin switches it on (`portal_workspaces.lead_chat`). It needs consent, is rate limited, has its own AI budget (`LEAD_DAILY_LIMIT`), takes contact details from what the visitor typed (not from the model) and never sees student data. Staff answer on `/leads`; a person's reply pauses the assistant for that chat.
+
+## Document reader
+
+- Passports are read exactly from their machine-readable lines (`src/lib/mrz.ts`, ICAO 9303 check digits): no AI call, and the passport text never leaves the portal. Everything else is read by Drive OCR (Apps Script `extractText`) and understood by the AI after `redactForAi` hides ID-like strings. `portal_doc_scans.method` is `mrz`, `ai` or `unreadable`; the Documents page reports the split so we only add a stronger OCR server if too many files are unreadable.
+- "Check all" reads three files at a time (`scanNext` in `src/lib/scanQueue.ts`).
