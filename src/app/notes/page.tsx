@@ -1,3 +1,4 @@
+import { currentWorkspace } from '@/lib/workspace';
 import Link from 'next/link';
 import Who from '@/components/Who';
 import Avatar from '@/components/Avatar';
@@ -12,7 +13,7 @@ export default async function Notes({ searchParams }: { searchParams: Promise<{ 
   const people = await loadPeople();
   await requireTeam();
   const sp = await searchParams;
-  let query = admin().from('portal_notes').select('*, portal_applications(name, application_id)').order('pinned', { ascending: false }).order('created_at', { ascending: false }).limit(300);
+  let query = admin().from('portal_notes').select('*, portal_applications!inner(name, application_id)').eq('portal_applications.workspace', await currentWorkspace()).order('pinned', { ascending: false }).order('created_at', { ascending: false }).limit(300);
   if (sp.pinned) query = query.eq('pinned', true);
   const { data } = await query;
   const q = (sp.q || '').toLowerCase();

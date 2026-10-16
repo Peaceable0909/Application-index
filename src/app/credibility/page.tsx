@@ -1,3 +1,4 @@
+import { currentWorkspace } from '@/lib/workspace';
 import Link from 'next/link';
 import { requireStaff, appIdsFor } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
@@ -23,7 +24,7 @@ export default async function Credibility({ searchParams }: { searchParams: Prom
   const activeQ = allQ.filter((q) => q.active);
 
   // everyone's attempts (a counselor only sees their own students)
-  let aq = db.from('portal_cred_attempts').select('*').order('created_at', { ascending: false }).limit(3000);
+  let aq = db.from('portal_cred_attempts').select('*, portal_applications!inner(workspace)').eq('portal_applications.workspace', await currentWorkspace()).order('created_at', { ascending: false }).limit(3000);
   if (staff.role === 'counselor') { const ids = await appIdsFor(staff.counselor_key); aq = ids.length ? aq.in('application_id', ids) : aq.eq('application_id', '__none__'); }
   const attempts = ((await aq).data || []) as Attempt[];
   const byStudent = new Map<string, Attempt[]>();

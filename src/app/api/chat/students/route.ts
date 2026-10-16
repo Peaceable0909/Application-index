@@ -1,3 +1,4 @@
+import { currentWorkspace } from '@/lib/workspace';
 import { NextResponse } from 'next/server';
 import { canSee, currentStaff } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
@@ -7,7 +8,7 @@ export async function GET(req: Request) {
   const me = await currentStaff();
   if (!me) return NextResponse.json({ students: [] }, { status: 401 });
   const q = (new URL(req.url).searchParams.get('q') || '').toLowerCase().trim();
-  const { data } = await admin().from('portal_applications').select('application_id, name, school, programme, status, counselor').order('name').limit(600);
+  const { data } = await admin().from('portal_applications').select('application_id, name, school, programme, status, counselor').eq('workspace', await currentWorkspace()).order('name').limit(600);
   const seen = new Set<string>();
   const students = (data || []).filter((a) => canSee(me, a.counselor) && (!q || a.name.toLowerCase().includes(q) || (a.school || '').toLowerCase().includes(q)))
     .filter((a) => { const k = `${a.name}|${a.school}`; return seen.has(k) ? false : (seen.add(k), true); }).slice(0, 60)

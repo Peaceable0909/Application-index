@@ -1,3 +1,4 @@
+import { currentWorkspace } from '@/lib/workspace';
 import './globals.css';
 import Link from 'next/link';
 import { Inter, Instrument_Serif } from 'next/font/google';
@@ -11,6 +12,8 @@ import RealtimeNudge from '@/components/RealtimeNudge';
 import Nav from '@/components/Nav';
 import TopSearch from '@/components/TopSearch';
 import Bell from '@/components/Bell';
+import WorkspaceSwitcher from '@/components/WorkspaceSwitcher';
+import { workspacesFor } from '@/lib/workspace';
 import UserMenu from '@/components/UserMenu';
 import NavProgress from '@/components/NavProgress';
 import MobileMenu from '@/components/MobileMenu';
@@ -63,7 +66,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     student ? noticesFor(student) : Promise.resolve([]),
     student ? db.from('portal_student_msgs').select('id', { count: 'exact', head: true }).eq('student_email', student.email).eq('from_student', false).is('student_read_at', null).then((r) => r.count || 0) : Promise.resolve(0),
     staff ? (async () => {
-      const q = db.from('portal_tasks').select('id', { count: 'exact', head: true }).eq('status', 'open');
+      const q = db.from('portal_tasks').select('id, portal_applications!inner(workspace)', { count: 'exact', head: true }).eq('portal_applications.workspace', await currentWorkspace()).eq('status', 'open');
       return (staff.role === 'counselor' ? await q.in('application_id', await appIdsFor(staff.counselor_key)) : await q).count || 0;
     })() : Promise.resolve(0),
     staff ? unreadTotal(staff.email).catch(() => 0) : Promise.resolve(0),
@@ -89,7 +92,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <div className="tag">More opportunities.<br />Brighter futures.</div>
             </aside>
             <div className="maincol">
-              <header className="topbar"><MobileMenu /><TopSearch /><div className="topright"><Bell staff={staff} /><UserMenu staff={staff} /></div></header>
+              <header className="topbar"><MobileMenu /><TopSearch /><div className="topright"><WorkspaceSwitcher list={(await workspacesFor(staff)).map((w) => ({ key: w.key, name: w.name }))} current={await currentWorkspace()} /><Bell staff={staff} /><UserMenu staff={staff} /></div></header>
               <main>{children}</main>
             </div>
             <StaffTabs role={staff.role} taskCount={taskCount} chatCount={chatCount} inboxCount={inboxCount} />

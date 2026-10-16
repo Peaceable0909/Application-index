@@ -1,3 +1,4 @@
+import { currentWorkspace } from '@/lib/workspace';
 import { NextResponse } from 'next/server';
 import { canSee, currentStaff } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
@@ -10,6 +11,7 @@ export async function GET(req: Request) {
   if (q.length < 2) return NextResponse.json([]);
   const { data } = await admin().from('portal_applications')
     .select('application_id,name,email,school,programme,status,student_key,counselor')
+    .eq('workspace', await currentWorkspace())
     .or(`name.ilike.%${q}%,email.ilike.%${q}%,programme.ilike.%${q}%,school.ilike.%${q}%,opp_id.ilike.%${q}%,student_ref.ilike.%${q}%,phone.ilike.%${q}%`)
     .order('submitted_at', { ascending: false, nullsFirst: false }).limit(40);
   const seen = new Set<string>();

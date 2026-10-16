@@ -1,3 +1,4 @@
+import { currentWorkspace } from '@/lib/workspace';
 import Link from 'next/link';
 import { requireStaff, canSee } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
@@ -20,15 +21,16 @@ export default async function Interviews({ searchParams }: { searchParams: Promi
   const staff = await requireStaff();
   const sp = await searchParams, db = admin(), past = sp.tab === 'past', now = new Date();
   const people = await loadPeople();
-  let q = db.from('portal_interview_slots').select('*').is('cancelled_at', null);
+  const ws = await currentWorkspace();
+  let q = db.from('portal_interview_slots').select('*').eq('workspace', ws).is('cancelled_at', null);
   q = past ? q.lt('starts_at', now.toISOString()).gt('starts_at', new Date(now.getTime() - 60 * 864e5).toISOString()).order('starts_at', { ascending: false }) : q.gte('starts_at', new Date(now.getTime() - 3600_000).toISOString()).order('starts_at');
   const { data: slots } = await q.limit(60);
   const ids = (slots || []).map((s) => s.id);
   const { data: bks } = ids.length ? await db.from('portal_interview_bookings').select('*, portal_applications(name, school, counselor)').in('slot_id', ids).neq('status', 'cancelled') : { data: [] };
-  const { data: apps } = await db.from('portal_applications').select('application_id, name, email, school, counselor, student_key').not('email', 'is', null).order('name').limit(600);
+  const { data: apps } = await db.from('portal_applications').select('application_id, name, email, school, counselor, student_key').eq('workspace', ws).not('email', 'is', null).order('name').limit(600);
   const seen = new Set<string>();
   const bookable = (apps || []).filter((a) => a.email !== 'test@example.com' && canSee(staff, a.counselor) && !seen.has(a.student_key) && seen.add(a.student_key));
-  const { data: last } = await db.from('portal_interview_slots').select('teams_url').order('created_at', { ascending: false }).limit(1);
+  const { data: last } = await db.from('portal_interview_slots').select('teams_url').eq('workspace', ws).order('created_at', { ascending: false }).limit(1);
   const staffPeople = [...people.values()].filter((p) => true).map((p) => ({ email: p.email.toLowerCase(), name: p.name })).sort((a, b) => a.name.localeCompare(b.name));
   const upcomingCount = past ? 0 : (slots || []).length;
   return (

@@ -1,3 +1,4 @@
+import { currentWorkspace } from './workspace';
 import { createHash } from 'crypto';
 import { admin } from './supabase';
 import { callScript } from './appsScript';
@@ -35,8 +36,8 @@ export async function loadSettings(): Promise<Settings> {
   const { data } = await admin().from('portal_cred_settings').select('video_url, video_id, title, description, updated_by, updated_at').eq('id', 1).maybeSingle();
   return (data as Settings) || { video_url: null, video_id: null, title: null, description: null, updated_by: null, updated_at: null };
 }
-export async function loadQuestions(onlyActive: boolean): Promise<Question[]> {
-  let q = admin().from('portal_cred_questions').select('id, position, question, category, guidance, model_answer, active').order('position').order('created_at');
+export async function loadQuestions(onlyActive: boolean, workspace?: string): Promise<Question[]> {
+  let q = admin().from('portal_cred_questions').select('id, position, question, category, guidance, model_answer, active').eq('workspace', workspace ?? (await currentWorkspace())).order('position').order('created_at');
   if (onlyActive) q = q.eq('active', true);
   return ((await q).data || []) as Question[];
 }

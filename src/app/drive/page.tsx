@@ -1,3 +1,4 @@
+import { currentWorkspace } from '@/lib/workspace';
 import Link from 'next/link';
 import { requireTeam } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
@@ -9,11 +10,11 @@ export const maxDuration = 60;
 export default async function DriveMatches({ searchParams }: { searchParams: Promise<{ msg?: string; err?: string }> }) {
   await requireTeam();
   const sp = await searchParams;
-  const db = admin();
+  const db = admin(), ws = await currentWorkspace();
   const [{ data: sugg }, { count: noFolder }, { count: scanned }] = await Promise.all([
-    db.from('portal_folder_suggestions').select('*, portal_applications(application_id, name, school, programme, email)').eq('status', 'new').order('score', { ascending: false }),
-    db.from('portal_applications').select('application_id', { count: 'exact', head: true }).is('drive_folder_id', null),
-    db.from('portal_applications').select('application_id', { count: 'exact', head: true }).is('drive_folder_id', null).not('drive_scan_at', 'is', null),
+    db.from('portal_folder_suggestions').select('*, portal_applications!inner(application_id, name, school, programme, email)').eq('portal_applications.workspace', ws).eq('status', 'new').order('score', { ascending: false }),
+    db.from('portal_applications').select('application_id', { count: 'exact', head: true }).eq('workspace', ws).is('drive_folder_id', null),
+    db.from('portal_applications').select('application_id', { count: 'exact', head: true }).eq('workspace', ws).is('drive_folder_id', null).not('drive_scan_at', 'is', null),
   ]);
   type App = { application_id: string; name: string; school: string | null; programme: string | null; email: string | null };
   const groups = new Map<string, { app: App; items: NonNullable<typeof sugg> }>();

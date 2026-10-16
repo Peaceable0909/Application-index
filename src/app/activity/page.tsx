@@ -1,3 +1,4 @@
+import { currentWorkspace } from '@/lib/workspace';
 import Link from 'next/link';
 import Who from '@/components/Who';
 import Avatar from '@/components/Avatar';
@@ -18,7 +19,8 @@ export default async function Activity({ searchParams }: { searchParams: Promise
   const dayStart = (d?: string) => (d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? `${d}T00:00:00Z` : null), dayEnd = (d?: string) => (d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? `${d}T23:59:59Z` : null);
   const { data: actors } = await admin().from('portal_staff').select('email');
   const { data: audits } = admin_ ? await (() => { let a = admin().from('portal_audit').select('id, actor, action, target, detail, created_at').order('created_at', { ascending: false }).limit(300); if (sp.actor) a = a.eq('actor', sp.actor); if (dayStart(sp.from)) a = a.gte('created_at', dayStart(sp.from)!); if (dayEnd(sp.to)) a = a.lte('created_at', dayEnd(sp.to)!); return a; })() : { data: [] as never[] };
-  let q = admin().from('portal_activity').select('id,kind,actor,detail,created_at,application_id,portal_applications(name)').order('created_at', { ascending: false }).limit(250);
+  const ws = await currentWorkspace();
+  let q = admin().from('portal_activity').select('id,kind,actor,detail,created_at,application_id,portal_applications!inner(name)').eq('portal_applications.workspace', ws).order('created_at', { ascending: false }).limit(250);
   if (sp.kind) q = q.eq('kind', sp.kind);
   if (sp.actor) q = q.eq('actor', sp.actor);
   if (dayStart(sp.from)) q = q.gte('created_at', dayStart(sp.from)!);

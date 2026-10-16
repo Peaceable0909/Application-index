@@ -1,4 +1,5 @@
 'use server';
+import { currentWorkspace } from '@/lib/workspace';
 import { redirect } from 'next/navigation';
 import { headers } from 'next/headers';
 import { revalidatePath } from 'next/cache';
@@ -720,13 +721,14 @@ export async function createApplication(f: FormData) {
   // spell the school and programme the way the portal already does, so "bpp" and "BPP University" do not become two schools
   const cat = await getCatalog();
   const school = canonicalSchool(s(f, 'school'), cat) || null, counselor = s(f, 'counselor') || null;
-  const key = studentKey(email, school, name);
+  const addWs = await currentWorkspace();
+  const key = addWs === 'uk' ? studentKey(email, school, name) : `${addWs}:${studentKey(email, school, name)}`;
   const id = 'stub:' + createHash('sha1').update(key).digest('hex').slice(0, 16);
   const db = admin();
 
   // Same student already here? Open them instead of making a second copy.
   const { data: same } = email
-    ? await db.from('portal_applications').select('application_id, school').ilike('email', email.replace(/[\\%_]/g, '\\$&'))
+    ? await db.from('portal_applications').select('application_id, school').eq('workspace', addWs).ilike('email', email.replace(/[\\%_]/g, '\\$&'))
     : await db.from('portal_applications').select('application_id, school').eq('student_key', key);
   const dupe = (same || []).find((a) => !email || !schoolKey(a.school) || !schoolKey(school) || schoolKey(a.school) === schoolKey(school));
   if (dupe) redirect(`/applications/${encodeURIComponent(dupe.application_id)}?msg=${encodeURIComponent('That student is already in the portal, so I opened their record.')}`);
@@ -737,7 +739,7 @@ export async function createApplication(f: FormData) {
     gender: s(f, 'gender'), dob: dobForMaster(s(f, 'dob')), age: s(f, 'age'),
   };
   const { error } = await db.from('portal_applications').upsert({
-    application_id: id, name, email: email || null, school, counselor, status, progress: progressFor(status), submitted_at: now,
+    application_id: id, workspace: addWs, name, email: email || null, school, counselor, status, progress: progressFor(status), submitted_at: now,
     ...Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, v || null])),
     student_key: key, in_master: false, in_regent: false, has_raw: false, synced_at: now, last_activity_at: now,
   }, { onConflict: 'application_id' });
@@ -1225,7 +1227,8 @@ export async function createInterviewSlots(f: FormData) {
     }
   }
   const capacity = Math.max(capacity0, invites.length);
-  const { data: made, error } = await admin().from('portal_interview_slots').insert(rows.map((r) => ({ ...r, duration_min: duration, trainer, capacity, notes, created_by: staff.email }))).select('id, starts_at').order('starts_at');
+  const slotWs = await currentWorkspace();
+  const { data: made, error } = await admin().from('portal_interview_slots').insert(rows.map((r) => ({ ...r, workspace: slotWs, duration_min: duration, trainer, capacity, notes, created_by: staff.email }))).select('id, starts_at').order('starts_at');
   if (error) backTo('/interviews', `Could not create the sessions: ${error.message}`, true);
   const invited: string[] = [], skipped: string[] = [];
   if (invites.length && made?.length) for (const appId of invites) { const r = await inviteToSlot(staff, made[0].id, appId); if (r.ok) invited.push(r.name!); else skipped.push(`${r.name || 'a student'} (${r.error})`); }

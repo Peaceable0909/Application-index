@@ -1,3 +1,4 @@
+import { currentWorkspace } from './workspace';
 import { admin } from './supabase';
 import { docScanEnabled, scanOne } from './docscan';
 
@@ -6,9 +7,9 @@ export const dailyLimit = () => Number(process.env.AI_DAILY_LIMIT || 60);
 type Doc = { drive_file_id: string; application_id: string; doc_type: string; type_override: string | null; name: string };
 
 async function allDocs(): Promise<Doc[]> {
-  const db = admin(), out: Doc[] = [];
+  const db = admin(), ws = await currentWorkspace(), out: Doc[] = [];
   for (let from = 0; ; from += 1000) {
-    const { data } = await db.from('portal_documents').select('drive_file_id, application_id, doc_type, type_override, name').order('drive_file_id').range(from, from + 999);
+    const { data } = await db.from('portal_documents').select('drive_file_id, application_id, doc_type, type_override, name, portal_applications!inner(workspace)').eq('portal_applications.workspace', ws).order('drive_file_id').range(from, from + 999);
     out.push(...((data || []) as Doc[]));
     if (!data || data.length < 1000) break;
   }
@@ -77,8 +78,8 @@ export type Suggestion = { fileId: string; appId: string; student: string; file:
 
 /** Files whose filed type differs from what the reader sees, ready to accept. Files filed as "Other" come first. */
 export async function typeSuggestions(): Promise<Suggestion[]> {
-  const db = admin();
-  const { data: scans } = await db.from('portal_doc_scans').select('drive_file_id, application_id, detected_type, confidence, flags').eq('readable', true).not('detected_type', 'is', null).limit(2000);
+  const db = admin(), ws = await currentWorkspace();
+  const { data: scans } = await db.from('portal_doc_scans').select('drive_file_id, application_id, detected_type, confidence, flags, portal_applications!inner(workspace)').eq('portal_applications.workspace', ws).eq('readable', true).not('detected_type', 'is', null).limit(2000);
   const cand = (scans || []).filter((s) => Array.isArray(s.flags) && (s.flags as { kind: string }[]).some((f) => f.kind === 'type') && s.detected_type && s.detected_type !== 'Other');
   if (!cand.length) return [];
   const out: Suggestion[] = [];

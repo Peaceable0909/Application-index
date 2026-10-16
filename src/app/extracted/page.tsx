@@ -1,3 +1,4 @@
+import { currentWorkspace } from '@/lib/workspace';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requireStaff, canAccessApp, canSee } from '@/lib/auth';
@@ -41,13 +42,13 @@ export default async function Extracted({ searchParams }: { searchParams: Promis
   }
 
   // ---- landing: search + who's been extracted ----
-  const q = (sp.q || '').trim();
+  const q = (sp.q || '').trim(), ws = await currentWorkspace();
   const [{ data: people }, { data: hits }, { data: recent }, { count: total }, { count: done }] = await Promise.all([
-    q.length >= 2 ? db.from('portal_applications').select('application_id, name, school, programme, counselor, student_key').ilike('name', `%${q.replace(/[%,]/g, ' ')}%`).limit(30) : Promise.resolve({ data: [] as never[] }),
-    q.length >= 3 ? db.from('portal_doc_text').select('drive_file_id, application_id, text, portal_documents(name, doc_type, type_override), portal_applications(name, counselor)').ilike('text', `%${q.replace(/[%,]/g, ' ')}%`).limit(40) : Promise.resolve({ data: [] as never[] }),
-    db.from('portal_doc_text').select('application_id, extracted_at, portal_applications(name, school, counselor)').is('error', null).order('extracted_at', { ascending: false }).limit(300),
-    db.from('portal_documents').select('drive_file_id', { count: 'exact', head: true }),
-    db.from('portal_doc_text').select('drive_file_id', { count: 'exact', head: true }).is('error', null),
+    q.length >= 2 ? db.from('portal_applications').select('application_id, name, school, programme, counselor, student_key').eq('workspace', ws).ilike('name', `%${q.replace(/[%,]/g, ' ')}%`).limit(30) : Promise.resolve({ data: [] as never[] }),
+    q.length >= 3 ? db.from('portal_doc_text').select('drive_file_id, application_id, text, portal_documents(name, doc_type, type_override), portal_applications!inner(name, counselor)').eq('portal_applications.workspace', ws).ilike('text', `%${q.replace(/[%,]/g, ' ')}%`).limit(40) : Promise.resolve({ data: [] as never[] }),
+    db.from('portal_doc_text').select('application_id, extracted_at, portal_applications!inner(name, school, counselor)').eq('portal_applications.workspace', ws).is('error', null).order('extracted_at', { ascending: false }).limit(300),
+    db.from('portal_documents').select('drive_file_id, portal_applications!inner(workspace)', { count: 'exact', head: true }).eq('portal_applications.workspace', ws),
+    db.from('portal_doc_text').select('drive_file_id, portal_applications!inner(workspace)', { count: 'exact', head: true }).eq('portal_applications.workspace', ws).is('error', null),
   ]);
   const seen = new Set<string>(), uniqPeople = (people || []).filter((p) => canSee(staff, p.counselor) && !seen.has(p.student_key) && seen.add(p.student_key));
   const byStudent = new Map<string, { name: string; school: string | null; n: number; at: string }>();

@@ -1,3 +1,4 @@
+import { currentWorkspace } from '@/lib/workspace';
 import Link from 'next/link';
 import { requireTeam } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
@@ -19,12 +20,12 @@ const kb = (n: number | null) => (n ? `${Math.max(1, Math.round(n / 1024))} KB` 
 export default async function Documents({ searchParams }: { searchParams: Promise<{ type?: string; q?: string; msg?: string; err?: string }> }) {
   await requireTeam();
   const sp = await searchParams;
-  const db = admin();
+  const db = admin(), ws = await currentWorkspace();
   const scanOn = docScanEnabled();
   const [status, sugg] = scanOn ? await Promise.all([scanStatus(), typeSuggestions()]) : [null, []];
   const [{ rows }, { data: docs }] = await Promise.all([
-    loadStudents(),
-    db.from('portal_documents').select('*, portal_applications(name, application_id)').order('created_at', { ascending: false }).limit(1500),
+    loadStudents({ workspace: ws }),
+    db.from('portal_documents').select('*, portal_applications!inner(name, application_id)').eq('portal_applications.workspace', ws).order('created_at', { ascending: false }).limit(1500),
   ]);
   const judged = rows.filter((r) => r.judged);
   const stat = (t: string) => ({ present: judged.filter((r) => r.have.has(t)).length, missing: judged.filter((r) => r.missing.includes(t)).length });

@@ -198,7 +198,7 @@ export async function syncAll(opts: { full?: boolean } = {}) {
   await syncFolders(needFiles);
 
   try { await pushPendingMoves(); } catch { /* moves the sheet missed are tried again next time */ }
-  try { await refreshTasks(); } catch { /* tasks refresh again when the overview is opened */ }
+  try { const { listWorkspaces } = await import('./workspace'); for (const w of await listWorkspaces()) await refreshTasks(undefined, w.key); } catch { /* tasks refresh again when the overview is opened */ }
 
   return {
     total: all.length, created, formSubmissions: rows.length,

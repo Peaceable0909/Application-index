@@ -4,6 +4,7 @@
 //  applyMove    - does it: portal first (always works), then Sheet1, then the student is told. Everything is undoable.
 //  undoMoves    - puts back what a move changed.
 //  retrySheetMove - tries Sheet1 again for a move the sheet missed (for example before the Apps Script was updated).
+import { currentWorkspace } from '@/lib/workspace';
 import { revalidatePath } from 'next/cache';
 import { after } from 'next/server';
 import { randomUUID } from 'crypto';
@@ -32,11 +33,12 @@ async function plan(input: MoveInput, staff: Staff): Promise<Planned> {
   if (!ids.length) return { error: 'Pick at least one student first.' };
   const db = admin();
   const [{ data: allRaw }, picked] = await Promise.all([
-    db.from('portal_applications').select('application_id, name, email, school, programme, student_key').or('email.is.null,email.neq.test@example.com').limit(5000),
+    db.from('portal_applications').select('application_id, name, email, school, programme, student_key').eq('workspace', await currentWorkspace()).or('email.is.null,email.neq.test@example.com').limit(5000),
     rowsBy('application_id', ids),
   ]);
   const all = (allRaw || []) as Light[];
-  const visible = picked.filter((a) => canSee(staff, a.counselor));
+  const inWs = new Set((allRaw || []).map((a) => a.application_id));
+  const visible = picked.filter((a) => canSee(staff, a.counselor) && inWs.has(a.application_id));
   if (!visible.length) return { error: 'Those students were not found, or they are not assigned to you.' };
 
   const cat = buildCatalog(all);
@@ -206,7 +208,8 @@ export async function applyMove(input: ApplyInput): Promise<Applied> {
 
   revalidatePath('/'); revalidatePath('/applications'); revalidatePath('/student'); revalidatePath('/my');
   led.forEach((id) => revalidatePath(`/applications/${id}`));
-  after(() => refreshTasks().catch(() => {}));
+  const wsNow = await currentWorkspace();
+  after(() => refreshTasks(undefined, wsNow).catch(() => {}));
   return { ok: true, outcomes, moved, sheetPending, undo, left: p.preview.skipped };
 }
 

@@ -1,4 +1,5 @@
 import { admin } from './supabase';
+import { currentWorkspace } from './workspace';
 import { appIdsFor } from './auth';
 import type { Staff } from './auth';
 import { isStickerFile, plainBody } from './stickers';
@@ -13,7 +14,7 @@ export async function inboxScope(staff: Pick<Staff, 'role' | 'counselor_key'>): 
 export async function inboxUnread(staff: Pick<Staff, 'role' | 'counselor_key'>): Promise<number> {
   const scope = await inboxScope(staff);
   if (scope && !scope.length) return 0;
-  let q = admin().from('portal_student_msgs').select('id', { count: 'exact', head: true }).eq('from_student', true).is('staff_read_at', null);
+  let q = admin().from('portal_student_msgs').select('id, portal_applications!inner(workspace)', { count: 'exact', head: true }).eq('portal_applications.workspace', await currentWorkspace()).eq('from_student', true).is('staff_read_at', null);
   if (scope) q = q.in('application_id', scope);
   return (await q).count || 0;
 }
@@ -25,9 +26,9 @@ const previewOf = (m: MsgRow) => (m.deleted_at ? 'Message deleted' : plainPrevie
 
 /** The student conversations this staff member may see, newest first. `q` matches a student's name or anything said in the chat. */
 export async function inboxList(staff: Pick<Staff, 'role' | 'counselor_key'>, o: { q?: string; unread?: boolean } = {}): Promise<Convo[]> {
-  const db = admin(), scope = await inboxScope(staff);
+  const db = admin(), scope = await inboxScope(staff), ws = await currentWorkspace();
   if (scope && !scope.length) return [];
-  let q = db.from('portal_student_msgs').select('student_email, application_id, from_student, body, created_at, staff_read_at, student_read_at, att_mime, att_name, deleted_at').order('created_at', { ascending: false }).limit(2500);
+  let q = db.from('portal_student_msgs').select('student_email, application_id, from_student, body, created_at, staff_read_at, student_read_at, att_mime, att_name, deleted_at, portal_applications!inner(workspace)').eq('portal_applications.workspace', ws).order('created_at', { ascending: false }).limit(2500);
   if (scope) q = q.in('application_id', scope);
   const rows = ((await q).data || []) as MsgRow[];
   const threads = new Map<string, { last: MsgRow; unread: number }>();
@@ -42,7 +43,7 @@ export async function inboxList(staff: Pick<Staff, 'role' | 'counselor_key'>, o:
   const term = (o.q || '').trim().replace(/[%_,()]/g, ' ').slice(0, 60).toLowerCase();
   const said = new Set<string>();
   if (term.length >= 2) {
-    let sq = db.from('portal_student_msgs').select('student_email').or(`body.ilike.%${term}%,att_name.ilike.%${term}%`).is('deleted_at', null).limit(400);
+    let sq = db.from('portal_student_msgs').select('student_email, portal_applications!inner(workspace)').eq('portal_applications.workspace', ws).or(`body.ilike.%${term}%,att_name.ilike.%${term}%`).is('deleted_at', null).limit(400);
     if (scope) sq = sq.in('application_id', scope);
     for (const m of (await sq).data || []) said.add(m.student_email as string);
   }
