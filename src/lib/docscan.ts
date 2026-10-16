@@ -2,13 +2,14 @@ import { admin } from './supabase';
 import { callScript } from './appsScript';
 import { generateOnce } from './ai';
 import { ALL_DOC_TYPES } from './constants';
+import { parseMrz, redactForAi } from './mrz';
 
 // Opt-in: sends one document's TEXT (read by OCR inside your Apps Script) to Qwen. Off unless AI_DOC_SCAN=on in Vercel.
 export const docScanEnabled = () => process.env.AI_DOC_SCAN === 'on';
 
 export type ScanFlag = { kind: 'type' | 'name' | 'expiry' | 'unreadable'; text: string; detected?: string };
 export type Fact = { label: string; value: string };
-export type Scan = { drive_file_id: string; facts?: Fact[]; detected_type: string | null; confidence: number | null; person_name: string | null; issuer: string | null; expiry_date: string | null; flags: ScanFlag[]; readable: boolean };
+export type Scan = { drive_file_id: string; facts?: Fact[]; method?: 'mrz' | 'ai' | 'unreadable'; detected_type: string | null; confidence: number | null; person_name: string | null; issuer: string | null; expiry_date: string | null; flags: ScanFlag[]; readable: boolean };
 
 const words = (n: string) => n.toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter((t) => t.length >= 2);
 function nameOverlap(a: string, b: string) {
@@ -45,11 +46,17 @@ export async function scanOne(o: { appId: string; fileId: string; filedAs: strin
     return { drive_file_id: o.fileId, ...s } as Scan;
   };
 
-  const ex = await callScript<{ text: string; chars: number }>('extractText', { fileId: o.fileId });
-  if (ex.chars < 40) return save({ detected_type: null, confidence: null, person_name: null, issuer: null, expiry_date: null, readable: false, facts: [], flags: [{ kind: 'unreadable', text: 'Couldn’t read any text — the scan may be too faint, rotated or an unsupported file.' }] });
+  const ex = await callScript<{ text: string; chars: number; tail?: string }>('extractText', { fileId: o.fileId });
+  if (ex.chars < 40) return save({ detected_type: null, confidence: null, person_name: null, issuer: null, expiry_date: null, readable: false, method: 'unreadable', facts: [], flags: [{ kind: 'unreadable', text: 'Couldn’t read any text — the scan may be too faint, rotated or an unsupported file.' }] });
 
-  const r = await generateOnce<{ documentType: string; confidence: number; personName: string | null; issuer: string | null; expiryDate: string | null; facts: Fact[] }>({
-    kind: 'docscan', maxTokens: 500, system: SYSTEM, user: ex.text.slice(0, 4000),
+  // A passport is read exactly from its machine-readable lines (check digits prove the reading), so it needs no AI and no passport text leaves the portal.
+  const mrz = parseMrz(`${ex.text} ${ex.tail || ''}`);
+  type Read = { documentType: string; confidence: number; personName: string | null; issuer: string | null; expiryDate: string | null; facts: Fact[] };
+  const method: 'mrz' | 'ai' = mrz ? 'mrz' : 'ai';
+  const r: Read = mrz
+    ? { documentType: 'Passport', confidence: 0.99, personName: [mrz.given, mrz.surname].filter(Boolean).join(' ') || null, issuer: mrz.country || null, expiryDate: mrz.expiry, facts: [{ label: 'Nationality', value: mrz.nationality }, { label: 'Expires', value: mrz.expiry }].filter((f) => f.value) }
+    : await generateOnce<Read>({
+    kind: 'docscan', maxTokens: 500, system: SYSTEM, user: redactForAi(ex.text).slice(0, 4000),
     validate: (raw) => {
       const d = raw as Record<string, unknown>;
       const type = String(d?.documentType || '');
@@ -70,5 +77,5 @@ export async function scanOne(o: { appId: string; fileId: string; filedAs: strin
     if (days < 0) flags.push({ kind: 'expiry', text: `Passport appears expired (${r.expiryDate}).` });
     else if (days < 183) flags.push({ kind: 'expiry', text: `Passport expires within 6 months (${r.expiryDate}).` });
   }
-  return save({ detected_type: r.documentType, confidence: r.confidence, person_name: r.personName, issuer: r.issuer, expiry_date: r.expiryDate, readable: true, facts: r.facts, flags });
+  return save({ detected_type: r.documentType, confidence: r.confidence, person_name: r.personName, issuer: r.issuer, expiry_date: r.expiryDate, readable: true, method, facts: r.facts, flags });
 }

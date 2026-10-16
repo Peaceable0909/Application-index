@@ -56,16 +56,19 @@ export async function scanNext(actor: string, o: { skip?: string[]; max?: number
 
   let ok = 0, flagged = 0, stop: 'limit' | 'time' | null = budget <= 0 ? 'limit' : null;
   const failed: { id: string; error: string }[] = [];
-  for (const d of queue.slice(0, Math.min(o.max ?? 3, budget))) {
+  // Three files at a time: Google's text recognition and the AI both wait on the network, so reading side by side is about three times faster.
+  const batch = queue.slice(0, Math.min(o.max ?? 6, budget));
+  for (let i = 0; i < batch.length && !stop; i += 3) {
     if (Date.now() - started > (o.budgetMs ?? 35_000)) { stop = 'time'; break; }
-    try {
-      const r = await scanOne({ appId: d.application_id, fileId: d.drive_file_id, filedAs: eff(d), studentName: names.get(d.application_id) || '', actor });
-      ok++; if (r.flags.length) flagged++;
-    } catch (e) {
-      const msg = (e as Error).message || 'Failed';
-      if (/Daily AI limit/i.test(msg)) { stop = 'limit'; break; }
+    const wave = batch.slice(i, i + 3);
+    const results = await Promise.allSettled(wave.map((d) => scanOne({ appId: d.application_id, fileId: d.drive_file_id, filedAs: eff(d), studentName: names.get(d.application_id) || '', actor })));
+    for (let k = 0; k < wave.length; k++) {
+      const d = wave[k], res = results[k];
+      if (res.status === 'fulfilled') { ok++; if (res.value.flags.length) flagged++; continue; }
+      const msg = (res.reason as Error)?.message || 'Failed';
+      if (/Daily AI limit/i.test(msg)) { stop = 'limit'; continue; }
       if (FILE_PROBLEM.test(msg)) {
-        await db.from('portal_doc_scans').upsert({ drive_file_id: d.drive_file_id, application_id: d.application_id, detected_type: null, confidence: null, person_name: null, issuer: null, expiry_date: null, readable: false, flags: [{ kind: 'unreadable', text: `Couldn’t check this file: ${msg}` }], scanned_by: actor, created_at: new Date().toISOString() }, { onConflict: 'drive_file_id' });
+        await db.from('portal_doc_scans').upsert({ drive_file_id: d.drive_file_id, application_id: d.application_id, detected_type: null, confidence: null, person_name: null, issuer: null, expiry_date: null, readable: false, method: 'unreadable', flags: [{ kind: 'unreadable', text: `Couldn’t check this file: ${msg}` }], scanned_by: actor, created_at: new Date().toISOString() }, { onConflict: 'drive_file_id' });
         ok++;
       } else failed.push({ id: d.drive_file_id, error: msg });
     }
@@ -98,4 +101,34 @@ export async function typeSuggestions(): Promise<Suggestion[]> {
     }
   }
   return out.sort((a, b) => Number(b.filedAs === 'Other') - Number(a.filedAs === 'Other') || b.confidence - a.confidence);
+}
+
+export type Quality = { checked: number; mrz: number; ai: number; unreadable: number; byType: { type: string; n: number; unreadable: number }[]; worst: { fileId: string; appId: string; student: string; file: string; filedAs: string }[] };
+
+/** How well the reader is doing in this workspace: how many files it read exactly (passports), with AI, or could not read at all, and which kinds fail most. */
+export async function scanQuality(): Promise<Quality> {
+  const db = admin(), ws = await currentWorkspace();
+  const rows: { drive_file_id: string; application_id: string; detected_type: string | null; readable: boolean; method: string | null }[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data } = await db.from('portal_doc_scans').select('drive_file_id, application_id, detected_type, readable, method, portal_applications!inner(workspace)').eq('portal_applications.workspace', ws).order('drive_file_id').range(from, from + 999);
+    rows.push(...((data || []) as unknown as typeof rows));
+    if (!data || data.length < 1000) break;
+  }
+  const bad = rows.filter((r) => !r.readable);
+  const types = new Map<string, { n: number; unreadable: number }>();
+  const ids = bad.map((r) => r.drive_file_id);
+  const docs = new Map<string, { name: string; filed: string; app: string }>();
+  for (let i = 0; i < ids.length; i += 100) {
+    const { data } = await db.from('portal_documents').select('drive_file_id, name, doc_type, type_override, application_id').in('drive_file_id', ids.slice(i, i + 100));
+    (data || []).forEach((d) => docs.set(d.drive_file_id, { name: d.name, filed: d.type_override || d.doc_type, app: d.application_id }));
+  }
+  rows.forEach((r) => { const t = r.readable ? r.detected_type || 'Other' : docs.get(r.drive_file_id)?.filed || 'Other'; const c = types.get(t) || { n: 0, unreadable: 0 }; c.n++; if (!r.readable) c.unreadable++; types.set(t, c); });
+  const worstIds = bad.slice(0, 8), apps = [...new Set(worstIds.map((r) => r.application_id))];
+  const { data: names } = apps.length ? await db.from('portal_applications').select('application_id, name').in('application_id', apps) : { data: [] };
+  const nm = new Map((names || []).map((a) => [a.application_id, a.name]));
+  return {
+    checked: rows.length, mrz: rows.filter((r) => r.method === 'mrz').length, ai: rows.filter((r) => r.method === 'ai').length, unreadable: bad.length,
+    byType: [...types].map(([type, c]) => ({ type, ...c })).sort((a, b) => b.unreadable - a.unreadable || b.n - a.n).slice(0, 8),
+    worst: worstIds.map((r) => ({ fileId: r.drive_file_id, appId: r.application_id, student: nm.get(r.application_id) || '—', file: docs.get(r.drive_file_id)?.name || '', filedAs: docs.get(r.drive_file_id)?.filed || '' })),
+  };
 }

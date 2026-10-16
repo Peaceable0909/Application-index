@@ -12,7 +12,7 @@ import Fold from '@/components/Fold';
 import DocTypeSelect from '@/components/DocTypeSelect';
 import ScanAll from '@/components/ScanAll';
 import { docScanEnabled } from '@/lib/docscan';
-import { scanStatus, typeSuggestions } from '@/lib/scanQueue';
+import { scanQuality, scanStatus, typeSuggestions } from '@/lib/scanQueue';
 import { applyTypeSuggestions, setDocType, uploadDocument } from '../actions';
 
 const kb = (n: number | null) => (n ? `${Math.max(1, Math.round(n / 1024))} KB` : '');
@@ -22,7 +22,7 @@ export default async function Documents({ searchParams }: { searchParams: Promis
   const sp = await searchParams;
   const db = admin(), ws = await currentWorkspace(), REQUIRED_DOCS = await requiredDocs(ws), DOC_TYPES = [...REQUIRED_DOCS, ...ALL_DOC_TYPES.filter((t) => !REQUIRED_DOCS.includes(t))];
   const scanOn = docScanEnabled();
-  const [status, sugg] = scanOn ? await Promise.all([scanStatus(), typeSuggestions()]) : [null, []];
+  const [status, sugg, quality] = scanOn ? await Promise.all([scanStatus(), typeSuggestions(), scanQuality()]) : [null, [], null];
   const [{ rows }, { data: docs }] = await Promise.all([
     loadStudents({ workspace: ws }),
     db.from('portal_documents').select('*, portal_applications!inner(name, application_id)').eq('portal_applications.workspace', ws).order('created_at', { ascending: false }).limit(1500),
@@ -49,6 +49,23 @@ export default async function Documents({ searchParams }: { searchParams: Promis
       </div>
 
       {status && <ScanAll initial={status} />}
+      {quality && quality.checked > 0 && (
+        <div className="card">
+          <h2><Icon n="check-circle" size={17} /> How well the reader is doing</h2>
+          <p className="muted" style={{ marginTop: 0 }}>Passports are read exactly from their machine-readable lines, with no AI. Everything else is read by Google’s text recognition and then understood by the AI. This shows whether we need a stronger reader.</p>
+          <div className="grid g3" style={{ marginBottom: 10 }}>
+            <div><b style={{ fontSize: 22 }}>{quality.mrz}</b><div className="muted">passports read exactly</div></div>
+            <div><b style={{ fontSize: 22 }}>{quality.ai}</b><div className="muted">read with AI</div></div>
+            <div><b style={{ fontSize: 22, color: quality.unreadable ? 'var(--amber-ink)' : 'var(--green-ink)' }}>{quality.unreadable}</b><div className="muted">could not be read ({Math.round((quality.unreadable / quality.checked) * 100)}%)</div></div>
+          </div>
+          {quality.unreadable > 0 && <>
+            <div className="chips" style={{ marginBottom: 8 }}>{quality.byType.filter((t) => t.unreadable).map((t) => <span key={t.type} className="badge plain amber">{t.type}: {t.unreadable} of {t.n}</span>)}</div>
+            <details><summary className="muted" style={{ cursor: 'pointer' }}>Show some of the files</summary>
+              <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>{quality.worst.map((w) => <li key={w.fileId}><Link href={`/applications/${w.appId}/documents?file=${w.fileId}`}>{w.student}</Link> <span className="muted">· {w.filedAs} · {w.file}</span></li>)}</ul></details>
+          </>}
+          <p className="muted" style={{ margin: '10px 0 0' }}>{quality.unreadable / quality.checked > 0.12 ? 'More than 1 in 8 files could not be read. A stronger reader on a small server would help.' : 'Unreadable files are under 1 in 8, so a stronger reader is not needed yet.'}</p>
+        </div>
+      )}
       {sugg.length > 0 && (
         <div className="card">
           <h2><Icon n="spark" size={17} /> Suggested document types <span className="badge plain">{sugg.length}</span></h2>
