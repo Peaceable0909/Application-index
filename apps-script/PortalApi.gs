@@ -42,6 +42,7 @@ function portalDispatch_(e) {
     switch (e.parameter.action) {
       case 'listApplications': return portalJson_({ ok: true, data: portalListApplications_() });
       case 'createStudentFolder': return portalJson_({ ok: true, data: portalCreateStudentFolder_(p) });
+      case 'extractBlob':      return portalJson_({ ok: true, data: portalExtractBlob_(p) });
       case 'tabSupport':       return portalJson_({ ok: true, data: { tabs: true } });
       case 'listMaster':       return portalJson_({ ok: true, data: p.tab ? { tab: String(p.tab), rows: portalListMaster_(p.tab) } : portalListMaster_() });
       case 'updateMaster':     return portalJson_({ ok: true, data: portalUpdateMaster_(p) });
@@ -485,6 +486,26 @@ function portalExtractFull_(fileId) {
   text = String(text || '').replace(/\r/g, '').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
   const LIMIT = 120000;
   return { text: text.slice(0, LIMIT), chars: text.length, truncated: text.length > LIMIT, method: method };
+}
+
+// Reads text out of a file that was just uploaded in the portal (to teach the AI Brain). Nothing is kept in Drive.
+// p = { name, mimeType, base64 }. Plain text is read directly; PDFs, images and Word files go through Drive's OCR / converter.
+function portalExtractBlob_(p) {
+  const bytes = Utilities.base64Decode(String(p.base64 || ''));
+  if (!bytes.length) throw new Error('The file was empty');
+  if (bytes.length > 10 * 1024 * 1024) throw new Error('File too large to read (10MB max)');
+  const mime = p.mimeType || 'application/octet-stream', name = String(p.name || 'upload');
+  let text = '';
+  if (/^text\//.test(mime) || /\.(txt|md|csv)$/i.test(name)) {
+    text = Utilities.newBlob(bytes, 'text/plain', name).getDataAsString('UTF-8');
+  } else {
+    const tmp = Drive.Files.create({ name: 'portal-learn-temp', mimeType: 'application/vnd.google-apps.document' }, Utilities.newBlob(bytes, mime, name), { ocrLanguage: 'en' });
+    try { text = DocumentApp.openById(tmp.id).getBody().getText(); }
+    finally { try { Drive.Files.remove(tmp.id); } catch (e) { Logger.log('temp cleanup failed: ' + e); } }
+  }
+  text = String(text || '').replace(/\r/g, '').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  const LIMIT = 120000;
+  return { text: text.slice(0, LIMIT), chars: text.length, truncated: text.length > LIMIT };
 }
 
 // ---- Background triggers (no edits to your form's doPost needed) -------------

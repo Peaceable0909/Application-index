@@ -255,7 +255,9 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
   useEffect(() => { if (cur) document.getElementById(`msg-${cur}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, [cur]);
   let lastDay = '';
   const hasText = !!text.trim() || !!file;
-  const [bz, setBz] = useState(false), [bn, setBn] = useState<{ ok: boolean; text: string } | null>(null);
+  const [bz, setBz] = useState(false), [bn, setBn] = useState<{ ok: boolean; text: string } | null>(null), [auto, setAuto] = useState<{ on: boolean; paused: boolean } | null>(null);
+  useEffect(() => { if (as !== 'staff' || !brain) return; let dead = false; fetch(`/api/brain/chat?app=${encodeURIComponent(appId)}`, { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((j) => { if (!dead && j) setAuto({ on: !!j.auto, paused: !!j.paused }); }).catch(() => {}); return () => { dead = true; }; }, [appId, as, brain]);
+  async function togglePause() { if (!auto) return; const next = !auto.paused; setAuto({ ...auto, paused: next }); try { const r = await fetch('/api/brain/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ appId, paused: next }) }); if (!r.ok) setAuto({ ...auto, paused: !next }); } catch { setAuto({ ...auto, paused: !next }); } }
   /** Asks the AI Brain for a draft reply. It only fills the box: the counselor reads, edits and presses send. */
   async function suggest() {
     if (bz) return; setBz(true); setBn(null);
@@ -321,7 +323,7 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
                   {m.kind === 'file' && m.att && <a className="st-file" href={m.att.url ? `${m.att.url}${m.att.url.includes('?') ? '&' : '?'}download=1` : '#'} onClick={(e) => e.stopPropagation()}><span className="ic"><Icon n="file" size={20} /></span><span className="tx"><b>{m.att.name}</b><small>{kb(m.att.size)}</small></span><Icon n="download" size={16} /></a>}
                   {stk ? <Sticker s={stk} size="lg" /> : m.body && (callLn ? <p className={`callln ${callLn.missed ? 'missed' : ''}`}><Icon n={callLn.video ? 'video' : 'phone'} size={16} />{callLn.text}</p> : <p>{linkify(m.body, sq)}</p>)}
                 </>}
-                <span className="meta">{clock(m.at)}{m.mine && !m.deleted && <Ticks m={m} />}</span>
+                <span className="meta">{m.ai && <i className="ai-tag">AI assistant</i>}{clock(m.at)}{m.mine && !m.deleted && <Ticks m={m} />}</span>
                 {Object.keys(m.reactions).length > 0 && <div className="st-rx">{Object.entries(m.reactions).map(([e, v]) => <span key={e} className={v.me ? 'me' : ''}>{e}{v.n > 1 ? ` ${v.n}` : ''}</span>)}</div>}
                 {m.failed && <button className="st-retry" onClick={(e) => { e.stopPropagation(); setList((l) => l.filter((x) => x.id !== m.id)); void post({ body: m.body }, undefined); }}>Tap to retry</button>}
                 {menu === m.id && (
@@ -377,6 +379,7 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
         {as === 'staff' && brain && (
           <div className="brain-bar">
             <button type="button" className="brain-btn" onClick={suggest} disabled={bz}><Icon n="spark" size={14} />{bz ? 'Thinking…' : text.trim() ? 'Improve with the Brain' : 'Suggest a reply'}</button>
+            {auto?.on && <button type="button" className={`brain-btn ${auto.paused ? '' : 'live'}`} onClick={togglePause} title="Automatic replies for this student">{auto.paused ? 'AI replies: paused' : 'AI replies: on'}</button>}
             {bn && <span className={bn.ok ? 'brain-note' : 'brain-note warn'}>{bn.text}</span>}
           </div>
         )}
