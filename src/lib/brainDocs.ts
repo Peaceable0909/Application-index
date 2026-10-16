@@ -20,14 +20,14 @@ export function chunkText(text: string, size = 900): string[] {
 }
 
 /** The few passages of this workspace's files that best match the question (empty when nothing matches well). */
-export async function relevantPassages(workspace: string, school: string | null, query: string, max = 4): Promise<{ source: string; excerpt: string }[]> {
+export async function relevantPassages(workspace: string, school: string | null | undefined, query: string, max = 4): Promise<{ source: string; excerpt: string }[]> {
   const q = new Set(words(query));
   if (!q.size) return [];
   const { data } = await admin().from('portal_brain_docs').select('title, school, body').eq('workspace', workspace).eq('active', true).limit(40);
-  const key = schoolKey(school);
+  const key = schoolKey(school ?? null);
   const scored: { source: string; excerpt: string; score: number }[] = [];
   for (const d of data || []) {
-    if (d.school && schoolKey(d.school) !== key) continue;
+    if (school !== undefined && d.school && schoolKey(d.school) !== key) continue;   // undefined = no student yet (a new visitor): use every file
     for (const c of chunkText(d.body)) {
       const ws = words(c); if (!ws.length) continue;
       const hit = new Set(ws.filter((w) => q.has(w)));

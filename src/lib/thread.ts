@@ -17,6 +17,7 @@ import { nudge } from './realtime';
 import { staffFor } from './recipients';
 import { after } from 'next/server';
 import { maybeAutoReply } from './autoReply';
+import { maybeUpdateMemory } from './memory';
 
 export type Role = 'student' | 'staff';
 export type Actor = { role: Role; email: string; appId: string; studentEmail: string; staff?: Staff };
@@ -154,7 +155,7 @@ export async function postMessage(a: Actor, o: { body: string; replyTo?: string 
   const sent = file ? { name: file.name, type: file.type } : up ? { name: up.name, type: up.type } : null;
   const text = plainBody(body) || (sent?.type.startsWith('image/') ? (isStickerFile(sent.name, sent.type) ? 'Sticker' : 'Photo') : sent?.type.startsWith('audio/') ? 'Voice note' : (sent?.name || 'File'));
   if (a.role === 'student') {
-    if (body) { try { after(() => maybeAutoReply(a.appId, a.studentEmail)); } catch { void maybeAutoReply(a.appId, a.studentEmail); } }
+    if (body) { const work = async () => { await maybeAutoReply(a.appId, a.studentEmail); await maybeUpdateMemory(a.appId, a.studentEmail); }; try { after(work); } catch { void work(); } }
     // phone alert for the counselor (or the admins when nobody is assigned)
     try {
       const { data: ap } = await db.from('portal_applications').select('name, counselor').eq('application_id', a.appId).maybeSingle();

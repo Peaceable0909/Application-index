@@ -29,7 +29,7 @@ export async function middleware(req: NextRequest) {
     if (!ok) return NextResponse.redirect(new URL('/student', req.url));
   }
 
-  const open = pathname === '/login' || pathname === '/student/login' || pathname.startsWith('/auth/') || pathname.startsWith('/api/sync') || pathname === '/api/email/logo' || pwa;
+  const open = pathname === '/login' || pathname === '/student/login' || pathname.startsWith('/auth/') || pathname.startsWith('/api/sync') || pathname.startsWith('/hello/') || pathname.startsWith('/api/hello/') || pathname === '/api/email/logo' || pwa;
   if (!data.user && !open) {
     // The front door (/) and anything under /student is for students; every staff page sends you to the team sign-in.
     const toStudent = isStudentArea || pathname === '/' || (!!studentHost && host === studentHost);

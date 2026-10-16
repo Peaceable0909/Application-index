@@ -3,6 +3,7 @@ import { generateOnce, numbersWithin } from './ai';
 import { missingDocs, schoolKey, schoolDisplay } from './docs';
 import { requiredDocs } from './workspace';
 import { relevantPassages } from './brainDocs';
+import { loadMemory } from './memory';
 import { effType } from './docs';
 
 // The AI Brain: reads ONE student's file plus the team's written notes and drafts a reply for a staff member to check and send.
@@ -30,7 +31,7 @@ export async function brainContext(appId: string, question?: string) {
   const key = schoolKey(app.school);
   const rel = (notes || []).filter((n) => !n.school || schoolKey(n.school) === key);
   const email = (await db.from('portal_applications').select('email').eq('application_id', appId).maybeSingle()).data?.email?.toLowerCase() || '';
-  const { data: msgs } = email ? await db.from('portal_student_msgs').select('from_student, body, created_at').eq('student_email', email).order('created_at', { ascending: false }).limit(8) : { data: [] as { from_student: boolean; body: string; created_at: string }[] };
+  const { data: msgs } = email ? await db.from('portal_student_msgs').select('from_student, body, created_at').eq('student_email', email).order('created_at', { ascending: false }).limit(16) : { data: [] as { from_student: boolean; body: string; created_at: string }[] };
   const chat = (msgs || []).reverse().map((m) => ({ from: m.from_student ? 'student' : 'team', text: strip(m.body).slice(0, 400) }));
   const facts = {
     university: schoolDisplay(app.school) || null, programme: app.programme || null, stage: app.status || null, country: app.country || null,
@@ -38,14 +39,15 @@ export async function brainContext(appId: string, question?: string) {
     daysSinceSubmitted: app.submitted_at ? Math.floor((Date.now() - new Date(app.submitted_at).getTime()) / SOFT_DAY) : null,
     documentsReceived: [...new Set(have)], documentsStillMissing: missingDocs(have, await requiredDocs(app.workspace)), documentDetails: read,
   };
+  const memory = email ? await loadMemory(email) : null;
   const asked = chat.filter((m) => m.from === 'student').slice(-2).map((m) => m.text).join(' ');
   const files = await relevantPassages(app.workspace, app.school, `${asked} ${question || ''}`);
-  return { files, first: (app.name || '').split(/[\s,]+/).filter(Boolean)[0] || 'there', country: wsRow?.name || 'the UK', brief: wsRow?.brief || null, facts, notes: rel.map((n) => ({ topic: n.title, info: n.body })), chat };
+  return { memory, files, first: (app.name || '').split(/[\s,]+/).filter(Boolean)[0] || 'there', country: wsRow?.name || 'the UK', brief: wsRow?.brief || null, facts, notes: rel.map((n) => ({ topic: n.title, info: n.body })), chat };
 }
 
 const system = (country: string) =>
   `You write chat replies, for a human counselor to review, to a student of an education-advice company that helps students apply to universities in: ${country}. ` +
-  'Use ONLY the "facts", "countryBrief", "teamNotes" and "fileExcerpts" in the JSON, and the conversation. If the answer is not there, do not guess: set needsHuman to true and write a short, kind holding reply that says the team will check and come back. ' +
+  'Use ONLY the "facts", "studentMemory", "countryBrief", "teamNotes" and "fileExcerpts" in the JSON, and the conversation. "studentMemory" is what we already know about this student from earlier chats: use it to make the reply personal (their goals, what they asked before, what is still open) without reciting it back. If the answer is not there, do not guess: set needsHuman to true and write a short, kind holding reply that says the team will check and come back. ' +
   'Write like a warm, clear text message: plain English, at most 80 words, no signature, no headings, at most one emoji. Address the student as {{FIRST_NAME}} only when it feels natural. ' +
   'NEVER invent dates, deadlines, fees, links, phone numbers or email addresses, and NEVER promise or hint at admission, an offer, a visa or any outcome. Do not give legal or immigration advice. ' +
   'If the student sounds upset, unwell, unsafe or mentions money problems, set needsHuman to true. When asked for a document, name it exactly as in the facts. ' +
@@ -55,7 +57,7 @@ export async function suggestReply(appId: string, o: { question?: string; instru
   const ctx = await brainContext(appId, o.question);
   if (!ctx) throw new Error('Student not found.');
   const chat = o.question ? [...ctx.chat, { from: 'student', text: strip(o.question).slice(0, 400) }] : ctx.chat;
-  const userJson = JSON.stringify({ facts: ctx.facts, countryBrief: ctx.brief, teamNotes: ctx.notes, fileExcerpts: ctx.files, conversation: chat, counselorInstruction: o.instruction ? strip(o.instruction).slice(0, 200) : null });
+  const userJson = JSON.stringify({ studentMemory: ctx.memory, facts: ctx.facts, countryBrief: ctx.brief, teamNotes: ctx.notes, fileExcerpts: ctx.files, conversation: chat, counselorInstruction: o.instruction ? strip(o.instruction).slice(0, 200) : null });
   // Numbers the reply may contain: those already in the file, the notes or the conversation (so it can't invent a figure).
   const allowed = (userJson.match(/\d+/g) || []).map(Number);
   const r = await generateOnce<BrainReply>({
