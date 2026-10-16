@@ -1,3 +1,4 @@
+import { currentWorkspace } from '@/lib/workspace';
 import { Suspense } from 'react';
 import Link from 'next/link';
 import { after } from 'next/server';
@@ -21,12 +22,12 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const staff = await requireTeam();
   const sp = await searchParams;
   const db = admin();
-  const weekAgo = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
+  const weekAgo = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10), ws = await currentWorkspace();
   // three independent reads: run them together
   const [{ rows, all }, { data: prev }, { data: activity }] = await Promise.all([
-    loadStudents(),
-    db.from('portal_snapshots').select('*').lte('day', weekAgo).order('day', { ascending: false }).limit(1).maybeSingle(),
-    db.from('portal_activity').select('id,kind,detail,created_at,application_id,portal_applications(name)').order('created_at', { ascending: false }).limit(6),
+    loadStudents({ workspace: ws }),
+    db.from('portal_snapshots').select('*').eq('workspace', ws).lte('day', weekAgo).order('day', { ascending: false }).limit(1).maybeSingle(),
+    db.from('portal_activity').select('id,kind,detail,created_at,application_id,portal_applications!inner(name)').eq('portal_applications.workspace', ws).order('created_at', { ascending: false }).limit(6),
   ]);
   const live = rows.filter((r) => !(r.a.status && FINAL_STATUSES.includes(r.a.status)));
 
@@ -39,7 +40,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   };
   const today = new Date().toISOString().slice(0, 10);
   // saved after the page is sent, so it doesn't hold the page up
-  after(async () => { await db.from('portal_snapshots').upsert({ day: today, ...now }, { onConflict: 'day' }); });
+  after(async () => { await db.from('portal_snapshots').upsert({ day: today, workspace: ws, ...now }, { onConflict: 'day,workspace' }); });
   const delta = (k: 'total' | 'awaiting' | 'missing' | 'in_progress', goodWhenDown = false) => {
     if (!prev || !prev[k]) return <div className="delta"><small>trend starts after 7 days of data</small></div>;
     const pct = Math.round(((now[k] - prev[k]) / prev[k]) * 100);

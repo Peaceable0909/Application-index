@@ -3,6 +3,8 @@ import Btn from '@/components/Btn';
 import { admin } from '@/lib/supabase';
 import Link from 'next/link';
 import { addStaff, backupNow, removeStaff, sendTestEmails, testConnection } from '../actions';
+import { createWorkspace, setStaffWorkspaces } from '../workspaceActions';
+import { listWorkspaces } from '@/lib/workspace';
 import { listBackups } from '@/lib/backup';
 import Icon from '@/components/Icon';
 import PrivacyCheck from '@/components/PrivacyCheck';
@@ -14,6 +16,9 @@ export default async function Settings({ searchParams }: { searchParams: Promise
   const day = new Date(); day.setUTCHours(0, 0, 0, 0);
   const { data: usage } = await db.from('portal_ai_usage').select('kind,tokens,ok').gte('created_at', day.toISOString());
   const calls = (usage || []).length, tokens = (usage || []).reduce((n, u) => n + (u.tokens || 0), 0), failed = (usage || []).filter((u) => !u.ok).length;
+  const workspaces = await listWorkspaces();
+  const counts: Record<string, number> = {};
+  await Promise.all(workspaces.map(async (w) => { counts[w.key] = (await db.from('portal_applications').select('application_id', { count: 'exact', head: true }).eq('workspace', w.key)).count || 0; }));
   const [{ data: staff }] = await Promise.all([
     
     db.from('portal_staff').select('*').order('email'),
@@ -96,13 +101,30 @@ export default async function Settings({ searchParams }: { searchParams: Promise
         <Link href="/counselors" className="btn ghost">Manage counselors →</Link>
       </div>
 
+      {me.role === 'admin' && (
+        <div className="card">
+          <h2><Icon n="globe" size={17} /> Workspaces (countries)</h2>
+          <p className="muted" style={{ marginTop: 0 }}>Each workspace is its own list of students, documents, chats and AI Brain notes. Staff only see the workspaces you give them, and a switcher appears at the top once they have more than one.</p>
+          <table>
+            <thead><tr><th>Name</th><th>Sheet tab</th><th>Students</th></tr></thead>
+            <tbody>{workspaces.map((w) => <tr key={w.key}><td><b>{w.name}</b> <span className="muted">({w.key})</span></td><td>{w.master_tab}{w.extra_tab ? ` + ${w.extra_tab}` : ''}</td><td>{counts[w.key] || 0}</td></tr>)}</tbody>
+          </table>
+          <form action={createWorkspace} className="filters" style={{ marginTop: 12 }}>
+            <input name="name" placeholder="Country, e.g. Canada" required minLength={2} maxLength={60} />
+            <input name="tab" placeholder="Sheet tab, e.g. Canada" required />
+            <Btn className="ghost">Create workspace</Btn>
+          </form>
+        </div>
+      )}
+
       <div className="card">
         <h2>Portal staff</h2>
         <table>
-          <thead><tr><th>Email</th><th>Role</th><th /></tr></thead>
+          <thead><tr><th>Email</th><th>Role</th>{workspaces.length > 1 && <th>Workspaces</th>}<th /></tr></thead>
           <tbody>
             {(staff || []).map((s) => (
               <tr key={s.email}><td>{s.email}</td><td>{s.role}</td>
+                {workspaces.length > 1 && <td>{s.role === 'admin' ? <span className="muted">all</span> : me.role === 'admin' ? <form action={setStaffWorkspaces} className="filters" style={{ gap: 8 }}><input type="hidden" name="email" value={s.email} />{workspaces.map((w) => <label key={w.key} style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}><input type="checkbox" name="ws" value={w.key} defaultChecked={(s.workspaces || ['uk']).includes(w.key)} />{w.name}</label>)}<Btn className="ghost sm">Save</Btn></form> : (s.workspaces || ['uk']).join(', ')}</td>}
                 <td>{me.role === 'admin' && s.email !== me.email && <form action={removeStaff}><input type="hidden" name="email" value={s.email} /><Btn className="ghost">Remove</Btn></form>}</td></tr>
             ))}
           </tbody>

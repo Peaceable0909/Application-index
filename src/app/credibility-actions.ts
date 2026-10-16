@@ -1,4 +1,5 @@
 'use server';
+import { currentWorkspace } from '@/lib/workspace';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { admin } from '@/lib/supabase';
@@ -35,9 +36,10 @@ export async function addQuestion(f: FormData) {
   const c = cleanQuestion(f);
   if ('error' in c) back(c.error as string, true, 'questions');
   const db = admin();
-  const { data: last } = await db.from('portal_cred_questions').select('position').order('position', { ascending: false }).limit(1);
+  const ws = await currentWorkspace();
+  const { data: last } = await db.from('portal_cred_questions').select('position').eq('workspace', ws).order('position', { ascending: false }).limit(1);
   const q = c as Exclude<typeof c, { error: string }>;
-  const { error } = await db.from('portal_cred_questions').insert({ ...q, position: (last?.[0]?.position || 0) + 1, active: true, created_by: staff.email });
+  const { error } = await db.from('portal_cred_questions').insert({ ...q, workspace: ws, position: (last?.[0]?.position || 0) + 1, active: true, created_by: staff.email });
   if (error) back('Could not add the question.', true, 'questions');
   done(); back('Question added.', false, 'questions');
 }
@@ -47,20 +49,20 @@ export async function updateQuestion(f: FormData) {
   const id = s(f, 'id'), c = cleanQuestion(f);
   if ('error' in c) back(c.error as string, true, 'questions');
   const q = c as Exclude<typeof c, { error: string }>;
-  const { error } = await admin().from('portal_cred_questions').update({ ...q, updated_at: new Date().toISOString() }).eq('id', id);
+  const { error } = await admin().from('portal_cred_questions').update({ ...q, updated_at: new Date().toISOString() }).eq('id', id).eq('workspace', await currentWorkspace());
   if (error) back('Could not save the question.', true, 'questions');
   done(); back('Question saved.', false, 'questions');
 }
 
 export async function toggleQuestion(id: string, active: boolean): Promise<{ ok: boolean }> {
   await requireStaff();
-  const { error } = await admin().from('portal_cred_questions').update({ active, updated_at: new Date().toISOString() }).eq('id', id);
+  const { error } = await admin().from('portal_cred_questions').update({ active, updated_at: new Date().toISOString() }).eq('id', id).eq('workspace', await currentWorkspace());
   done(); return { ok: !error };
 }
 
 export async function deleteQuestion(id: string): Promise<{ ok: boolean }> {
   await requireStaff();
-  const { error } = await admin().from('portal_cred_questions').delete().eq('id', id);
+  const { error } = await admin().from('portal_cred_questions').delete().eq('id', id).eq('workspace', await currentWorkspace());
   done(); return { ok: !error };
 }
 
@@ -68,7 +70,7 @@ export async function deleteQuestion(id: string): Promise<{ ok: boolean }> {
 export async function moveQuestion(id: string, dir: -1 | 1): Promise<{ ok: boolean }> {
   await requireStaff();
   const db = admin();
-  const { data } = await db.from('portal_cred_questions').select('id').order('position').order('created_at');
+  const { data } = await db.from('portal_cred_questions').select('id').eq('workspace', await currentWorkspace()).order('position').order('created_at');
   const ids = (data || []).map((r) => r.id as string), i = ids.indexOf(id), j = i + dir;
   if (i < 0 || j < 0 || j >= ids.length) return { ok: false };
   [ids[i], ids[j]] = [ids[j], ids[i]];

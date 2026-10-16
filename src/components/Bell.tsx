@@ -1,3 +1,4 @@
+import { currentWorkspace } from '@/lib/workspace';
 import Link from 'next/link';
 import { admin } from '@/lib/supabase';
 import { Staff, appIdsFor } from '@/lib/auth';
@@ -6,13 +7,14 @@ import Icon from './Icon';
 /** Notification bell: open tasks (high priority first) and applications new since the admin's last visit. */
 export default async function Bell({ staff }: { staff: Staff }) {
   const db = admin();
+  const ws = await currentWorkspace();
   const mine = staff.role === 'counselor' ? await appIdsFor(staff.counselor_key) : null; // counselors only see their own students' items
-  const dueQ = db.from('portal_reminders').select('id', { count: 'exact', head: true }).eq('status', 'pending').lte('due_on', new Date().toISOString().slice(0, 10));
+  const dueQ = db.from('portal_reminders').select('id, portal_applications!inner(workspace)', { count: 'exact', head: true }).eq('portal_applications.workspace', ws).eq('status', 'pending').lte('due_on', new Date().toISOString().slice(0, 10));
   const { count: dueCount } = mine ? await dueQ.in('application_id', mine) : await dueQ;
   const [{ data: tasks, count }, { count: fresh }] = await Promise.all([
-    (() => { const q = db.from('portal_tasks').select('id,title,detail,application_id,priority', { count: 'exact' }).eq('status', 'open').order('priority').order('created_at', { ascending: false }).limit(5); return mine ? q.in('application_id', mine) : q; })(),
+    (() => { const q = db.from('portal_tasks').select('id,title,detail,application_id,priority, portal_applications!inner(workspace)', { count: 'exact' }).eq('portal_applications.workspace', ws).eq('status', 'open').order('priority').order('created_at', { ascending: false }).limit(5); return mine ? q.in('application_id', mine) : q; })(),
     staff.last_seen_at && !mine
-      ? db.from('portal_applications').select('application_id', { count: 'exact', head: true }).eq('has_raw', true).not('submitted_at', 'is', null).gt('created_at', staff.last_seen_at)
+      ? db.from('portal_applications').select('application_id', { count: 'exact', head: true }).eq('workspace', ws).eq('has_raw', true).not('submitted_at', 'is', null).gt('created_at', staff.last_seen_at)
       : Promise.resolve({ count: 0 }),
   ]);
   const n = (count || 0) + (dueCount || 0);

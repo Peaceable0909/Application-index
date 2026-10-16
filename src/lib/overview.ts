@@ -1,3 +1,4 @@
+import { currentWorkspace } from './workspace';
 import { admin } from './supabase';
 import { AppRow, attentionReasons, isFormSubmission } from './attention';
 import { effType, missingDocs } from './docs';
@@ -11,10 +12,10 @@ const COLS = 'application_id,name,email,phone,school,programme,country,city,coun
 const DAY = 864e5;
 
 /** One row per student (newest submission), with documents pooled across their submissions. */
-export async function loadStudents(opts: { dups?: boolean } = {}): Promise<{ rows: SRow[]; all: AppFull[] }> {
-  const db = admin();
+export async function loadStudents(opts: { dups?: boolean; workspace?: string } = {}): Promise<{ rows: SRow[]; all: AppFull[] }> {
+  const db = admin(), ws = opts.workspace ?? (await currentWorkspace());
   const [{ data: apps }, { data: docs }] = await Promise.all([
-    db.from('portal_applications').select(COLS).or('email.is.null,email.neq.test@example.com').order('submitted_at', { ascending: false, nullsFirst: false }).limit(5000),
+    db.from('portal_applications').select(COLS).eq('workspace', ws).or('email.is.null,email.neq.test@example.com').order('submitted_at', { ascending: false, nullsFirst: false }).limit(5000),
     db.from('portal_documents').select('application_id,doc_type,type_override').limit(50000),
   ]);
   const all = (apps || []) as AppFull[];
@@ -67,11 +68,11 @@ export function desiredTasks(rows: SRow[], now = Date.now()): TaskDraft[] {
 }
 
 /** Makes the stored list match reality without re-creating or duplicating anything. */
-export async function refreshTasks(rows?: SRow[]) {
-  const db = admin();
-  const list = rows || (await loadStudents()).rows;
+export async function refreshTasks(rows?: SRow[], workspace?: string) {
+  const db = admin(), ws = workspace ?? (await currentWorkspace());
+  const list = rows || (await loadStudents({ workspace: ws })).rows;
   const drafts = desiredTasks(list);
-  const { data: ex } = await db.from('portal_tasks').select('id,task_key,status,suppress_until,title,detail,priority');
+  const { data: ex } = await db.from('portal_tasks').select('id,task_key,status,suppress_until,title,detail,priority, portal_applications!inner(workspace)').eq('portal_applications.workspace', ws);
   const have = new Map((ex || []).map((t) => [t.task_key, t]));
   const want = new Set(drafts.map((d) => d.key));
   const now = new Date(), iso = now.toISOString();
@@ -103,11 +104,11 @@ export async function computeFacts(rows: SRow[], all: AppFull[], lastSeen: strin
   const now = Date.now();
   const since = lastSeen ? new Date(lastSeen).getTime() : now;
   const startOfDay = new Date(); startOfDay.setUTCHours(0, 0, 0, 0);
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = new Date().toISOString().slice(0, 10), ws = await currentWorkspace(), inWs = 'portal_applications!inner(workspace)';
   const [{ data: open }, { count: doneToday }, { count: remindersDue }] = await Promise.all([
-    db.from('portal_tasks').select('priority').eq('status', 'open'),
-    db.from('portal_tasks').select('id', { count: 'exact', head: true }).eq('status', 'done').gte('resolved_at', startOfDay.toISOString()),
-    db.from('portal_reminders').select('id', { count: 'exact', head: true }).eq('status', 'pending').lte('due_on', todayIso),
+    db.from('portal_tasks').select(`priority, ${inWs}`).eq('status', 'open').eq('portal_applications.workspace', ws),
+    db.from('portal_tasks').select(`id, ${inWs}`, { count: 'exact', head: true }).eq('status', 'done').gte('resolved_at', startOfDay.toISOString()).eq('portal_applications.workspace', ws),
+    db.from('portal_reminders').select(`id, ${inWs}`, { count: 'exact', head: true }).eq('status', 'pending').lte('due_on', todayIso).eq('portal_applications.workspace', ws),
   ]);
   const active = rows.filter((r) => !isFinal(r.a.status));
   return {
@@ -136,9 +137,9 @@ export const FACT_LABELS: Record<string, string> = {
 };
 
 export async function aiOverview(facts: Facts, force = false) {
-  const hash = hashOf(facts);
+  const hash = hashOf(facts), ws = await currentWorkspace();
   return askAi<{ overview: string }>({
-    kind: 'overview', cacheKey: 'overview', inputHash: hash, auto: true, force, maxTokens: 350,
+    kind: 'overview', cacheKey: ws === 'uk' ? 'overview' : `overview:${ws}`, inputHash: hash, auto: true, force, maxTokens: 350,
     system:
       'You write a short status overview for an admissions admin. Use ONLY the numbers in the JSON the user sends. ' +
       'Never write a number that is not in the JSON. Do not name any person. Do not make or suggest admissions decisions. ' +

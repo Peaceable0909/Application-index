@@ -13,7 +13,7 @@ export default async function CredibilityTraining() {
   const me = await currentStudent();
   if (!me) redirect('/student/login');
   const [settings, questions, { data: rows }] = await Promise.all([
-    loadSettings(), loadQuestions(true),
+    loadSettings(), loadQuestions(true, me.apps[0].workspace),
     admin().from('portal_cred_attempts').select('*').eq('student_email', me.email).order('created_at'),
   ]);
   const all = (rows || []) as Attempt[];

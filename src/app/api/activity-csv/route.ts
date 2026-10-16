@@ -1,3 +1,4 @@
+import { currentWorkspace } from '@/lib/workspace';
 import { NextResponse } from 'next/server';
 import { currentStaff } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
@@ -16,7 +17,7 @@ export async function GET(req: Request) {
     if (sp.get('actor')) q = q.eq('actor', sp.get('actor')!); if (day('from')) q = q.gte('created_at', day('from')!); if (day('to', true)) q = q.lte('created_at', day('to', true)!);
     const { data } = await q; lines = [['When', 'Who', 'Action', 'Target', 'Detail'].join(','), ...(data || []).map((r) => [r.created_at, r.actor, r.action, r.target, r.detail].map(cell).join(','))];
   } else {
-    let q = db.from('portal_activity').select('created_at, actor, kind, detail, portal_applications(name)').order('created_at', { ascending: false }).limit(5000);
+    let q = db.from('portal_activity').select('created_at, actor, kind, detail, portal_applications!inner(name)').eq('portal_applications.workspace', await currentWorkspace()).order('created_at', { ascending: false }).limit(5000);
     if (sp.get('kind')) q = q.eq('kind', sp.get('kind')!); if (sp.get('actor')) q = q.eq('actor', sp.get('actor')!); if (day('from')) q = q.gte('created_at', day('from')!); if (day('to', true)) q = q.lte('created_at', day('to', true)!);
     const { data } = await q; lines = [['When', 'Who', 'What', 'Student', 'Detail'].join(','), ...(data || []).map((r) => [r.created_at, r.actor, r.kind, (r.portal_applications as unknown as { name: string } | null)?.name, r.detail].map(cell).join(','))];
   }

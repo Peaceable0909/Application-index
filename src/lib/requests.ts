@@ -91,7 +91,9 @@ export function digestEmail(name: string, mine: SRow[], intro = DEFAULT_INTRO) {
 export async function sendWeeklyDigests() {
   if (process.env.WEEKLY_DIGEST !== 'on') return { skipped: 'WEEKLY_DIGEST is off' };
   const db = admin();
-  const [{ rows }, { data: counselors }] = await Promise.all([loadStudents(), db.from('portal_counselors').select('*')]);
+  const { listWorkspaces } = await import('./workspace');
+  const [pools, { data: counselors }] = await Promise.all([listWorkspaces().then((ws) => Promise.all(ws.map((w) => loadStudents({ workspace: w.key })))), db.from('portal_counselors').select('*')]);
+  const rows = pools.flatMap((p) => p.rows);
   const since = new Date(Date.now() - 6 * 864e5).toISOString();
   let sent = 0;
   for (const c of counselors || []) {

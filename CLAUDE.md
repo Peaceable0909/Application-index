@@ -19,3 +19,11 @@
 - Student conversations for staff live in the WhatsApp-style messenger at `/inbox` (`StaffMessenger` around `ChatThread`). Send people there, not to the old Messages tab, from alerts and links.
 - Attachments over ~3.5 MB go straight from the browser to the `chat-files` bucket (`src/lib/directUpload.ts`, `/api/thread/upload`), because a request to the server only carries ~4 MB. The bucket limit is 20 MB (migration 032). The GIF tab searches GIPHY through `/api/gif/search` and needs `GIPHY_API_KEY` in Vercel; without it only "From your phone" works.
 - Students can set their own profile picture (`portal_student_profiles`, migration 031). Show it with `studentPhoto(s)` wherever a student appears to staff.
+
+## Workspaces (countries)
+
+- Every student belongs to one **workspace** (`portal_applications.workspace`, default `uk`). Staff open only the workspaces in `portal_staff.workspaces` (admins: all). The switcher in the top bar sets a cookie; `currentWorkspace()` (`src/lib/workspace.ts`) is the one place to ask which one a request is in.
+- **Every list or count over students, or over anything that belongs to a student, must be scoped to the workspace.** On `portal_applications` use `.eq('workspace', ws)`. On child tables (tasks, reminders, activity, notes, documents, doc scans/text, student messages, cred attempts, folder suggestions) join with `portal_applications!inner(...)` and add `.eq('portal_applications.workspace', ws)`. A single student opened by id is already protected by `canAccessApp` / `guardApp` (use them on every page, action and API route that takes an application id).
+- Jobs with no signed-in person (cron, sync, digests) never call `currentWorkspace()`: they loop `listWorkspaces()` and pass the key explicitly (`loadStudents({ workspace })`, `refreshTasks(rows, ws)`).
+- Brain notes, interview slots and credibility questions have their own `workspace` column. A student sees the ones of their own workspace (`me.apps[0].workspace`).
+- A `student_key` for a non-default workspace is prefixed `"<ws>:"`, so the same person in two countries is never merged.

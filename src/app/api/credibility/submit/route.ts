@@ -16,7 +16,7 @@ export async function POST(req: Request) {
   if (answer.length < 10) return NextResponse.json({ ok: false, error: 'Write a little more so there is something to assess (at least a sentence).' }, { status: 400 });
   if (answer.length > 1500) return NextResponse.json({ ok: false, error: 'Please keep your answer under 1,500 characters. Interview answers should be focused.' }, { status: 400 });
   const db = admin();
-  const questions = await loadQuestions(true);
+  const questions = await loadQuestions(true, reg.workspace);
   const base = questions.find((x) => x.id === b.questionId);
   if (!base) return NextResponse.json({ ok: false, error: 'That question is not available.' }, { status: 404 });
   const q = { ...base, question: fillUniversity(base.question, reg.school), guidance: base.guidance ? fillUniversity(base.guidance, reg.school) : null, model_answer: base.model_answer ? fillUniversity(base.model_answer, reg.school) : null };

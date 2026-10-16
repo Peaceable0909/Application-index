@@ -1,3 +1,4 @@
+import { currentWorkspace } from '@/lib/workspace';
 import Link from 'next/link';
 import { admin } from '@/lib/supabase';
 import { Staff } from '@/lib/auth';
@@ -14,11 +15,12 @@ export default async function CommandCentre({ staff, rows, all }: { staff: Staff
   let lastSeen = staff.last_seen_at;
   if (!lastSeen) { lastSeen = new Date().toISOString(); await db.from('portal_staff').update({ last_seen_at: lastSeen }).eq('email', staff.email); }
 
-  await refreshTasks(rows);
+  const ws = await currentWorkspace();
+  await refreshTasks(rows, ws);
   const facts = await computeFacts(rows, all, lastSeen);
   const ai = await aiOverview(facts);
-  const { data: due } = await db.from('portal_reminders').select('id,application_id,due_on,note,portal_applications(name)').eq('status', 'pending').lte('due_on', new Date().toISOString().slice(0, 10)).order('due_on').limit(5);
-  const { data: tasks } = await db.from('portal_tasks').select('*').eq('status', 'open').order('priority').order('created_at', { ascending: false }).limit(6);
+  const { data: due } = await db.from('portal_reminders').select('id,application_id,due_on,note,portal_applications!inner(name)').eq('portal_applications.workspace', ws).eq('status', 'pending').lte('due_on', new Date().toISOString().slice(0, 10)).order('due_on').limit(5);
+  const { data: tasks } = await db.from('portal_tasks').select('*, portal_applications!inner(workspace)').eq('portal_applications.workspace', ws).eq('status', 'open').order('priority').order('created_at', { ascending: false }).limit(6);
 
   return (
     <>

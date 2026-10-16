@@ -15,7 +15,7 @@ const SOFT_DAY = 864e5;
 /** Everything the Brain may use for this student, with no name, email or phone. Returned with the text of what they last wrote. */
 export async function brainContext(appId: string) {
   const db = admin();
-  const { data: app } = await db.from('portal_applications').select('name, school, programme, status, country, interview, submitted_at, student_key, counselor, payment').eq('application_id', appId).maybeSingle();
+  const { data: app } = await db.from('portal_applications').select('name, school, programme, status, country, interview, submitted_at, student_key, counselor, payment, workspace').eq('application_id', appId).maybeSingle();
   if (!app) return null;
   const { data: sibs } = await db.from('portal_applications').select('application_id').eq('student_key', app.student_key);
   const ids = (sibs || []).map((s) => s.application_id);
@@ -23,7 +23,7 @@ export async function brainContext(appId: string) {
   const have = (docs || []).map(effType);
   const { data: scans } = await db.from('portal_doc_scans').select('detected_type, expiry_date, facts, flags').in('drive_file_id', (docs || []).map((d) => d.drive_file_id));
   const read = (scans || []).filter((s) => s.detected_type).map((s) => ({ document: s.detected_type as string, expires: s.expiry_date as string | null, details: ((s.facts || []) as { label: string; value: string }[]).map((f) => `${f.label}: ${f.value}`) }));
-  const { data: notes } = await db.from('portal_brain_notes').select('title, body, school').eq('active', true).limit(80);
+  const { data: notes } = await db.from('portal_brain_notes').select('title, body, school').eq('workspace', app.workspace).eq('active', true).limit(80);
   const key = schoolKey(app.school);
   const rel = (notes || []).filter((n) => !n.school || schoolKey(n.school) === key);
   const email = (await db.from('portal_applications').select('email').eq('application_id', appId).maybeSingle()).data?.email?.toLowerCase() || '';

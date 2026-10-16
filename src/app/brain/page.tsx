@@ -1,3 +1,4 @@
+import { currentWorkspace } from '@/lib/workspace';
 import { requireTeam } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
 import { brainEnabled } from '@/lib/brain';
@@ -11,10 +12,10 @@ export const metadata = { title: 'AI Brain' };
 export default async function Brain({ searchParams }: { searchParams: Promise<{ msg?: string; err?: string }> }) {
   await requireTeam();
   const sp = await searchParams;
-  const db = admin();
+  const db = admin(), ws = await currentWorkspace();
   const [{ data: notes }, { data: schools }] = await Promise.all([
-    db.from('portal_brain_notes').select('*').order('updated_at', { ascending: false }),
-    db.from('portal_applications').select('school').not('school', 'is', null).limit(1500),
+    db.from('portal_brain_notes').select('*').eq('workspace', ws).order('updated_at', { ascending: false }),
+    db.from('portal_applications').select('school').eq('workspace', ws).not('school', 'is', null).limit(1500),
   ]);
   const schoolList = [...new Set((schools || []).map((s) => (s.school || '').trim()).filter(Boolean))].sort().slice(0, 80);
   const on = brainEnabled();

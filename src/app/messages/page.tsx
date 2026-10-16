@@ -1,3 +1,4 @@
+import { currentWorkspace } from '@/lib/workspace';
 import Link from 'next/link';
 import Who from '@/components/Who';
 import Avatar from '@/components/Avatar';
@@ -12,14 +13,14 @@ export default async function Messages({ searchParams }: { searchParams: Promise
   const people = await loadPeople();
   await requireTeam();
   const sp = await searchParams;
-  const db = admin();
+  const db = admin(), ws = await currentWorkspace();
   const [{ data: msgs }, { data: counselors }, { data: students }] = await Promise.all([
-    db.from('portal_messages').select('*, portal_applications(name, application_id)').order('created_at', { ascending: false }).limit(300),
+    db.from('portal_messages').select('*, portal_applications(name, application_id, workspace)').order('created_at', { ascending: false }).limit(600),
     db.from('portal_counselors').select('name,email').not('email', 'is', null).order('name'),
-    sp.compose ? db.from('portal_applications').select('application_id,name,email').order('name').limit(2000) : Promise.resolve({ data: [] as { application_id: string; name: string; email: string | null }[] }),
+    sp.compose ? db.from('portal_applications').select('application_id,name,email').eq('workspace', ws).order('name').limit(2000) : Promise.resolve({ data: [] as { application_id: string; name: string; email: string | null }[] }),
   ]);
   const q = (sp.q || '').toLowerCase();
-  const list = (msgs || []).filter((m) => !q || [m.subject, m.to_email, m.body, (m.portal_applications as { name?: string } | null)?.name].some((v) => v?.toLowerCase().includes(q)));
+  const list = (msgs || []).filter((m) => { const a = m.portal_applications as { workspace?: string } | null; return !a || a.workspace === ws; }).slice(0, 300).filter((m) => !q || [m.subject, m.to_email, m.body, (m.portal_applications as { name?: string } | null)?.name].some((v) => v?.toLowerCase().includes(q)));
 
   return (
     <>

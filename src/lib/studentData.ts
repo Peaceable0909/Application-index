@@ -37,7 +37,7 @@ export async function loadStudentData(me: StudentView) {
 
   // interview training
   const [{ data: openSlots }, { data: myB }] = await Promise.all([
-    db.from('portal_interview_slots').select('*').is('cancelled_at', null).gt('starts_at', new Date(Date.now() + MIN_NOTICE_H * 3600_000).toISOString()).lt('starts_at', new Date(Date.now() + 28 * 864e5).toISOString()).order('starts_at').limit(40),
+    db.from('portal_interview_slots').select('*').eq('workspace', me.apps[0]?.workspace || 'uk').is('cancelled_at', null).gt('starts_at', new Date(Date.now() + MIN_NOTICE_H * 3600_000).toISOString()).lt('starts_at', new Date(Date.now() + 28 * 864e5).toISOString()).order('starts_at').limit(40),
     db.from('portal_interview_bookings').select('*, portal_interview_slots(*)').in('application_id', me.ids).neq('status', 'cancelled').order('created_at', { ascending: false }).limit(30),
   ]);
   const { data: allB } = (openSlots || []).length ? await db.from('portal_interview_bookings').select('slot_id, status').in('slot_id', (openSlots || []).map((x) => x.id)).in('status', ['booked', 'completed', 'no_show']) : { data: [] };
