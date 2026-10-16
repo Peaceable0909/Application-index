@@ -373,7 +373,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
                         <td style={{ minWidth: 200 }}>
                           {(() => { const sc = scans.get(d.drive_file_id); if (!sc) return (
                             <form action={scanDocs}><input type="hidden" name="id" value={id} /><input type="hidden" name="fileId" value={d.drive_file_id} /><input type="hidden" name="returnTo" value={ret('documents')} /><Btn className="ghost sm" data-busy="Reading the document and asking the AI…">AI check</Btn></form>); 
-                            if (!sc.flags.length) return <span className="badge plain green" title={`Detected: ${sc.detected_type}`}>Looks fine</span>;
+                            if (!sc.flags.length) return <div className="grid" style={{ gap: 6 }}><span className="badge plain green" title={`Detected: ${sc.detected_type}`}>Looks fine</span>{(sc.facts || []).map((f, i) => <small key={i} className="muted">{f.label}: <b style={{ color: 'var(--ink)' }}>{f.value}</b></small>)}</div>;
                             return <div className="grid" style={{ gap: 6 }}>{sc.flags.map((fl, i) => (
                               <div key={i}><span className="badge plain amber" style={{ whiteSpace: 'normal' }}>{fl.text}</span>
                                 {fl.kind === 'type' && fl.detected && <form action={setDocType} style={{ marginTop: 4 }}><input type="hidden" name="id" value={id} /><input type="hidden" name="fileId" value={d.drive_file_id} /><input type="hidden" name="docType" value={fl.detected} /><input type="hidden" name="returnTo" value={ret('documents')} /><Btn className="ghost sm">Use “{fl.detected}”</Btn></form>}

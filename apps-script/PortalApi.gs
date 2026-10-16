@@ -57,6 +57,7 @@ function portalDispatch_(e) {
       case 'uploadFile':       return portalJson_({ ok: true, data: portalUploadFile_(p) });
       case 'updateRow':        return portalJson_({ ok: true, data: portalUpdateRow_(p) });
       case 'sendEmail':        return portalJson_({ ok: true, data: portalSendEmail_(p) });
+      case 'auditSharing':     return portalJson_({ ok: true, data: portalAuditSharing_(p) });
       default: return portalJson_({ ok: false, error: 'unknown action' });
     }
   } catch (err) {
@@ -559,6 +560,35 @@ function lockDownExistingFolders() {
     n++;
   }
   Logger.log('Locked down ' + n + ' folders');
+}
+
+// READ-ONLY. Reports who can open the student folders: any folder or file reachable by a link (or the whole domain), and every
+// person with access who is not on the team list. p = { folderIds: [...], includeMain?: true }. Changes nothing.
+function portalAuditSharing_(p) {
+  const lower = function (s) { return String(s || '').trim().toLowerCase(); };
+  const team = SHEET_EDITORS.concat([RECIPIENT_EMAIL]).map(lower);
+  const owner = lower(Session.getEffectiveUser().getEmail());
+  const out = { checked: 0, files: 0, missing: [], openFolders: [], openFiles: [], openFileCount: 0, people: {}, owner: owner, team: team };
+  const note = function (list) { list.forEach(function (u) { const e = lower(u.getEmail()); if (e) out.people[e] = (out.people[e] || 0) + 1; }); };
+  if (p.includeMain) {
+    const main = getOrCreateFolder_(DRIVE_FOLDER_NAME);
+    out.main = { name: main.getName(), access: String(main.getSharingAccess()), editors: main.getEditors().map(function (u) { return lower(u.getEmail()); }), viewers: main.getViewers().map(function (u) { return lower(u.getEmail()); }) };
+  }
+  (p.folderIds || []).forEach(function (id) {
+    let f;
+    try { f = DriveApp.getFolderById(id); } catch (err) { out.missing.push(id); return; }
+    out.checked++;
+    const access = f.getSharingAccess();
+    if (access !== DriveApp.Access.PRIVATE) out.openFolders.push({ id: id, name: f.getName(), access: String(access) });
+    note(f.getEditors()); note(f.getViewers());
+    const files = f.getFiles();
+    while (files.hasNext()) {
+      const file = files.next();
+      out.files++;
+      if (file.getSharingAccess() !== DriveApp.Access.PRIVATE) { out.openFileCount++; if (out.openFiles.length < 30) out.openFiles.push({ id: file.getId(), name: file.getName(), folder: f.getName(), access: String(file.getSharingAccess()) }); }
+    }
+  });
+  return out;
 }
 
 // p = { to, cc?, subject, body, htmlBody?, replyTo? }

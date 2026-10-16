@@ -543,3 +543,8 @@ html, body { max-width:100%; overflow-x:clip; }
 .cf-actions { display:flex; gap:10px; justify-content:center; margin-top:18px; flex-wrap:wrap; animation:cfup .4s .95s both; }
 .cf-bar { position:absolute; left:0; bottom:0; height:4px; width:100%; background:linear-gradient(90deg,#16a34a,#2458d6); transform-origin:left; animation:cfbar linear forwards; } @keyframes cfbar { from { transform:scaleX(1) } to { transform:scaleX(0) } }
 @media (prefers-reduced-motion:reduce){ .cf-ring,.cf-tick { animation:none; stroke-dashoffset:0 } .cf-burst { display:none } .cf-card,.cf-fill { animation:none } }
+
+/* Document check across every student (Documents page) */
+.scanall-bar { height:8px; border-radius:99px; background:var(--line); overflow:hidden; margin:4px 0 10px; }
+.scanall-bar i { display:block; height:100%; border-radius:99px; background:linear-gradient(90deg,var(--blue),var(--green)); transition:width .5s cubic-bezier(.2,.8,.2,1); }
+.scanall-row { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; font-size:13.5px; }

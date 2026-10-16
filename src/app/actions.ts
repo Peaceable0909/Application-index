@@ -25,6 +25,7 @@ import { notifyAssigned } from '@/lib/notify';
 import { after } from 'next/server';
 import { canAccessApp } from '@/lib/auth';
 import { docScanEnabled, scanOne } from '@/lib/docscan';
+import { typeSuggestions } from '@/lib/scanQueue';
 import { draftEmail, PURPOSES, PurposeKey, TONES, ToneKey } from '@/lib/draft';
 import { aiOverview, aiStudentSummary, computeFacts, loadStudents, refreshTasks, studentFacts } from '@/lib/overview';
 import { getCatalog } from '@/lib/moveCatalog';
@@ -475,6 +476,22 @@ export async function scanDocs(f: FormData) {
   await log(id, staff.email, 'doc_scanned', { count: ok });
   const more = !fileId && (docs || []).length - scanned.size - ok > 0 ? ' Run it again for the remaining files.' : '';
   return back(id, failure ? `Checked ${ok}. Then: ${failure}` : `AI checked ${ok} document${ok === 1 ? '' : 's'}${flagged ? ` — ${flagged} need a look` : ' — nothing unusual'}.${more}`, !!failure, ret);
+}
+
+/** Accepts every confident suggestion for a file filed as "Other" (the person can still change any of them afterwards). */
+export async function applyTypeSuggestions() {
+  const staff = await requireTeam();
+  const list = (await typeSuggestions()).filter((x) => x.filedAs === 'Other' && x.confidence >= 0.85);
+  const db = admin();
+  let n = 0;
+  for (const x of list) {
+    const { data: doc } = await db.from('portal_documents').select('doc_type').eq('drive_file_id', x.fileId).single();
+    await db.from('portal_documents').update({ type_override: x.detected === doc?.doc_type ? null : x.detected }).eq('drive_file_id', x.fileId);
+    await log(x.appId, staff.email, 'doc_retyped', { name: x.file, type: x.detected });
+    n++;
+  }
+  revalidatePath('/documents');
+  redirect(`/documents?msg=${encodeURIComponent(n ? `Updated the type of ${n} document${n === 1 ? '' : 's'}.` : 'No confident suggestions to apply.')}`);
 }
 
 // ---- Linking Google Drive folders ----
