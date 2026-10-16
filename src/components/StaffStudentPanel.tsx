@@ -10,7 +10,7 @@ const TEMPLATES = ['Book your IELTS test', 'Pay your tuition deposit', 'Book you
 export type Item = { id: string; text: string; due: string | null; done: boolean };
 
 /** What the counselor sees of the student's in-portal chat and checklist. */
-export default function StaffStudentPanel({ appId, studentName, photo, msgs, otherInit, items }: { appId: string; studentName: string; photo?: string | null; msgs: ThreadMsg[]; otherInit?: { name: string; online: boolean; lastSeen: string | null }; items: Item[] }) {
+export default function StaffStudentPanel({ appId, studentName, photo, msgs, otherInit, items, brain }: { brain?: boolean; appId: string; studentName: string; photo?: string | null; msgs: ThreadMsg[]; otherInit?: { name: string; online: boolean; lastSeen: string | null }; items: Item[] }) {
   const router = useRouter();
   const [text, setText] = useState(''), [due, setDue] = useState(''), [busy, setBusy] = useState(false), [err, setErr] = useState('');
   async function add(t = text) {
@@ -23,7 +23,7 @@ export default function StaffStudentPanel({ appId, studentName, photo, msgs, oth
   return (
     <div className="grid g2" style={{ alignItems: 'start', marginBottom: 16 }}>
       <div className="card"><h2>Chat with {studentName.split(/[\s,]+/)[0]}</h2><p className="muted" style={{ marginTop: 0 }}>Replies appear in their student portal. We only email them if they’re away.</p>
-        <ChatThread as="staff" appId={appId} msgs={msgs} otherInit={otherInit} other={studentName.split(/[\s,]+/)[0]} avatar={{ name: studentName, url: photo || null, color: null }} /></div>
+        <ChatThread as="staff" brain={brain} appId={appId} msgs={msgs} otherInit={otherInit} other={studentName.split(/[\s,]+/)[0]} avatar={{ name: studentName, url: photo || null, color: null }} /></div>
       <div className="card"><h2>Student checklist</h2><p className="muted" style={{ marginTop: 0 }}>Small to-dos shown on the student’s home screen.</p>
         {items.length === 0 && <p className="muted">Nothing yet.</p>}
         <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 12px', display: 'grid', gap: 6 }}>

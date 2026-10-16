@@ -23,6 +23,7 @@ import { getOffer, milestones } from '@/lib/offer';
 import { saveOffer, inviteOneStudent, sendStudentReminder, saveDates, addNote, addReminder, addToMaster, completeReminder, createDraft, scanDocs, setDocType, dismissSuggestion, generateSummary, linkFolder, refreshDocuments, scanStudent, sendCounselorEmail, unlinkFolder, updateCounselor, updateRegent, updateStatus, uploadDocument } from '../../actions';
 import { loadThread } from '@/lib/thread';
 import StaffStudentPanel from '@/components/StaffStudentPanel';
+import { brainEnabled } from '@/lib/brain';
 import { studentPhoto } from '@/lib/studentPhotos';
 import type { ReactNode } from 'react';
 import MoveButton from '@/components/MoveSheet';
@@ -477,7 +478,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
         )}
 
         {tab === 'messages' && (<>
-          <StaffStudentPanel appId={id} studentName={app.name} photo={photo} msgs={chatRows.msgs} otherInit={chatRows.other} items={(checkRows || []) as { id: string; text: string; due: string | null; done: boolean }[]} />
+          <StaffStudentPanel brain={brainEnabled()} appId={id} studentName={app.name} photo={photo} msgs={chatRows.msgs} otherInit={chatRows.other} items={(checkRows || []) as { id: string; text: string; due: string | null; done: boolean }[]} />
           <div className="grid g2" style={{ alignItems: 'start' }}>
             <div>
             <div className="card ai">

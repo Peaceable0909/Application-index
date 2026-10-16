@@ -233,3 +233,9 @@ button.iconbtn { padding:0; }
   .msgr.open .msgr-list, .msgr:not(.open) .msgr-pane { display:none; }
   .wa .wa-back-btn { display:grid; }
 }
+
+/* AI Brain: suggest-a-reply bar above the staff composer */
+.brain-bar { display:flex; align-items:center; gap:10px; padding:6px 12px 0; flex-wrap:wrap; }
+.brain-btn { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--line-2); background:var(--card); color:var(--blue); font:600 12.5px/1 inherit; padding:7px 12px; border-radius:99px; cursor:pointer; transition:transform .15s var(--ease), box-shadow .15s; }
+.brain-btn:hover:not(:disabled) { transform:translateY(-1px); box-shadow:var(--shadow); } .brain-btn:disabled { opacity:.65; cursor:default; }
+.brain-note { font-size:12.5px; color:var(--muted); flex:1; min-width:0; } .brain-note.warn { color:var(--amber-ink); font-weight:600; }

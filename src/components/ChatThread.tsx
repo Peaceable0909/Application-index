@@ -90,7 +90,7 @@ function Voice({ m }: { m: Local }) {
   );
 }
 
-export default function ChatThread({ appId, msgs, as, other: otherName, otherInit, backHref, onBack, fill, avatar, title }: { appId: string; msgs: ThreadMsg[]; as: 'student' | 'staff'; other: string; otherInit?: Other; backHref?: string; onBack?: () => void; fill?: boolean; avatar?: { name: string; url: string | null; color: string | null }; title?: string }) {
+export default function ChatThread({ appId, msgs, as, other: otherName, otherInit, backHref, onBack, fill, avatar, title, brain }: { brain?: boolean; appId: string; msgs: ThreadMsg[]; as: 'student' | 'staff'; other: string; otherInit?: Other; backHref?: string; onBack?: () => void; fill?: boolean; avatar?: { name: string; url: string | null; color: string | null }; title?: string }) {
   const [list, setList] = useState<Local[]>(msgs);
   const [srvCall, setSrvCall] = useState<CallView | null>(null);
   const call = useCallMaybe();
@@ -255,6 +255,18 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
   useEffect(() => { if (cur) document.getElementById(`msg-${cur}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, [cur]);
   let lastDay = '';
   const hasText = !!text.trim() || !!file;
+  const [bz, setBz] = useState(false), [bn, setBn] = useState<{ ok: boolean; text: string } | null>(null);
+  /** Asks the AI Brain for a draft reply. It only fills the box: the counselor reads, edits and presses send. */
+  async function suggest() {
+    if (bz) return; setBz(true); setBn(null);
+    try {
+      const r = await fetch('/api/brain/reply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ appId, instruction: text.trim() || undefined }) });
+      const j = (await r.json()) as { reply?: string; needsHuman?: boolean; why?: string; error?: string };
+      if (!r.ok || !j.reply) setBn({ ok: false, text: j.error || 'No suggestion this time.' });
+      else { setText(j.reply); setBn({ ok: !j.needsHuman, text: j.needsHuman ? `Check this one carefully: ${j.why || 'the Brain wasn’t sure.'}` : j.why || 'Draft ready. Read it before you send.' }); ta.current?.focus(); }
+    } catch { setBn({ ok: false, text: 'Couldn’t reach the Brain. Try again.' }); }
+    setBz(false);
+  }
   const addEmoji = (e: string) => { setText((t) => t + e); ta.current?.focus(); };
   const GIF_TAB = EMOJI_TABS.length, STK_TAB = EMOJI_TABS.length + 1;
   const loadMine = useCallback(async () => {
@@ -361,6 +373,13 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
       {rec ? (
         <div className="wa-compose rec"><button type="button" className="wa-ic dark" onClick={() => stopRec(true)} aria-label="Cancel"><Icon n="trash" size={20} /></button><div className="wa-pill rec"><span className="dot" /><b>{mmss(rec.ms)}</b><span className="muted">Recording…</span></div><button type="button" className="wa-send" onClick={() => stopRec(false)} aria-label="Send voice note"><Icon n="send" size={20} /></button></div>
       ) : (
+        <>
+        {as === 'staff' && brain && (
+          <div className="brain-bar">
+            <button type="button" className="brain-btn" onClick={suggest} disabled={bz}><Icon n="spark" size={14} />{bz ? 'Thinking…' : text.trim() ? 'Improve with the Brain' : 'Suggest a reply'}</button>
+            {bn && <span className={bn.ok ? 'brain-note' : 'brain-note warn'}>{bn.text}</span>}
+          </div>
+        )}
         <form className="wa-compose" onClick={(e) => e.stopPropagation()} onSubmit={(e) => { e.preventDefault(); send(); }}>
           <div className="wa-pill">
             <button type="button" className="wa-ic dark" onClick={() => setEmoji(emoji === null ? 0 : null)} aria-label="Emoji"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><circle cx="12" cy="12" r="9.5" /><path d="M8 14.2c1 1.5 2.4 2.3 4 2.3s3-.8 4-2.3" /><circle cx="9" cy="9.8" r=".9" fill="currentColor" stroke="none" /><circle cx="15" cy="9.8" r=".9" fill="currentColor" stroke="none" /></svg></button>
@@ -370,6 +389,7 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
           </div>
           {hasText ? <button className="wa-send" aria-label="Send"><Icon n="send" size={20} /></button> : <button type="button" className="wa-send" onClick={startRec} aria-label="Record a voice note"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 15.5a3.5 3.5 0 003.5-3.5V6.5a3.5 3.5 0 00-7 0V12a3.5 3.5 0 003.5 3.5z" /><path d="M5.5 11.5a.9.9 0 011.8 0 4.7 4.7 0 009.4 0 .9.9 0 011.8 0 6.5 6.5 0 01-5.6 6.4V20h2a.9.9 0 010 1.8H9.1a.9.9 0 010-1.8h2v-2.1a6.5 6.5 0 01-5.6-6.4z" /></svg></button>}
         </form>
+        </>
       )}
       <input ref={pick} type="file" hidden accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" onChange={(e) => { const f = e.target.files?.[0]; if (f) setFile({ f, url: URL.createObjectURL(f) }); e.target.value = ''; }} />
       <input ref={stkPick} type="file" hidden multiple accept="image/gif,image/webp,image/png" onChange={(e) => { void addFiles(e.target.files); e.target.value = ''; }} />

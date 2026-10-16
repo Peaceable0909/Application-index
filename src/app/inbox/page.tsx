@@ -3,6 +3,7 @@ import { admin } from '@/lib/supabase';
 import { inboxList } from '@/lib/inbox';
 import { studentPhoto } from '@/lib/studentPhotos';
 import StaffMessenger from '@/components/StaffMessenger';
+import { brainEnabled } from '@/lib/brain';
 
 export const metadata = { title: 'Student chats' };
 
@@ -16,5 +17,5 @@ export default async function Inbox({ searchParams }: { searchParams: Promise<{ 
     if (hit) open = { appId: hit.appId, name: hit.name, photo: hit.photo };
     else { const { data: a } = await admin().from('portal_applications').select('name, email').eq('application_id', sp.app).maybeSingle(); if (a) open = { appId: sp.app, name: a.name, photo: await studentPhoto(a.email) }; }
   }
-  return <StaffMessenger initial={list} openApp={open} />;
+  return <StaffMessenger initial={list} openApp={open} brain={brainEnabled()} />;
 }

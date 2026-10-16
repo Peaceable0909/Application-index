@@ -18,7 +18,7 @@ function Ticks({ read }: { read: boolean }) {
 }
 
 /** Opens one student's conversation: loads what's there first (so old messages never "ping"), then hands over to the chat. */
-function Pane({ pick, onBack }: { pick: Pick; onBack: () => void }) {
+function Pane({ pick, onBack, brain }: { pick: Pick; onBack: () => void; brain: boolean }) {
   const [d, setD] = useState<{ msgs: ThreadMsg[]; other: Other } | null>(null), [bad, setBad] = useState(false);
   useEffect(() => {
     let dead = false;
@@ -27,7 +27,7 @@ function Pane({ pick, onBack }: { pick: Pick; onBack: () => void }) {
   }, [pick.appId]);
   if (bad) return <div className="msgr-empty"><b>Couldn’t open this chat</b><span>Check your connection and pick it again.</span></div>;
   if (!d) return <div className="msgr-empty"><span className="pspin2" /></div>;
-  return <ChatThread key={pick.appId} as="staff" appId={pick.appId} msgs={d.msgs} otherInit={d.other} other={pick.name.split(/[\s,]+/)[0]} title={pick.name} avatar={{ name: pick.name, url: pick.photo, color: null }} onBack={onBack} fill />;
+  return <ChatThread key={pick.appId} as="staff" brain={brain} appId={pick.appId} msgs={d.msgs} otherInit={d.other} other={pick.name.split(/[\s,]+/)[0]} title={pick.name} avatar={{ name: pick.name, url: pick.photo, color: null }} onBack={onBack} fill />;
 }
 
 function NewChat({ onClose, onOpen }: { onClose: () => void; onOpen: (p: Pick) => void }) {
@@ -49,7 +49,7 @@ function NewChat({ onClose, onOpen }: { onClose: () => void; onOpen: (p: Pick) =
 }
 
 /** Every student conversation in one place, laid out like WhatsApp: the chats on the left, the open chat on the right (one at a time on a phone). */
-export default function StaffMessenger({ initial, openApp }: { initial: Convo[]; openApp: Pick | null }) {
+export default function StaffMessenger({ initial, openApp, brain = false }: { initial: Convo[]; openApp: Pick | null; brain?: boolean }) {
   const [list, setList] = useState(initial), [q, setQ] = useState(''), [unreadOnly, setUnreadOnly] = useState(false), [creating, setCreating] = useState(false);
   const [active, setActive] = useState<Pick | null>(openApp);
   const qRef = useRef({ q, unreadOnly }); qRef.current = { q, unreadOnly };
@@ -103,7 +103,7 @@ export default function StaffMessenger({ initial, openApp }: { initial: Convo[];
         </div>
       </aside>
       <section className="msgr-pane">
-        {active ? <Pane key={active.appId} pick={active} onBack={() => open(null)} />
+        {active ? <Pane key={active.appId} pick={active} brain={brain} onBack={() => open(null)} />
           : <div className="msgr-empty"><span className="mi-ico"><Icon n="chat" size={30} /></span><b>Student chats</b><span>Pick a chat on the left, or start a new one. Messages, voice notes, photos and calls all happen here.</span><button className="btn" onClick={() => setCreating(true)}>New chat</button></div>}
       </section>
       {creating && <NewChat onClose={() => setCreating(false)} onOpen={(p) => { setCreating(false); open(p); }} />}
