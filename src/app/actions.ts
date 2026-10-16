@@ -12,7 +12,7 @@ import { ALL_DOC_TYPES, CAS_STATUSES, VISA_STATUSES } from '@/lib/constants';
 import { syncAll, syncFolders } from '@/lib/sync';
 import { tabArgs } from '@/lib/sheets';
 import { ensureFolder } from '@/lib/driveFolders';
-import { requiredDocs } from '@/lib/workspace';
+import { requiredDocs, workspacesFor } from '@/lib/workspace';
 import { wsKey } from '@/lib/workspaceCore';
 import { STATUSES } from '@/lib/constants';
 import { requestDocs, summarise, digestEmail, sendPaymentReminders, summariseReminders } from '@/lib/requests';
@@ -1358,3 +1358,40 @@ export async function staffRemoveChecklist(id: string): Promise<{ ok: boolean }>
   return { ok: true };
 }
 
+
+// ---- New-student chat: turn a lead into a student record ----
+/** Staff: makes the visitor a student of this workspace (their chat summary and needs become a pinned note) and adds them to the country's sheet tab. */
+export async function convertLead(f: FormData) {
+  const staff = await requireTeam();
+  const leadId = s(f, 'leadId');
+  const db = admin();
+  const { data: lead } = await db.from('portal_leads').select('*').eq('id', leadId).maybeSingle();
+  if (!lead) redirect('/leads?err=' + encodeURIComponent('That lead was not found.'));
+  if (!(await workspacesFor(staff)).some((w) => w.key === lead.workspace)) redirect('/leads?err=' + encodeURIComponent('You don’t have access to that workspace.'));
+  if (lead.converted_app) redirect(`/applications/${encodeURIComponent(lead.converted_app)}?msg=${encodeURIComponent('This lead is already a student.')}`);
+  const name = (lead.name || '').trim();
+  if (name.length < 2) redirect(`/leads?lead=${leadId}&err=${encodeURIComponent('Add their name first (type it in the box under “Details”).')}`);
+  const email = (lead.email || '').trim().toLowerCase() || null;
+  const key = wsKey(lead.workspace, studentKey(email, null, name));
+  const id = 'stub:' + createHash('sha1').update(key).digest('hex').slice(0, 16);
+  const { data: same } = email ? await db.from('portal_applications').select('application_id').eq('workspace', lead.workspace).ilike('email', email.replace(/[\\%_]/g, '\\$&')) : { data: [] as { application_id: string }[] };
+  const existing = same?.[0]?.application_id || null;
+  const appId = existing || id;
+  const now = new Date().toISOString();
+  if (!existing) {
+    const { error } = await db.from('portal_applications').upsert({
+      application_id: id, workspace: lead.workspace, name, email, phone: lead.phone || null, status: 'New Lead', progress: progressFor('New Lead'), submitted_at: now,
+      student_key: key, in_master: false, in_regent: false, has_raw: false, synced_at: now, last_activity_at: now,
+    }, { onConflict: 'application_id' });
+    if (error) redirect(`/leads?lead=${leadId}&err=${encodeURIComponent(`Could not save the student: ${error.message}`)}`);
+    await log(id, staff.email, 'student_added', { from: 'new-student chat' });
+  }
+  const body = ['From the new-student chat', lead.interest ? `Wants: ${lead.interest}` : '', lead.summary || '', (lead.needs as string[] | null)?.length ? `Needs:\n${(lead.needs as string[]).map((n) => `- ${n}`).join('\n')}` : ''].filter(Boolean).join('\n\n');
+  await db.from('portal_notes').upsert({ application_id: appId, author: 'ai', body, pinned: true, ai_key: 'lead' }, { onConflict: 'application_id,ai_key' });
+  if (email) await db.from('portal_student_memory').upsert({ student_email: email, summary: lead.summary || '', needs: lead.needs || [], interests: lead.interest ? { wants: lead.interest } : {}, updated_at: now }, { onConflict: 'student_email', ignoreDuplicates: true });
+  await db.from('portal_leads').update({ converted_app: appId, status: 'converted', staff_read_at: now }).eq('id', leadId);
+  let sheet = '';
+  if (!existing) { const r = await pushToMaster(appId, staff.email, 'New Lead').catch((e: Error) => `failed: ${e.message}`); sheet = r === 'added' ? ' Also added to the sheet.' : r === 'exists' ? '' : ` The sheet row was not added (${r}). Use “Add to master sheet” on the student to try again.`; }
+  revalidatePath('/leads'); revalidatePath('/applications');
+  redirect(`/applications/${encodeURIComponent(appId)}?msg=${encodeURIComponent(`${name} is now a student.${sheet}`)}`);
+}

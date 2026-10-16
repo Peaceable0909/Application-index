@@ -27,3 +27,9 @@
 - Jobs with no signed-in person (cron, sync, digests) never call `currentWorkspace()`: they loop `listWorkspaces()` and pass the key explicitly (`loadStudents({ workspace })`, `refreshTasks(rows, ws)`).
 - Brain notes, interview slots and credibility questions have their own `workspace` column. A student sees the ones of their own workspace (`me.apps[0].workspace`).
 - A `student_key` for a non-default workspace is prefixed `"<ws>:"`, so the same person in two countries is never merged.
+
+## AI Brain, new-student chat, memory
+
+- The Brain (`src/lib/brain.ts`) drafts replies from one student's file, the workspace's brief, notes and uploaded files (`portal_brain_docs`, passages picked by `src/lib/brainDocs.ts`), and the student's memory. It sends no names, emails or phone numbers to the model. Opt-in with `AI_BRAIN=on`. Automatic replies (`src/lib/autoReply.ts`) are a per-workspace switch, off by default; automatic messages are `by_ai` and shown with an "AI assistant" tag.
+- Memory (`src/lib/memory.ts`): after a student's new messages the conversation is summarised into `portal_student_memory` and one pinned note (`portal_notes.ai_key = 'memory'`, author `ai`). Notes with an `ai_key` are replaced, never piled up.
+- The new-student chat is public: `/hello/<workspace>` and `/api/hello/*` are open in `middleware.ts`, closed per workspace until an admin switches it on (`portal_workspaces.lead_chat`). It needs consent, is rate limited, has its own AI budget (`LEAD_DAILY_LIMIT`), takes contact details from what the visitor typed (not from the model) and never sees student data. Staff answer on `/leads`; a person's reply pauses the assistant for that chat.
