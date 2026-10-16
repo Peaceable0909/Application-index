@@ -9,7 +9,7 @@
 
 ## Brand
 
-- The product is **Extravel**. It was "WhiteRock Admissions" / "Admissions Portal" before: don't bring those names back in text, emails, notifications or calendar files. (The `@whiterock` part of calendar UIDs in `src/lib/interviews.ts` stays, it only has to remain stable.)
+- **Extravel** is the name of the portal (the product, its logo and the interface). The **company** is still **WhiteRock**. When text speaks as the company to the public or to students (the AI assistant introducing itself, the new-student chat, consent wording, emails written in the company's voice), say WhiteRock. Don't bring back the old product names "WhiteRock Admissions" / "Admissions Portal" for the portal itself. (The `@whiterock` part of calendar UIDs in `src/lib/interviews.ts` stays, it only has to remain stable.)
 - Show the logo with `<Logo />` (`src/components/Logo.tsx`), never as typed text or a redrawn SVG. It renders the dark-lettered file and swaps to the white-lettered one in dark mode; pass `light` on surfaces that are always dark (the staff sidebar, the email header). All brand files live in `public/brand` and `public/pwa`, and `/brand/*` is public on purpose (sign-in pages and mail apps load it without a session).
 - The opening intro is `src/components/Splash.tsx`: it plays `public/brand/extravel-intro.gif` for the file's own length and falls back to a short shine when that file is missing. Replace the film by replacing the file under the same name.
 

@@ -3,7 +3,7 @@ import { admin } from '@/lib/supabase';
 import Logo from '@/components/Logo';
 import LeadChat from '@/components/LeadChat';
 
-export const metadata = { title: 'Chat with Extravel', robots: { index: false, follow: false } };
+export const metadata = { title: 'Chat with WhiteRock', robots: { index: false, follow: false } };
 
 /** Public: someone who wants to study abroad talks to the assistant. No sign-in, no student data. */
 export default async function Hello({ params }: { params: Promise<{ ws: string }> }) {
@@ -13,7 +13,7 @@ export default async function Hello({ params }: { params: Promise<{ ws: string }
   return (
     <div className="hello">
       <div className="hello-card">
-        <header className="hello-head"><Logo height={34} alt="Extravel" /><div><b>Study in {w.name}</b><small>Ask anything. A counselor can join the chat.</small></div></header>
+        <header className="hello-head"><Logo height={34} alt="Extravel" /><div><b>Study in {w.name}</b><small>WhiteRock · ask anything. A counselor can join the chat.</small></div></header>
         <LeadChat ws={w.key} country={w.name} />
       </div>
     </div>

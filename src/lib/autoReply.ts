@@ -17,7 +17,7 @@ async function say(appId: string, studentEmail: string, body: string, kind: 'ans
   const db = admin(), now = new Date().toISOString();
   const { error } = await db.from('portal_student_msgs').insert({ student_email: studentEmail, application_id: appId, from_student: false, sender_email: AI_EMAIL, body, by_ai: true, staff_read_at: now });
   if (error) return;
-  try { await addNotice({ email: studentEmail, applicationId: appId, kind: 'message', title: 'New message from the Extravel assistant', body: body.slice(0, 140), href: '/student/messages', by: AI_EMAIL }); } catch { /* optional */ }
+  try { await addNotice({ email: studentEmail, applicationId: appId, kind: 'message', title: 'New message from the WhiteRock assistant', body: body.slice(0, 140), href: '/student/messages', by: AI_EMAIL }); } catch { /* optional */ }
   await nudge([{ role: 'student', email: studentEmail }], 'msg', { app: appId });
   await db.from('portal_activity').insert({ application_id: appId, actor: 'ai', kind: kind === 'answer' ? 'brain_replied' : 'brain_handoff', detail: {} });
 }
