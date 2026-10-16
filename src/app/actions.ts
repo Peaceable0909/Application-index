@@ -12,6 +12,7 @@ import { ALL_DOC_TYPES, CAS_STATUSES, VISA_STATUSES } from '@/lib/constants';
 import { syncAll, syncFolders } from '@/lib/sync';
 import { tabArgs } from '@/lib/sheets';
 import { ensureFolder } from '@/lib/driveFolders';
+import { requiredDocs } from '@/lib/workspace';
 import { wsKey } from '@/lib/workspaceCore';
 import { STATUSES } from '@/lib/constants';
 import { requestDocs, summarise, digestEmail, sendPaymentReminders, summariseReminders } from '@/lib/requests';
@@ -373,11 +374,18 @@ export async function refreshDocuments(f: FormData) {
   back(id, 'Documents refreshed from Drive', false, ret);
 }
 
+/** A document type is allowed if it is one of the standard ones or one of this country's required documents. */
+async function docTypeOk(appId: string, type: string): Promise<boolean> {
+  if ((ALL_DOC_TYPES as readonly string[]).includes(type)) return true;
+  const { data } = await admin().from('portal_applications').select('workspace').eq('application_id', appId).maybeSingle();
+  return !!data && (await requiredDocs(data.workspace)).includes(type);
+}
+
 export async function setDocType(f: FormData) {
   const staff = await requireStaff();
   const id = s(f, 'id'), fileId = s(f, 'fileId'), type = s(f, 'docType'), ret = s(f, 'returnTo');
   await guardApp(staff, id);
-  if (!(ALL_DOC_TYPES as readonly string[]).includes(type)) return back(id, 'Invalid document type', true, ret);
+  if (!(await docTypeOk(id, type))) return back(id, 'Invalid document type', true, ret);
   let shown: string = type;
   if (type === 'Other') { const l = cleanLabel(s(f, 'docLabel')); if (!l) return back(id, 'Name the kind of document (for example “Bank statement”).', true, ret); shown = resolveLabel(l).override || resolveLabel(l).docType; }
   const { data: doc } = await admin().from('portal_documents').select('name, doc_type, application_id').eq('drive_file_id', fileId).single();
@@ -455,7 +463,7 @@ export async function generateSummary(f: FormData) {
   const row = rows.find((r) => r.a.application_id === id) || rows.find((r) => all.some((x) => x.application_id === id && x.student_key === r.a.student_key));
   if (!row) return back(id, 'Student not found', true);
   const submissions = all.filter((x) => x.student_key === row.a.student_key).length;
-  const r = await aiStudentSummary(id, studentFacts(row.a, { have: row.have, docCount: row.docCount, missing: row.missing, judged: row.judged, submissions }), true);
+  const r = await aiStudentSummary(id, studentFacts(row.a, { have: row.have, docCount: row.docCount, missing: row.missing, judged: row.judged, submissions, required: row.required }), true);
   back(id, r.error ? `AI summary: ${r.error}` : 'AI summary generated', !!r.error);
 }
 
@@ -1021,7 +1029,7 @@ export async function studentUpload(f: FormData): Promise<{ ok: boolean; error?:
   if (!me) return { ok: false, error: 'Please sign in again.' };
   const appId = s(f, 'appId'), docType = s(f, 'docType'), file = f.get('file');
   if (!me.ids.includes(appId)) return { ok: false, error: 'That application isn’t yours.' };
-  if (!(ALL_DOC_TYPES as readonly string[]).includes(docType)) return { ok: false, error: 'Choose what kind of document this is.' };
+  if (!(await docTypeOk(appId, docType))) return { ok: false, error: 'Choose what kind of document this is.' };
   if (!(file instanceof File) || !file.size) return { ok: false, error: 'Choose a file first.' };
   if (!ALLOWED_EXT.test(file.name)) return { ok: false, error: 'Please upload a PDF, photo (JPG/PNG) or Word file.' };
   if (file.size > 4 * 1024 * 1024) return { ok: false, error: 'That file is over 4 MB. Please send a smaller or compressed copy.' };

@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Icon from './Icon';
+import { addBrainNote } from '@/app/brainActions';
 
 type S = { id: string; name: string; school: string | null; programme: string | null };
 type R = { reply?: string; needsHuman?: boolean; why?: string; error?: string };
@@ -36,6 +37,15 @@ export default function BrainTest({ on }: { on: boolean }) {
         <div className="callout" style={{ marginTop: 12, background: res.needsHuman ? 'var(--amber-soft)' : 'var(--blue-soft)' }}>
           <div style={{ flex: 1 }}><p style={{ margin: '0 0 6px', whiteSpace: 'pre-wrap' }}>{res.reply}</p><small className="muted">{res.needsHuman ? 'Needs a human: ' : 'Based on: '}{res.why}</small></div>
         </div>
+      )}
+      {res?.reply && (
+        <form action={addBrainNote} className="grid" style={{ gap: 8, marginTop: 12 }}>
+          <b>Teach the Brain</b>
+          <small className="muted" style={{ marginTop: -4 }}>Wrong or missing something? Write the right answer here and save it as a note. The Brain will use it from now on.</small>
+          <input name="title" required minLength={2} maxLength={80} defaultValue={question.slice(0, 80)} aria-label="Note title" />
+          <textarea name="body" rows={3} maxLength={1500} required defaultValue={res.reply} aria-label="Note" />
+          <div><button className="btn ghost">Save as a note</button></div>
+        </form>
       )}
     </div>
   );

@@ -1,7 +1,7 @@
 import { plainBody } from './stickers';
 import { admin } from './supabase';
 import { canAccessApp, canSee, Staff } from './auth';
-import { REQUIRED_DOCS } from './constants';
+import { requiredDocs } from './workspace';
 import { effType } from './docs';
 
 export const ATT_MAX = 4 * 1024 * 1024;
@@ -72,15 +72,17 @@ export async function shapeMessages(rows: Raw[], viewer: Staff): Promise<ChatMsg
   const appIds = [...new Set(refs.map((r) => r.id))];
   const [{ data: rep }, { data: apps }, { data: docs }] = await Promise.all([
     rids.length ? db.from('portal_chat_msgs').select('id, sender, body, deleted_at, att_name, refs').in('id', rids) : Promise.resolve({ data: [] as never[] }),
-    appIds.length ? db.from('portal_applications').select('application_id, name, school, programme, status, counselor, has_raw, submitted_at, drive_folder_id').in('application_id', appIds) : Promise.resolve({ data: [] as never[] }),
+    appIds.length ? db.from('portal_applications').select('application_id, workspace, name, school, programme, status, counselor, has_raw, submitted_at, drive_folder_id').in('application_id', appIds) : Promise.resolve({ data: [] as never[] }),
     appIds.length ? db.from('portal_documents').select('drive_file_id, application_id, name, doc_type, type_override').in('application_id', appIds) : Promise.resolve({ data: [] as never[] }),
   ]);
+  const reqBy = new Map(await Promise.all([...new Set((apps || []).map((a) => a.workspace as string))].map(async (w) => [w, await requiredDocs(w)] as const)));
   const cardsFor = (rs: Ref[] | null): Card[] => (rs || []).flatMap((r): Card[] => {
     const a = (apps || []).find((x) => x.application_id === r.id); if (!a) return [];
     const open = canSee(viewer, a.counselor);
     if (r.t === 'doc') { const d = (docs || []).find((x) => x.drive_file_id === r.f && x.application_id === r.id); return d ? [{ t: 'doc', id: r.id, f: r.f, name: d.name, type: effType(d), student: a.name, open }] : []; }
     const mine = (docs || []).filter((x) => x.application_id === r.id).map(effType);
     const judged = (a.has_raw && a.submitted_at) || a.drive_folder_id;
+    const REQUIRED_DOCS = reqBy.get(a.workspace as string) || [];
     const missing = judged ? REQUIRED_DOCS.filter((t) => !mine.includes(t)) : [];
     return [{ t: 'student', id: r.id, name: a.name, school: a.school, programme: a.programme, status: a.status, counselor: a.counselor, docs: open && judged ? { have: REQUIRED_DOCS.length - missing.length, total: REQUIRED_DOCS.length, missing } : null, open }];
   });

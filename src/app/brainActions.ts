@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { requireTeam } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
+import { ALL_DOC_TYPES } from '@/lib/constants';
 
 const txt = (f: FormData, k: string) => String(f.get(k) || '').trim();
 const done = (msg: string, err = false) => { revalidatePath('/brain'); redirect(`/brain?${err ? 'err' : 'msg'}=${encodeURIComponent(msg)}`); };
@@ -37,4 +38,21 @@ export async function saveCountryBrief(f: FormData) {
   const brief = txt(f, 'brief').slice(0, 3000) || null;
   await admin().from('portal_workspaces').update({ brief }).eq('key', await currentWorkspace());
   done('Saved. The Brain will use this for every student in this workspace.');
+}
+
+/** The documents students of this country must send, one per line. Standard names are matched ("passport" becomes "Passport"). Empty = the original list. */
+export async function saveRequiredDocs(f: FormData) {
+  await requireTeam();
+  const seen = new Set<string>(), list: string[] = [];
+  for (const raw of txt(f, 'docs').split(/[\n,]+/)) {
+    const t = raw.replace(/\s+/g, ' ').trim();
+    if (t.length < 2) continue;
+    if (t.length > 40) return done('Each document name must be 40 characters or fewer.', true);
+    const std = (ALL_DOC_TYPES as readonly string[]).find((x) => x.toLowerCase() === t.toLowerCase() && x !== 'Other');
+    const name = std || t.charAt(0).toUpperCase() + t.slice(1);
+    if (!seen.has(name.toLowerCase())) { seen.add(name.toLowerCase()); list.push(name); }
+  }
+  if (list.length > 15) return done('Please keep it to 15 documents or fewer.', true);
+  await admin().from('portal_workspaces').update({ required_docs: list.length ? list : null }).eq('key', await currentWorkspace());
+  done(list.length ? `Saved. Students of this country now need ${list.length} document${list.length === 1 ? '' : 's'}.` : 'Reset to the original list.');
 }

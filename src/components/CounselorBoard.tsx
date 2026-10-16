@@ -3,7 +3,8 @@ import { admin } from '@/lib/supabase';
 import { Staff } from '@/lib/auth';
 import { counselorKey, schoolShort } from '@/lib/docs';
 import { loadStudents } from '@/lib/overview';
-import { REQUIRED_DOCS, FINAL_STATUSES } from '@/lib/constants';
+import { FINAL_STATUSES } from '@/lib/constants';
+import { currentWorkspace, requiredDocs } from '@/lib/workspace';
 import { IN_PROGRESS, ago, describeActivity, initials, shortDate } from '@/lib/format';
 import { statusTone } from '@/lib/ui';
 import { bulkRequestDocs, completeReminder, completeTask, grantCounselorAccess, revokeCounselorAccess, sendDigest, snoozeTask } from '@/app/actions';
@@ -21,7 +22,7 @@ const VIEWS = [['', 'All'], ['attention', 'Needs attention'], ['missing', 'Missi
  * mode "admin" = a team member looking at a counselor's board (adds digest + access controls).
  */
 export default async function CounselorBoard({ staff, ckey, mode, basePath, sp }: { staff: Staff; ckey: string; mode: 'self' | 'admin'; basePath: string; sp: SP }) {
-  const db = admin();
+  const db = admin(), REQUIRED_DOCS = await requiredDocs(await currentWorkspace());
   const [{ rows }, { data: c }] = await Promise.all([loadStudents(), db.from('portal_counselors').select('*').eq('name_key', ckey).maybeSingle()]);
   const mine = rows.filter((r) => counselorKey(r.a.counselor) === ckey);
   const name = c?.name || mine[0]?.a.counselor || ckey;
