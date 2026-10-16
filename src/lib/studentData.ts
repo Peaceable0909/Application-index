@@ -32,7 +32,7 @@ export async function loadStudentData(me: StudentView) {
     const p = c?.email ? (profiles || []).find((x) => x.email.toLowerCase() === c.email!.toLowerCase()) : null;
     const counselor: Counselor = c ? { name: c.name, email: c.email, display: p?.display_name || c.name, title: p?.title || 'Admissions Counselor', avatar_url: p?.avatar_url || null, color: p?.color || null } : null;
     const offer = ((offerRows || []).filter((o) => ids.includes(o.application_id)).sort((x, y) => y.updated_at.localeCompare(x.updated_at))[0] as unknown as Offer | undefined) || null;
-    return { a, ids, docs, folderApp, counselor, missing: REQUIRED_DOCS.filter((t) => !docs.some((d) => d.type === t)), offer, canUpload: !!folderApp.drive_folder_id };
+    return { a, ids, docs, folderApp, counselor, missing: REQUIRED_DOCS.filter((t) => !docs.some((d) => d.type === t)), offer, canUpload: !!folderApp.drive_folder_id || folderApp.workspace !== 'uk' };
   });
 
   // interview training

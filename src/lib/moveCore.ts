@@ -2,17 +2,19 @@
 import { admin } from './supabase';
 import { callScript } from './appsScript';
 import { progressFor, schoolDisplay, schoolKey, schoolShort, studentKey } from './docs';
+import { tabArgs } from './sheets';
+import { wsKey } from './workspaceCore';
 import { progKey, sheetProgramme, sheetSchool, type Moved, type Pair } from './moves';
 
 export type Snap = { email: string; name: string; school: string; programme?: string };
 export type Row = {
   application_id: string; name: string; email: string | null; school: string | null; programme: string | null; status: string | null; student_key: string; counselor: string | null;
-  moved: Moved | null; in_master: boolean; in_regent: boolean; has_raw: boolean; master_data: Snap | null; regent_data: Snap | null; raw_data: Snap | null; preferred_name: string | null;
+  moved: Moved | null; in_master: boolean; in_regent: boolean; has_raw: boolean; master_data: Snap | null; regent_data: Snap | null; raw_data: Snap | null; preferred_name: string | null; workspace: string;
 };
 export type Group = { key: string; rows: Row[]; lead: Row };
 export type Light = { application_id: string; name: string; email: string | null; school: string | null; programme: string | null; student_key: string };
 
-export const COLS = 'application_id, name, email, school, programme, status, student_key, counselor, moved, in_master, in_regent, has_raw, master_data, regent_data, raw_data, preferred_name';
+export const COLS = 'application_id, name, email, school, programme, status, student_key, counselor, moved, in_master, in_regent, has_raw, master_data, regent_data, raw_data, preferred_name, workspace';
 export const chunk = <T,>(xs: T[], n: number) => Array.from({ length: Math.ceil(xs.length / n) }, (_, i) => xs.slice(i * n, i * n + n));
 
 export async function rowsBy(col: 'application_id' | 'student_key', vals: string[]): Promise<Row[]> {
@@ -43,7 +45,7 @@ export async function writeSheet(lead: Row, fields: Record<string, string>, by: 
   try {
     if (lead.in_master && lead.master_data) {
       const m = lead.master_data;
-      const r = await callScript<{ row: number; applied?: string[] }>('updateMaster', { email: m.email, name: m.name, school: m.school, fields, by });
+      const r = await callScript<{ row: number; applied?: string[] }>('updateMaster', { email: m.email, name: m.name, school: m.school, fields, by, ...(await tabArgs(lead.workspace)) });
       const applied = new Set(r?.applied ?? keys.filter((k) => k === 'status'));
       if (need.every((k) => applied.has(k))) return { state: need.length ? 'updated' : 'none', applied };
       return { state: 'pending', note: 'Sheet1 was not changed: the Apps Script needs its new version.', applied };
@@ -67,7 +69,7 @@ export async function commitRow(r: Row, to: { school: string | null; programme: 
     const s = pairFor('school', school, sheetSchool(r)), p = pairFor('programme', to.programme, sheetProgramme(r));
     return s || p ? { school: s, programme: p, at, by, ...(sheet === undefined ? {} : { sheet }) } : null;
   })();
-  const patch: Record<string, unknown> = { school, programme: to.programme, student_key: studentKey(r.email, school, r.name), moved, master_data: r.master_data };
+  const patch: Record<string, unknown> = { school, programme: to.programme, student_key: wsKey(r.workspace, studentKey(r.email, school, r.name)), moved, master_data: r.master_data };
   if (to.status !== r.status) { patch.status = to.status; patch.progress = progressFor(to.status); }
   await admin().from('portal_applications').update(patch).eq('application_id', r.application_id);
 }

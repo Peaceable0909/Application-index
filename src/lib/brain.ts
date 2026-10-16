@@ -23,6 +23,7 @@ export async function brainContext(appId: string) {
   const have = (docs || []).map(effType);
   const { data: scans } = await db.from('portal_doc_scans').select('detected_type, expiry_date, facts, flags').in('drive_file_id', (docs || []).map((d) => d.drive_file_id));
   const read = (scans || []).filter((s) => s.detected_type).map((s) => ({ document: s.detected_type as string, expires: s.expiry_date as string | null, details: ((s.facts || []) as { label: string; value: string }[]).map((f) => `${f.label}: ${f.value}`) }));
+  const { data: wsRow } = await db.from('portal_workspaces').select('name, brief').eq('key', app.workspace).maybeSingle();
   const { data: notes } = await db.from('portal_brain_notes').select('title, body, school').eq('workspace', app.workspace).eq('active', true).limit(80);
   const key = schoolKey(app.school);
   const rel = (notes || []).filter((n) => !n.school || schoolKey(n.school) === key);
@@ -35,12 +36,12 @@ export async function brainContext(appId: string) {
     daysSinceSubmitted: app.submitted_at ? Math.floor((Date.now() - new Date(app.submitted_at).getTime()) / SOFT_DAY) : null,
     documentsReceived: [...new Set(have)], documentsStillMissing: missingDocs(have), documentDetails: read,
   };
-  return { first: (app.name || '').split(/[\s,]+/).filter(Boolean)[0] || 'there', facts, notes: rel.map((n) => ({ topic: n.title, info: n.body })), chat };
+  return { first: (app.name || '').split(/[\s,]+/).filter(Boolean)[0] || 'there', country: wsRow?.name || 'the UK', brief: wsRow?.brief || null, facts, notes: rel.map((n) => ({ topic: n.title, info: n.body })), chat };
 }
 
-const SYSTEM =
-  'You write chat replies, for a human counselor to review, to a student of an education-advice company that helps with UK university applications. ' +
-  'Use ONLY the "facts" and "teamNotes" in the JSON, and the conversation. If the answer is not there, do not guess: set needsHuman to true and write a short, kind holding reply that says the team will check and come back. ' +
+const system = (country: string) =>
+  `You write chat replies, for a human counselor to review, to a student of an education-advice company that helps students apply to universities in: ${country}. ` +
+  'Use ONLY the "facts", "countryBrief" and "teamNotes" in the JSON, and the conversation. If the answer is not there, do not guess: set needsHuman to true and write a short, kind holding reply that says the team will check and come back. ' +
   'Write like a warm, clear text message: plain English, at most 80 words, no signature, no headings, at most one emoji. Address the student as {{FIRST_NAME}} only when it feels natural. ' +
   'NEVER invent dates, deadlines, fees, links, phone numbers or email addresses, and NEVER promise or hint at admission, an offer, a visa or any outcome. Do not give legal or immigration advice. ' +
   'If the student sounds upset, unwell, unsafe or mentions money problems, set needsHuman to true. When asked for a document, name it exactly as in the facts. ' +
@@ -50,11 +51,11 @@ export async function suggestReply(appId: string, o: { question?: string; instru
   const ctx = await brainContext(appId);
   if (!ctx) throw new Error('Student not found.');
   const chat = o.question ? [...ctx.chat, { from: 'student', text: strip(o.question).slice(0, 400) }] : ctx.chat;
-  const userJson = JSON.stringify({ facts: ctx.facts, teamNotes: ctx.notes, conversation: chat, counselorInstruction: o.instruction ? strip(o.instruction).slice(0, 200) : null });
+  const userJson = JSON.stringify({ facts: ctx.facts, countryBrief: ctx.brief, teamNotes: ctx.notes, conversation: chat, counselorInstruction: o.instruction ? strip(o.instruction).slice(0, 200) : null });
   // Numbers the reply may contain: those already in the file, the notes or the conversation (so it can't invent a figure).
   const allowed = (userJson.match(/\d+/g) || []).map(Number);
   const r = await generateOnce<BrainReply>({
-    kind: 'brain', maxTokens: 400, system: SYSTEM, user: userJson,
+    kind: 'brain', maxTokens: 400, system: system(ctx.country), user: userJson,
     validate: (raw) => {
       const d = raw as { reply?: unknown; needsHuman?: unknown; why?: unknown };
       if (typeof d?.reply !== 'string') return null;
