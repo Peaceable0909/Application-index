@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Icon from './Icon';
+import { ScanLoader } from './Loaders';
 
 type Status = { total: number; checked: number; unchecked: number; uncheckedOther: number; used: number; limit: number; budget: number };
 type Step = { ok: number; flagged: number; failed: { id: string; error: string }[]; stop: 'limit' | 'time' | 'off' | null; left: number; budget: number; error?: string };
@@ -52,8 +53,8 @@ export default function ScanAll({ initial }: { initial: Status }) {
         {!run
           ? <button type="button" className="btn primary" onClick={go} disabled={!st.unchecked || st.budget <= 0}>{st.unchecked ? `Check all unchecked (${st.unchecked})` : 'Everything is checked'}</button>
           : <button type="button" className="btn ghost" onClick={() => { stop.current = true; }}>Stop</button>}
-        {run && <span className="muted"><span className="pspin2" style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: 8 }} />Reading… {done} done{flagged ? `, ${flagged} flagged` : ''}</span>}
       </div>
+      {run && <ScanLoader label="Reading your documents" sub={`${done} done${flagged ? `, ${flagged} flagged` : ''} · keep this page open until it finishes`} />}
       {!run && st.unchecked > 0 && st.budget < st.unchecked && <p className="muted" style={{ margin: '10px 0 0' }}>Only {st.budget} AI calls are left today, so this will cover {st.budget} of {st.unchecked}. The limit is <code>AI_DAILY_LIMIT</code> in Vercel.</p>}
       {note && <p className={note.ok ? 'ok-t' : 'bad-t'} style={{ margin: '10px 0 0' }}>{note.text}</p>}
     </div>

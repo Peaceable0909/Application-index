@@ -548,3 +548,30 @@ html, body { max-width:100%; overflow-x:clip; }
 .scanall-bar { height:8px; border-radius:99px; background:var(--line); overflow:hidden; margin:4px 0 10px; }
 .scanall-bar i { display:block; height:100%; border-radius:99px; background:linear-gradient(90deg,var(--blue),var(--green)); transition:width .5s cubic-bezier(.2,.8,.2,1); }
 .scanall-row { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; font-size:13.5px; }
+
+/* ---- Loaders: document reading + interview ---- */
+.ldr { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; padding:36px 16px; text-align:center; }
+.ldr-txt { display:grid; gap:4px; } .ldr-txt b { color:var(--ink); font-size:15px; } .ldr-txt small { color:var(--muted); font-size:13px; }
+.ldr-txt b::after { content:''; display:inline-block; width:1.2em; text-align:left; animation:ldrDots 1.4s steps(4,end) infinite; }
+@keyframes ldrDots { 0% { content:''; } 25% { content:'.'; } 50% { content:'..'; } 75%,100% { content:'...'; } }
+.ldr-sheet { flex-shrink:0; position:relative; width:104px; height:132px; padding:18px 14px; border-radius:12px; background:var(--card); border:1px solid var(--line-2); box-shadow:var(--shadow); overflow:hidden; display:grid; align-content:start; gap:9px; animation:ldrFloat 2.6s ease-in-out infinite; }
+.ldr-sheet .ln { display:block; height:6px; border-radius:99px; background:var(--line-2); } .ldr-sheet .w40 { width:40%; } .ldr-sheet .w55 { width:55%; } .ldr-sheet .w70 { width:70%; } .ldr-sheet .w80 { width:80%; } .ldr-sheet .w85 { width:85%; } .ldr-sheet .w90 { width:90%; }
+.ldr-beam { position:absolute; left:0; right:0; top:0; height:34px; background:linear-gradient(to bottom, transparent, color-mix(in srgb, var(--blue) 26%, transparent) 70%, var(--blue)); border-bottom:2px solid var(--blue); animation:ldrBeam 1.9s cubic-bezier(.5,0,.5,1) infinite; }
+.ldr-chip { position:absolute; right:8px; width:20px; height:20px; border-radius:50%; display:grid; place-items:center; color:#fff; background:var(--green); opacity:0; animation:ldrChip 1.9s ease-in-out infinite; }
+.ldr-chip.c1 { top:24px; animation-delay:.25s; } .ldr-chip.c2 { top:58px; animation-delay:.7s; } .ldr-chip.c3 { top:92px; animation-delay:1.15s; }
+@keyframes ldrBeam { 0% { transform:translateY(-34px); } 100% { transform:translateY(132px); } }
+@keyframes ldrChip { 0%,15% { opacity:0; transform:scale(.4); } 35%,70% { opacity:1; transform:scale(1); } 100% { opacity:0; transform:scale(.8) translateY(-6px); } }
+@keyframes ldrFloat { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-4px); } }
+
+.ldr-stage { display:flex; align-items:center; gap:10px; }
+.ldr-who { width:52px; height:52px; border-radius:50%; display:grid; place-items:center; color:#fff; background:linear-gradient(135deg,var(--blue),var(--ink-2)); box-shadow:var(--shadow); animation:ldrPop 2.4s ease-in-out infinite; }
+.ldr-who.b { background:linear-gradient(135deg,var(--green),var(--blue)); animation-delay:.5s; }
+.ldr-mid { width:44px; height:44px; border-radius:50%; display:grid; place-items:center; color:var(--blue); background:var(--blue-soft); position:relative; }
+.ldr-mid::before, .ldr-mid::after { content:''; position:absolute; inset:0; border-radius:50%; border:2px solid var(--blue); opacity:0; animation:ldrRing 2.4s ease-out infinite; } .ldr-mid::after { animation-delay:1.2s; }
+.ldr-link { display:flex; gap:5px; } .ldr-link i { width:6px; height:6px; border-radius:50%; background:var(--blue); opacity:.2; animation:ldrDot 1.2s ease-in-out infinite; }
+.ldr-link i:nth-child(2) { animation-delay:.2s; } .ldr-link i:nth-child(3) { animation-delay:.4s; }
+.ldr-link.r i { animation-direction:reverse; }
+@keyframes ldrDot { 0%,100% { opacity:.2; transform:scale(.8); } 50% { opacity:1; transform:scale(1.25); } }
+@keyframes ldrRing { 0% { opacity:.7; transform:scale(.8); } 100% { opacity:0; transform:scale(1.9); } }
+@keyframes ldrPop { 0%,100% { transform:scale(1); } 50% { transform:scale(1.07); } }
+@media (prefers-reduced-motion:reduce) { .ldr-beam, .ldr-chip, .ldr-sheet, .ldr-who, .ldr-link i, .ldr-mid::before, .ldr-mid::after { animation:none !important; } .ldr-chip.c1 { opacity:1; } .ldr-link i { opacity:.7; } }
