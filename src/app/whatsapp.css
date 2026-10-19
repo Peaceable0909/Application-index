@@ -236,7 +236,7 @@ button.iconbtn { padding:0; }
 
 /* AI Brain: suggest-a-reply bar above the staff composer */
 .brain-bar { display:flex; align-items:center; gap:10px; padding:6px 12px 0; flex-wrap:wrap; }
-.brain-btn { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--line-2); background:var(--card); color:var(--blue); font:600 12.5px/1 inherit; padding:7px 12px; border-radius:99px; cursor:pointer; transition:transform .15s var(--ease), box-shadow .15s; }
+.brain-btn { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--line-2); background:var(--card); color:var(--blue); font-weight:600; font-size:12.5px; line-height:1; font-family:inherit; padding:7px 12px; border-radius:99px; cursor:pointer; transition:transform .15s var(--ease), box-shadow .15s; }
 .brain-btn:hover:not(:disabled) { transform:translateY(-1px); box-shadow:var(--shadow); } .brain-btn:disabled { opacity:.65; cursor:default; }
 .brain-note { font-size:12.5px; color:var(--muted); flex:1; min-width:0; } .brain-note.warn { color:var(--amber-ink); font-weight:600; }
 
@@ -266,7 +266,7 @@ button.iconbtn { padding:0; }
 .hello-consent { display:flex; gap:8px; align-items:flex-start; padding:8px 14px; font-size:12.5px; color:var(--muted); border-top:1px solid var(--line); }
 .hello-err { margin:0; padding:6px 14px 0; color:var(--red-ink); font-size:13px; font-weight:600; }
 .hello-send { display:flex; align-items:flex-end; gap:8px; padding:10px 12px calc(10px + env(safe-area-inset-bottom)); border-top:1px solid var(--line); }
-.hello-send textarea { flex:1; resize:none; max-height:120px; border:1px solid var(--line-2); border-radius:18px; padding:10px 14px; font:inherit; background:var(--card); color:var(--text); }
+.hello-send textarea { flex:1; resize:none; max-height:120px; border:1px solid var(--line-2); border-radius:18px; padding:10px 14px; font-family:inherit; font-size:15px; background:var(--card); color:var(--text); }
 .hello-go { width:44px; height:44px; border-radius:50%; border:0; background:var(--blue); color:#fff; display:grid; place-items:center; cursor:pointer; transition:transform .15s var(--ease), opacity .2s; } .hello-go:disabled { opacity:.45; cursor:default; } .hello-go:hover:not(:disabled) { transform:scale(1.06); }
 .hello-trap { position:absolute; left:-9999px; width:1px; height:1px; opacity:0; }
 @media (max-width:560px) { .hello { padding:0; } .hello-card { height:100dvh; border-radius:0; border:0; } }
