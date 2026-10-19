@@ -60,6 +60,7 @@ function portalDispatch_(e) {
       case 'uploadFile':       return portalJson_({ ok: true, data: portalUploadFile_(p) });
       case 'updateRow':        return portalJson_({ ok: true, data: portalUpdateRow_(p) });
       case 'sendEmail':        return portalJson_({ ok: true, data: portalSendEmail_(p) });
+      case 'lockDown':         return portalJson_({ ok: true, data: portalLockDown_(p) });
       case 'auditSharing':     return portalJson_({ ok: true, data: portalAuditSharing_(p) });
       default: return portalJson_({ ok: false, error: 'unknown action' });
     }
@@ -595,6 +596,24 @@ function portalCreateStudentFolder_(p) {
   return { id: f.getId(), url: f.getUrl(), name: f.getName() };
 }
 
+// Makes the given student folders (and any file inside that is still link-shared) private to the team. p = { folderIds: [...], main?: true }.
+// Anyone who only had a link loses access; the team (SHEET_EDITORS + RECIPIENT_EMAIL) keeps it. Called from the portal's Privacy check, a few folders at a time.
+function portalLockDown_(p) {
+  const out = { folders: 0, files: 0, failed: [] };
+  if (p.main) { try { const m = getOrCreateFolder_(DRIVE_FOLDER_NAME); if (m.getSharingAccess() !== DriveApp.Access.PRIVATE) m.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE); out.main = true; } catch (err) { out.failed.push({ id: 'main', error: String(err).slice(0, 120) }); } }
+  (p.folderIds || []).forEach(function (id) {
+    try {
+      const f = DriveApp.getFolderById(id);
+      if (f.getSharingAccess() !== DriveApp.Access.PRIVATE) f.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE);
+      portalShareFolderPrivately_(f);
+      const files = f.getFiles();
+      while (files.hasNext()) { const file = files.next(); if (file.getSharingAccess() !== DriveApp.Access.PRIVATE) { file.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE); out.files++; } }
+      out.folders++;
+    } catch (err) { out.failed.push({ id: id, error: String(err).slice(0, 120) }); }
+  });
+  return out;
+}
+
 // READ-ONLY. Reports who can open the student folders: any folder or file reachable by a link (or the whole domain), and every
 // person with access who is not on the team list. p = { folderIds: [...], includeMain?: true }. Changes nothing.
 function portalAuditSharing_(p) {
@@ -618,7 +637,7 @@ function portalAuditSharing_(p) {
     while (files.hasNext()) {
       const file = files.next();
       out.files++;
-      if (file.getSharingAccess() !== DriveApp.Access.PRIVATE) { out.openFileCount++; if (out.openFiles.length < 30) out.openFiles.push({ id: file.getId(), name: file.getName(), folder: f.getName(), access: String(file.getSharingAccess()) }); }
+      if (file.getSharingAccess() !== DriveApp.Access.PRIVATE) { out.openFileCount++; if (out.openFiles.length < 30) out.openFiles.push({ id: file.getId(), name: file.getName(), folder: f.getName(), folderId: id, access: String(file.getSharingAccess()) }); }
     }
   });
   return out;

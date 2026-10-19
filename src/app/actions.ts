@@ -70,7 +70,7 @@ export async function signIn(f: FormData) {
   const sb = await sessionClient();
   const { error } = await sb.auth.signInWithPassword({ email: s(f, 'email'), password: s(f, 'password') });
   if (error) redirect(`/login?error=${encodeURIComponent(error.message)}`);
-  redirect('/overview');
+  redirect('/');
 }
 export async function signInWithGoogle() {
   const h = await headers();
@@ -464,7 +464,7 @@ async function closeTask(f: FormData, status: 'done' | 'dismissed' | 'snoozed', 
   if (t?.application_id) await guardApp(staff, t.application_id);
   await db.from('portal_tasks').update({ status, suppress_until: new Date(now.getTime() + days * DAY_MS).toISOString(), resolved_at: now.toISOString(), resolved_by: staff.email, updated_at: now.toISOString() }).eq('id', id);
   if (t?.application_id) await log(t.application_id, staff.email, `task_${status}`, { title: t.title });
-  revalidatePath('/overview');
+  revalidatePath('/');
   revalidatePath('/');
   redirect(homeOr(f));
 }
