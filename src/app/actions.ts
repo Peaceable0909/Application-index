@@ -996,7 +996,7 @@ export async function requestStudentCode(f: FormData) {
       await sendMail({
         to: email, subject: `${code} is your sign-in code`, body: `Your sign-in code is ${code}. It expires in 60 minutes.`, eyebrow: 'Student portal', title: 'Your sign-in code', greeting: `Hi ${apps[0].name.split(/[\s,]+/)[0]},`, preheader: `Your code is ${code}`,
         blocks: [{ type: 'p', text: 'Use this code to sign in to your student portal.' }, { type: 'code', code: code!, note: 'It expires in 60 minutes and works once.' }, { type: 'note', text: 'If you didn’t ask for this, you can ignore this email. Nobody can sign in without the code.' }],
-        sign: { name: 'WhiteRock', title: 'Student portal' }, footerNote: 'This is an automatic message about your student portal sign-in.',
+        sign: { name: 'WhiteRock Educational Services', title: 'Student portal' }, footerNote: 'This is an automatic message about your student portal sign-in.',
       });
       await db.from('portal_notify_log').insert({ email, kind: 'student_code', ref: null });
     } catch { redirect('/student/login?error=' + encodeURIComponent('We couldn’t send the email right now. Please try again shortly.')); }
@@ -1231,7 +1231,7 @@ export async function createInterviewSlots(f: FormData) {
   for (const starts_at of starts) {
     if (!auto) { rows.push({ starts_at, teams_url: pasted!, calendar_event_id: null }); continue; }
     try {
-      const m = await callScript<{ url: string; eventId: string }>('createMeet', { startsAt: starts_at, durationMin: duration, summary: 'Interview training (WhiteRock)', description: 'Interview practice session for a student.' });
+      const m = await callScript<{ url: string; eventId: string }>('createMeet', { startsAt: starts_at, durationMin: duration, summary: 'Interview training (WhiteRock Educational Services)', description: 'Interview practice session for a student.' });
       rows.push({ starts_at, teams_url: m.url, calendar_event_id: m.eventId });
     } catch (e) {
       rethrow(e);

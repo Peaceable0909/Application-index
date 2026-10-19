@@ -13,7 +13,7 @@ export async function signFor(email: string | null | undefined, fallbackName?: s
   ]);
   if (p) return { name: shownName(p), title: p.title || (c ? 'Admissions Counselor' : 'Admissions Team'), phone: p.phone, email: p.email, avatar: p.avatar_url };
   if (c) return { name: c.name, title: 'Admissions Counselor', email: c.email };
-  return { name: fallbackName || 'WhiteRock', title: 'Admissions Team', email: e || null };
+  return { name: fallbackName || 'WhiteRock Educational Services', title: 'Admissions Team', email: e || null };
 }
 
 export type MailOpts = { to: string; subject: string; body: string; replyTo?: string; eyebrow?: string; title?: string; preheader?: string; blocks?: Block[]; greeting?: string; cta?: EmailSpec['cta']; sign?: Sign; footerNote?: string; from?: string; attachments?: { name: string; mime: string; base64: string }[] };
@@ -27,6 +27,6 @@ export async function sendMail(o: MailOpts) {
     eyebrow: o.eyebrow ?? 'Admissions update', title: o.title, greeting: o.greeting ?? derived.greeting,
     blocks: o.blocks ?? derived.blocks, cta: o.cta, sign, footerNote: o.footerNote,
   });
-  const text = `${o.body}\n\n—\n${sign.name}${sign.title ? `, ${sign.title}` : ''}\nWhiteRock · ${site()}`;
+  const text = `${o.body}\n\n—\n${sign.name}${sign.title ? `, ${sign.title}` : ''}\nWhiteRock Educational Services\nExtravel · ${site()}`;
   return callScript('sendEmail', { to: o.to, subject: o.subject, body: text, htmlBody: html, replyTo: o.replyTo || '', ...(o.attachments?.length ? { attachments: o.attachments } : {}) });
 }
