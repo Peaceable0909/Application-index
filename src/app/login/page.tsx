@@ -16,7 +16,8 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
   const blocked = data.user?.email;
   return (
     <div className="auth">
-      <div className="auth-logo"><Logo height={72} /></div>
+      <div className="auth-co">WhiteRock Educational Services</div>
+      <div className="auth-logo"><Logo height={64} /></div>
       <h1>Team <em>sign-in</em></h1>
       <p className="muted" style={{ margin: 0 }}>For admissions staff and counselors.</p>
       <div className="card">
@@ -45,6 +46,7 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
           {error && <div className="err">{error}<div style={{ marginTop: 6, fontSize: 12.5 }}>This page is for the admissions team. Students sign in at the <a href="/student/login">student portal</a>.</div></div>}
         </form>
       </div>
+      <p className="auth-foot">© {new Date().getFullYear()} WhiteRock Educational Services · Extravel team portal</p>
     </div>
   );
 }
