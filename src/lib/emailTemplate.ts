@@ -56,11 +56,11 @@ export function renderEmail(s: EmailSpec): string {
         ? `<img src="${esc(sign.avatar)}" width="48" height="48" alt="" style="display:block;border-radius:50%;object-fit:cover;width:48px;height:48px">`
         : `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="48" height="48" align="center" style="width:48px;height:48px;border-radius:50%;background:${NAVY};color:${GOLD_L};font:700 16px/48px ${SANS}">${esc(initials(sign.name))}</td></tr></table>`}</td>
       <td valign="top" style="padding-top:20px"><div style="font:700 15.5px/1.4 ${SANS};color:${NAVY}">${esc(sign.name)}</div>
-        <div style="font:400 13.5px/1.5 ${SANS};color:${MUTED}">${esc(sign.title || 'Admissions Counselor')} · WhiteRock</div>
+        <div style="font:400 13.5px/1.5 ${SANS};color:${MUTED}">${esc(sign.title || 'Admissions Counselor')} · WhiteRock Educational Services</div>
         <div style="font:400 13.5px/1.7 ${SANS};margin-top:6px">${sign.email ? `<a href="mailto:${esc(sign.email)}" style="color:${BLUE};text-decoration:none">${esc(sign.email)}</a>` : ''}${sign.phone ? ` &nbsp;·&nbsp; <a href="tel:${esc(sign.phone)}" style="color:${BLUE};text-decoration:none">${esc(sign.phone)}</a>` : ''}</div></td></tr></table>` : '';
   const cta = s.cta ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 6px"><tr><td align="center" bgcolor="${NAVY}" style="border-radius:12px;background:${NAVY}"><a href="${esc(s.cta.href)}" style="display:inline-block;padding:15px 30px;font:700 15px ${SANS};color:#ffffff;text-decoration:none;border-radius:12px;border-bottom:3px solid ${GOLD}">${esc(s.cta.label)} &nbsp;→</a></td></tr></table>` : '';
   return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"><title>${esc(s.title || 'WhiteRock')}</title>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"><title>${esc(s.title || 'WhiteRock Educational Services')}</title>
 <style>@media only screen and (max-width:620px){.wrap{width:100%!important}.px{padding-left:22px!important;padding-right:22px!important}.h1{font-size:25px!important}}a{word-break:break-word}</style></head>
 <body style="margin:0;padding:0;background:${BG};-webkit-text-size-adjust:100%">
 <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;mso-hide:all">${esc(s.preheader || '')}${'&nbsp;&zwnj;'.repeat(40)}</div>
@@ -68,7 +68,8 @@ export function renderEmail(s: EmailSpec): string {
   <table role="presentation" class="wrap" cellpadding="0" cellspacing="0" border="0" width="600" style="width:600px;max-width:600px">
     <tr><td style="background:${NAVY};background-image:linear-gradient(135deg,#0a1840 0%,#1b3f8f 100%);border-radius:18px 18px 0 0;padding:20px 32px" class="px">
       <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
-        <td valign="middle"><img src="${logo}" width="150" height="54" alt="Extravel" style="display:block;border:0;outline:none;width:150px;height:54px"></td>
+        <td valign="middle"><div style="font:700 19px/1.25 ${SANS};color:#ffffff;letter-spacing:.2px">WhiteRock Educational Services</div>
+          <img src="${logo}" width="76" height="27" alt="Extravel" style="display:block;border:0;outline:none;width:76px;height:27px;margin-top:8px;opacity:.9"></td>
         <td valign="middle" align="right" style="font:700 10.5px ${SANS};letter-spacing:.16em;text-transform:uppercase;color:${GOLD_L}">${esc(s.eyebrow || '')}</td></tr></table>
     </td></tr>
     <tr><td style="background:${GOLD};height:3px;font-size:0;line-height:0">&nbsp;</td></tr>
@@ -81,7 +82,8 @@ export function renderEmail(s: EmailSpec): string {
     </td></tr>
     <tr><td class="px" style="background:${PAPER};border:1px solid ${LINE};border-top:0;border-radius:0 0 18px 18px;padding:16px 36px;text-align:center">
       <div style="font:400 12.5px/1.6 ${SANS};color:${MUTED}">${esc(s.footerNote || 'Reply to this email to reach us directly.')}</div>
-      <div style="font:400 12px/1.6 ${SANS};color:#94a3b8;margin-top:4px">© ${year} WhiteRock · <a href="${site()}" style="color:#94a3b8;text-decoration:underline">${esc(site().replace(/^https?:\/\//, ''))}</a></div>
+      <div style="font:400 12px/1.6 ${SANS};color:#94a3b8;margin-top:4px">© ${year} WhiteRock Educational Services</div>
+      <div style="font:400 12px/1.6 ${SANS};color:#94a3b8;margin-top:2px">Sent through Extravel · <a href="${site()}" style="color:#94a3b8;text-decoration:underline">${esc(site().replace(/^https?:\/\//, ''))}</a></div>
     </td></tr>
   </table>
 </td></tr></table></body></html>`;

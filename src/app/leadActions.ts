@@ -30,7 +30,7 @@ export async function replyLead(f: FormData) {
   await db.from('portal_leads').update({ ai_paused: true, needs_human: false, status: lead.status === 'new' ? 'contacted' : lead.status, last_message_at: now, staff_read_at: now }).eq('id', lead.id);
   let sent = '';
   if (lead.email) {
-    try { await sendMail({ to: lead.email, subject: 'A reply from WhiteRock', body, replyTo: staff.email, eyebrow: 'Message', title: 'A reply to your question', greeting: `Hi ${(lead.name || '').split(/\s+/)[0] || 'there'},`, cta: { label: 'Continue the chat', href: `${site()}/hello/${lead.workspace}` } }); sent = ` Also emailed to ${lead.email}.`; }
+    try { await sendMail({ to: lead.email, subject: 'A reply from WhiteRock Educational Services', body, replyTo: staff.email, eyebrow: 'Message', title: 'A reply to your question', greeting: `Hi ${(lead.name || '').split(/\s+/)[0] || 'there'},`, cta: { label: 'Continue the chat', href: `${site()}/hello/${lead.workspace}` } }); sent = ` Also emailed to ${lead.email}.`; }
     catch { sent = ' (The email could not be sent.)'; }
   }
   go(lead.id, `Sent.${sent}`);
