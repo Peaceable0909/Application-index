@@ -49,7 +49,7 @@ function block(b: Block): string {
 }
 
 export function renderEmail(s: EmailSpec): string {
-  const logo = `${site()}/brand/extravel-email.png`, year = new Date().getFullYear();
+  const logo = `${site()}/brand/whiterock-email.png`, year = new Date().getFullYear();
   const sign = s.sign;
   const signHtml = sign ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:20px 0 0;border-top:1px solid ${LINE};padding-top:12px;width:100%"><tr>
       <td valign="top" style="width:60px;padding:20px 16px 0 0">${sign.avatar
@@ -68,8 +68,8 @@ export function renderEmail(s: EmailSpec): string {
   <table role="presentation" class="wrap" cellpadding="0" cellspacing="0" border="0" width="600" style="width:600px;max-width:600px">
     <tr><td style="background:${NAVY};background-image:linear-gradient(135deg,#0a1840 0%,#1b3f8f 100%);border-radius:18px 18px 0 0;padding:20px 32px" class="px">
       <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
-        <td valign="middle"><div style="font:700 19px/1.25 ${SANS};color:#ffffff;letter-spacing:.2px">WhiteRock Educational Services</div>
-          <img src="${logo}" width="76" height="27" alt="Extravel" style="display:block;border:0;outline:none;width:76px;height:27px;margin-top:8px;opacity:.9"></td>
+        <td valign="middle"><img src="${logo}" width="190" height="30" alt="WhiteRock" style="display:block;border:0;outline:none;width:190px;height:30px">
+          <div style="font:700 10.5px/1 ${SANS};color:#cbd5f0;letter-spacing:.22em;text-transform:uppercase;margin-top:9px">Educational Services</div></td>
         <td valign="middle" align="right" style="font:700 10.5px ${SANS};letter-spacing:.16em;text-transform:uppercase;color:${GOLD_L}">${esc(s.eyebrow || '')}</td></tr></table>
     </td></tr>
     <tr><td style="background:${GOLD};height:3px;font-size:0;line-height:0">&nbsp;</td></tr>
@@ -83,7 +83,7 @@ export function renderEmail(s: EmailSpec): string {
     <tr><td class="px" style="background:${PAPER};border:1px solid ${LINE};border-top:0;border-radius:0 0 18px 18px;padding:16px 36px;text-align:center">
       <div style="font:400 12.5px/1.6 ${SANS};color:${MUTED}">${esc(s.footerNote || 'Reply to this email to reach us directly.')}</div>
       <div style="font:400 12px/1.6 ${SANS};color:#94a3b8;margin-top:4px">© ${year} WhiteRock Educational Services</div>
-      <div style="font:400 12px/1.6 ${SANS};color:#94a3b8;margin-top:2px">Sent through Extravel · <a href="${site()}" style="color:#94a3b8;text-decoration:underline">${esc(site().replace(/^https?:\/\//, ''))}</a></div>
+      <div style="font:400 12px/1.6 ${SANS};color:#94a3b8;margin-top:2px"><a href="${site()}" style="color:#94a3b8;text-decoration:underline">${esc(site().replace(/^https?:\/\//, ''))}</a></div>
     </td></tr>
   </table>
 </td></tr></table></body></html>`;
