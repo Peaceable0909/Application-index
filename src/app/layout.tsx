@@ -43,13 +43,13 @@ const display = Instrument_Serif({ subsets: ['latin'], weight: '400', style: ['n
 const blurb = 'Applications, documents and counselors in one place.';
 export const metadata = {
   metadataBase: new URL(site()),
-  title: { default: 'Extravel', template: '%s · Extravel' },
+  title: { default: 'WhiteRock Educational Services', template: '%s · WhiteRock' },
   description: blurb,
   manifest: '/manifest.webmanifest',
   appleWebApp: { capable: true, title: 'Extravel', statusBarStyle: 'default' as const },
   icons: { icon: [{ url: '/brand/favicon.png', type: 'image/png' }], apple: '/brand/apple-touch-icon.png' },
-  openGraph: { siteName: 'Extravel', title: 'Extravel', description: blurb, images: [{ url: '/brand/og.png', width: 1200, height: 630 }] },
-  twitter: { card: 'summary_large_image' as const, title: 'Extravel', description: blurb, images: ['/brand/og.png'] },
+  openGraph: { siteName: 'WhiteRock Educational Services', title: 'WhiteRock Educational Services', description: blurb, images: [{ url: '/brand/og.png', width: 1200, height: 630 }] },
+  twitter: { card: 'summary_large_image' as const, title: 'WhiteRock Educational Services', description: blurb, images: ['/brand/og.png'] },
 };
 export const viewport = { themeColor: '#0d1f4d' };
 
