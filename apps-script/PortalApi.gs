@@ -1,5 +1,5 @@
 // ==========================================================
-// EXTRAVEL PORTAL API  — add this as a NEW file (PortalApi.gs)
+// WHITEROCK PORTAL API  — add this as a NEW file (PortalApi.gs)
 // in the SAME Apps Script project as your existing doPost.
 //
 // It lets the staff portal (server-side only) read the Applications

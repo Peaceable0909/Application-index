@@ -9,7 +9,7 @@ import { plainBody } from './stickers';
 //  - only when the Brain is sure: it answers from the student's file, the notes and the uploaded files, otherwise it says a person will reply
 //  - it steps back as soon as a person writes in the chat (for 30 minutes), or when a counselor pauses it for that student
 //  - every automatic message is labelled "AI assistant" and the student can always ask for a person
-export const AI_EMAIL = 'assistant@extravel.ai';
+export const AI_EMAIL = 'assistant@whiterock.ai';
 const HUMAN_QUIET_MS = 30 * 60_000, HOLD_EVERY_MS = 3 * 3600_000, MAX_PER_DAY = 6;
 const TRIVIAL = /^(ok(ay)?|k|thanks?( you)?|thank u|thx|got it|noted|sure|yes|no|👍|🙏|✅|alright|cool|great|good|fine|hi|hello|hey)[.!\s]*$/i;
 

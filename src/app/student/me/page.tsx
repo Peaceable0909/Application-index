@@ -43,7 +43,7 @@ export default async function StudentMe() {
         {FAQ.map(([q, a]) => <details key={q} className="st-faq"><summary>{q}</summary><p>{a}</p></details>)}
       </section></div>
       <form action={studentSignOut} style={{ ['--i' as string]: 6 }}><button className="st-signout">Sign out</button></form>
-      <p className="st-foot">Extravel · made with care</p>
+      <p className="st-foot">WhiteRock Educational Services · made with care</p>
     </div>
   );
 }

@@ -1,9 +1,9 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 
-// The opening intro. The still logo shows straight away, then /brand/extravel-intro.gif plays from its first frame and the screen
+// The opening intro. The still logo shows straight away, then /brand/whiterock-intro.gif plays from its first frame and the screen
 // fades out when it ends. No film yet (or it can't be fetched in time)? A short shine across the still logo stands in for it.
-const FILM = '/brand/extravel-intro.gif';
+const FILM = '/brand/whiterock-intro.gif';
 const WAIT_MS = 3500;      // how long the film gets to arrive
 const SHINE_MS = 1900;     // length of the stand-in
 const FALLBACK_MS = 6000;  // film length if it can't be read from the file
@@ -86,7 +86,7 @@ export default function Splash() {
   return (
     <div className="splash" data-s={s} aria-hidden onPointerDown={() => skip.current?.()}>
       <div className="splash-stage">
-        <img className="splash-poster" src="/brand/extravel-logo.png" alt="" draggable={false} fetchPriority="high" />
+        <img className="splash-poster" src="/brand/whiterock-logo.png" alt="" draggable={false} fetchPriority="high" />
         <span className="splash-shine" />
         {src && <img className="splash-film" src={src} alt="" draggable={false} />}
       </div>

@@ -27,6 +27,6 @@ export async function sendMail(o: MailOpts) {
     eyebrow: o.eyebrow ?? 'Admissions update', title: o.title, greeting: o.greeting ?? derived.greeting,
     blocks: o.blocks ?? derived.blocks, cta: o.cta, sign, footerNote: o.footerNote,
   });
-  const text = `${o.body}\n\n—\n${sign.name}${sign.title ? `, ${sign.title}` : ''}\nWhiteRock Educational Services\nExtravel · ${site()}`;
+  const text = `${o.body}\n\n—\n${sign.name}${sign.title ? `, ${sign.title}` : ''}\nWhiteRock Educational Services\n${site()}`;
   return callScript('sendEmail', { to: o.to, subject: o.subject, body: text, htmlBody: html, replyTo: o.replyTo || '', ...(o.attachments?.length ? { attachments: o.attachments } : {}) });
 }

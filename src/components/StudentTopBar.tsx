@@ -27,7 +27,7 @@ export default function StudentTopBar({ name, avatarUrl, notices, unread }: { na
   }, [path]);
   return (
     <header className="st-top" data-scrolled={scrolled ? '1' : '0'}>
-      <Link href="/student" className="st-brand" data-t={title ? '1' : '0'} onClick={logo} aria-label="Extravel home"><Logo height={38} className="st-logo" alt="" />{title && <span className="st-top-title" aria-hidden>{title}</span>}</Link>
+      <Link href="/student" className="st-brand" data-t={title ? '1' : '0'} onClick={logo} aria-label="WhiteRock home"><Logo height={26} className="st-logo" alt="" />{title && <span className="st-top-title" aria-hidden>{title}</span>}</Link>
       <StudentNav variant="top" unread={unread} />
       <div className="st-me"><StudentBell initial={notices} /><Link href="/student/me" aria-label="My profile"><Avatar name={name} url={avatarUrl} size={38} /></Link></div>
     </header>

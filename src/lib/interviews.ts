@@ -18,7 +18,7 @@ const ics = (v: string) => v.replace(/\\/g, '\\\\').replace(/;/g, '\;').replace(
 const stamp = (d: Date) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
 export function icsFile(slot: Slot, who: string) {
   const start = new Date(slot.starts_at), end = new Date(start.getTime() + slot.duration_min * 60_000);
-  const body = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Extravel//Interview training//EN', 'METHOD:PUBLISH', 'BEGIN:VEVENT', `UID:${slot.id}-${who.replace(/\W/g, '')}@whiterock`, `DTSTAMP:${stamp(new Date())}`, `DTSTART:${stamp(start)}`, `DTEND:${stamp(end)}`,
+  const body = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//WhiteRock//Interview training//EN', 'METHOD:PUBLISH', 'BEGIN:VEVENT', `UID:${slot.id}-${who.replace(/\W/g, '')}@whiterock`, `DTSTAMP:${stamp(new Date())}`, `DTSTART:${stamp(start)}`, `DTEND:${stamp(end)}`,
     'SUMMARY:Interview training (WhiteRock Educational Services)', `LOCATION:${ics(slot.teams_url)}`, `DESCRIPTION:${ics(`Join on ${providerName(slot.teams_url)}: ${slot.teams_url}\nSee your booking: ${studentSite()}/student`)}`, `URL:${slot.teams_url}`, 'BEGIN:VALARM', 'TRIGGER:-PT30M', 'ACTION:DISPLAY', 'DESCRIPTION:Interview training starts in 30 minutes', 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
   return Buffer.from(body).toString('base64');
 }

@@ -46,7 +46,7 @@ export const metadata = {
   title: { default: 'WhiteRock Educational Services', template: '%s · WhiteRock' },
   description: blurb,
   manifest: '/manifest.webmanifest',
-  appleWebApp: { capable: true, title: 'Extravel', statusBarStyle: 'default' as const },
+  appleWebApp: { capable: true, title: 'WhiteRock', statusBarStyle: 'default' as const },
   icons: { icon: [{ url: '/brand/favicon.png', type: 'image/png' }], apple: '/brand/apple-touch-icon.png' },
   openGraph: { siteName: 'WhiteRock Educational Services', title: 'WhiteRock Educational Services', description: blurb, images: [{ url: '/brand/og.png', width: 1200, height: 630 }] },
   twitter: { card: 'summary_large_image' as const, title: 'WhiteRock Educational Services', description: blurb, images: ['/brand/og.png'] },
@@ -87,7 +87,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         {staff ? (
           <div className="shell">
             <aside className="side">
-              <Link href="/" className="brand" aria-label="Extravel home"><Logo light height={52} alt="" /><small>Team portal</small></Link>
+              <Link href="/" className="brand" aria-label="WhiteRock home"><Logo height={32} alt="" /><small>Team portal</small></Link>
               <Nav taskCount={taskCount} chatCount={chatCount} inboxCount={inboxCount} role={staff.role} />
               <div className="tag">More opportunities.<br />Brighter futures.</div>
             </aside>

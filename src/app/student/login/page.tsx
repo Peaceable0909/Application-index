@@ -14,8 +14,8 @@ export default async function StudentLogin({ searchParams }: { searchParams: Pro
   const code = sp.step === 'code' && sp.email;
   return (
     <div className="auth">
-      <div className="auth-co">WhiteRock Educational Services</div>
-      <div className="auth-logo"><Logo height={64} /></div>
+      <div className="auth-logo"><Logo height={46} /></div>
+      <div className="auth-co">Educational Services</div>
       <h1>Student <em>sign-in</em></h1>
       <p className="muted" style={{ margin: 0 }}>{code ? 'Check your email for your sign-in code.' : 'Track your application and upload your documents.'}</p>
       <div className="card">
@@ -41,7 +41,7 @@ export default async function StudentLogin({ searchParams }: { searchParams: Pro
           </>
         )}
       </div>
-      <p className="auth-foot">© {new Date().getFullYear()} WhiteRock Educational Services · Extravel student portal</p>
+      <p className="auth-foot">© {new Date().getFullYear()} WhiteRock Educational Services · Student portal</p>
     </div>
   );
 }

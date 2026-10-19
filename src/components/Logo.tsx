@@ -1,13 +1,6 @@
-// The Extravel logo. Transparent PNGs in /public/brand: `light` is the white-lettered one for navy backgrounds, `mark` is the "E" on its own.
-// Without `light` both are rendered and the theme picks one (white lettering in dark mode), so it stays readable on any surface.
-const RATIO = { logo: 1367 / 489, mark: 659 / 480 };
+// The WhiteRock logo (public/brand/whiterock-logo.png). It carries its own red and navy shapes, so the same file works on light, dark and navy surfaces.
+const RATIO = 610 / 95;
 
-export default function Logo({ height = 40, mark = false, light = false, alt = 'Extravel', className = '' }: { height?: number; mark?: boolean; light?: boolean; alt?: string; className?: string }) {
-  const kind = mark ? 'mark' : 'logo';
-  const size = { width: Math.round(height * RATIO[kind]), height };
-  const one = (v: '' | '-light', cls: string, text: string, lazy?: boolean) => (
-    <img src={`/brand/extravel-${kind}${v}.png`} alt={text} {...size} className={`xlogo ${cls} ${className}`.trim()} decoding="async" draggable={false} {...(lazy ? { loading: 'lazy' as const, 'aria-hidden': true } : {})} />
-  );
-  if (light) return one('-light', '', alt);
-  return <>{one('', 'xl-d', alt)}{one('-light', 'xl-l', '', true)}</>;
+export default function Logo({ height = 40, alt = 'WhiteRock', className = '' }: { height?: number; mark?: boolean; light?: boolean; alt?: string; className?: string }) {
+  return <img src="/brand/whiterock-logo.png" alt={alt} width={Math.round(height * RATIO)} height={height} className={`xlogo ${className}`.trim()} decoding="async" draggable={false} />;
 }

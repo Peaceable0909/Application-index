@@ -13,7 +13,7 @@ export default async function Hello({ params }: { params: Promise<{ ws: string }
   return (
     <div className="hello">
       <div className="hello-card">
-        <header className="hello-head"><Logo height={34} alt="Extravel" /><div><b>Study in {w.name}</b><small>WhiteRock · ask anything. A counselor can join the chat.</small></div></header>
+        <header className="hello-head"><Logo height={24} alt="WhiteRock" /><div><b>Study in {w.name}</b><small>WhiteRock · ask anything. A counselor can join the chat.</small></div></header>
         <LeadChat ws={w.key} country={w.name} />
       </div>
     </div>
