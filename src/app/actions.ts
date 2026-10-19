@@ -1,7 +1,7 @@
 'use server';
 import { currentWorkspace } from '@/lib/workspace';
 import { redirect } from 'next/navigation';
-import { headers } from 'next/headers';
+import { headers, cookies } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 import { admin, sessionClient } from '@/lib/supabase';
 import { guardApp, requireStaff, requireTeam } from '@/lib/auth';
@@ -84,6 +84,34 @@ export async function signInWithGoogle() {
   if (error || !data.url) redirect(`/login?error=${encodeURIComponent(error?.message || 'Google sign-in failed')}`);
   redirect(data.url);
 }
+/** A signed-in team member sets (or changes) the password they can use next to Google sign-in. The password is typed here and never leaves the sign-in service. */
+export async function setPassword(f: FormData) {
+  const staff = await requireStaff();
+  const pw = String(f.get('password') ?? ''), again = String(f.get('again') ?? '');
+  const back = (m: string, err = false) => redirect(`/profile?${err ? 'err' : 'msg'}=${encodeURIComponent(m)}#password`);
+  if (pw.length < 10) return back('Use at least 10 characters.', true);
+  if (pw !== again) return back('The two passwords don’t match.', true);
+  if (pw.toLowerCase().includes(staff.email.split('@')[0].toLowerCase()) && staff.email.split('@')[0].length >= 4) return back('Don’t put your email name inside the password.', true);
+  const { error } = await (await sessionClient()).auth.updateUser({ password: pw });
+  if (error) return back(/different/i.test(error.message) ? 'That is already your password.' : /reauth|recent/i.test(error.message) ? 'For safety, sign out and sign in again, then set the password.' : `Couldn’t save it: ${error.message}`, true);
+  await audit(staff.email, 'password_set', staff.email);
+  back('Password saved. You can now sign in with your email and password as well as Google.');
+}
+
+/** "Forgot password" on the team sign-in page. The answer is the same whether or not the email has access, so it can't be used to find out who is on the team. */
+export async function sendPasswordReset(f: FormData) {
+  const email = s(f, 'email').toLowerCase();
+  const generic = '/login?notice=' + encodeURIComponent('If that email has portal access, a link to set a new password is on its way. It can take a minute.');
+  if (!EMAIL_RE.test(email)) redirect('/login?error=' + encodeURIComponent('Enter your email first.'));
+  const { data: row } = await admin().from('portal_staff').select('email').eq('email', email).maybeSingle();
+  if (row) {
+    const h = await headers(), host = h.get('x-forwarded-host') || h.get('host'), proto = h.get('x-forwarded-proto') || 'https';
+    (await cookies()).set('pw_reset', '1', { path: '/', maxAge: 3600, httpOnly: true, secure: true, sameSite: 'lax' });
+    await (await sessionClient()).auth.resetPasswordForEmail(email, { redirectTo: `${proto}://${host}/auth/callback` });
+  }
+  redirect(generic);
+}
+
 export async function signOut() {
   const sb = await sessionClient();
   await sb.auth.signOut();

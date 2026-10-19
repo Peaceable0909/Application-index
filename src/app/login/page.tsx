@@ -2,14 +2,14 @@ import { redirect } from 'next/navigation';
 import { currentStaff } from '@/lib/auth';
 import { sessionClient } from '@/lib/supabase';
 import { currentStudent } from '@/lib/student';
-import { signIn, signInWithGoogle, signOut } from '../actions';
+import { sendPasswordReset, signIn, signInWithGoogle, signOut } from '../actions';
 import Logo from '@/components/Logo';
 import Btn from '@/components/Btn';
 
 export const metadata = { title: 'Team sign-in', robots: { index: false, follow: false } };
 
-export default async function Login({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
-  const { error } = await searchParams;
+export default async function Login({ searchParams }: { searchParams: Promise<{ error?: string; notice?: string }> }) {
+  const { error, notice } = await searchParams;
   if (await currentStaff()) redirect('/');
   if (await currentStudent()) redirect('/student');
   const { data } = await (await sessionClient()).auth.getUser();
@@ -37,6 +37,11 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
           <input name="email" type="email" placeholder="Email" required className="wide" />
           <input name="password" type="password" placeholder="Password" required className="wide" />
           <Btn className="ghost wide-btn">Sign in with password</Btn>
+          <details className="forgot"><summary>Forgot your password?</summary>
+            <p className="muted" style={{ margin: '8px 0' }}>Type your email above, then press the button. We’ll email you a link that signs you in so you can set a new one.</p>
+            <button type="submit" formAction={sendPasswordReset} formNoValidate className="btn ghost sm">Email me a link</button>
+          </details>
+          {notice && <div className="ok" style={{ padding: 10, borderRadius: 10 }}>{notice}</div>}
           {error && <div className="err">{error}<div style={{ marginTop: 6, fontSize: 12.5 }}>This page is for the admissions team. Students sign in at the <a href="/student/login">student portal</a>.</div></div>}
         </form>
       </div>

@@ -1,6 +1,7 @@
 import { requireStaff } from '@/lib/auth';
 import { roleLabel } from '@/lib/profile';
-import { removeAvatar, saveProfile, uploadAvatar } from '../actions';
+import { removeAvatar, saveProfile, setPassword, uploadAvatar } from '../actions';
+import Btn from '@/components/Btn';
 import ProfileEditor from '@/components/ProfileEditor';
 import PushToggle from '@/components/PushToggle';
 import ThemePicker from '@/components/ThemePicker';
@@ -24,6 +25,15 @@ export default async function Profile({ searchParams }: { searchParams: Promise<
         <h2 style={{ marginTop: 0 }}>Look &amp; feel</h2>
         <p className="muted">Choose a theme and an accent colour. It is saved to your account.</p>
         <ThemePicker initial={theme} />
+      </div>
+      <div className="card" id="password" style={{ marginTop: 16 }}>
+        <h2 style={{ marginTop: 0 }}>Sign-in password</h2>
+        <p className="muted">You can sign in with Google today. Set a password to also sign in with your email ({staff.email}) and a password. You can change it here any time.</p>
+        <form action={setPassword} className="grid" style={{ gap: 10, maxWidth: 380 }}>
+          <input name="password" type="password" placeholder="New password (at least 10 characters)" autoComplete="new-password" minLength={10} required />
+          <input name="again" type="password" placeholder="Type it again" autoComplete="new-password" minLength={10} required />
+          <div><Btn data-busy="Saving…">Save password</Btn></div>
+        </form>
       </div>
       <div className="card" style={{ marginTop: 16 }}>
         <h2 style={{ marginTop: 0 }}>Phone notifications</h2>

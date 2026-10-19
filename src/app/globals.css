@@ -581,3 +581,6 @@ html, body { max-width:100%; overflow-x:clip; }
 .wsw select { border:0; background:transparent; font:600 13px/1 inherit; color:var(--ink); padding:0 2px; max-width:150px; cursor:pointer; outline:none; height:auto; box-shadow:none; }
 .wsw.busy { opacity:.55; }
 @media (max-width:640px) { .wsw { padding:0 8px; } .wsw select { max-width:96px; } }
+
+/* Forgot-password drop-down on the team sign-in page */
+.forgot summary { cursor:pointer; color:var(--muted); font-size:13px; } .forgot[open] summary { margin-bottom:2px; }
