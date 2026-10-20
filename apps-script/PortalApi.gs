@@ -511,14 +511,16 @@ function portalExtractBlob_(p) {
 
 // ---- Background triggers (no edits to your form's doPost needed) -------------
 // 1) Paste your portal address + CRON_SECRET below.  2) Run portalInstallTriggers() once.
+// The secret is then stored inside the script, so you can empty the quotes again and paste a newer PortalApi.gs later without losing it.
 const PORTAL_SITE_URL = 'https://applications-2026-kohl.vercel.app';  // your portal address
-const PORTAL_CRON_SECRET = '';  // the same value as CRON_SECRET in Vercel
+const PORTAL_CRON_SECRET = '';  // the same value as CRON_SECRET in Vercel (only needed when you set or change it)
 
 function portalInstallTriggers() {
-  if (!PORTAL_SITE_URL || !PORTAL_CRON_SECRET) throw new Error('Fill in PORTAL_SITE_URL and PORTAL_CRON_SECRET near the top of this section first.');
   const props = PropertiesService.getScriptProperties();
+  const secret = PORTAL_CRON_SECRET.trim() || props.getProperty('PORTAL_WEBHOOK_SECRET');
+  if (!PORTAL_SITE_URL || !secret) throw new Error('Fill in PORTAL_SITE_URL and PORTAL_CRON_SECRET near the top of this section first.');
   props.setProperty('PORTAL_WEBHOOK_URL', PORTAL_SITE_URL.replace(/\/$/, '') + '/api/sync');
-  props.setProperty('PORTAL_WEBHOOK_SECRET', PORTAL_CRON_SECRET);
+  props.setProperty('PORTAL_WEBHOOK_SECRET', secret);
   portalRemoveTriggers();
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   ScriptApp.newTrigger('portalPoll_').timeBased().everyMinutes(1).create();          // tells the portal when new rows or edits appear
