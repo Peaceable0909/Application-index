@@ -677,3 +677,15 @@ function notifyPortal_() {
       headers: { Authorization: 'Bearer ' + props.getProperty('PORTAL_WEBHOOK_SECRET') } });
   } catch (err) { Logger.log('notifyPortal_ failed: ' + err); }
 }
+
+// Run this by hand to check the link to the portal: it makes the same call the 1-minute poll makes and says what the portal answered.
+function portalTestConnection() {
+  const props = PropertiesService.getScriptProperties();
+  const url = props.getProperty('PORTAL_WEBHOOK_URL'), secret = props.getProperty('PORTAL_WEBHOOK_SECRET');
+  if (!url || !secret) { Logger.log('Not set up yet: fill in PORTAL_SITE_URL and PORTAL_CRON_SECRET, then run portalInstallTriggers().'); return; }
+  const r = UrlFetchApp.fetch(url, { method: 'post', muteHttpExceptions: true, headers: { Authorization: 'Bearer ' + secret } });
+  const code = r.getResponseCode();
+  if (code === 200) Logger.log('OK: the portal answered 200. The secret matches and the portal synced just now.');
+  else if (code === 401) Logger.log('The portal refused the secret (401). PORTAL_CRON_SECRET here must be exactly the same as CRON_SECRET in Vercel (and Vercel needs a redeploy after you change it). Fix it, then run portalInstallTriggers() again.');
+  else Logger.log('The portal answered ' + code + ': ' + r.getContentText().slice(0, 200));
+}
