@@ -575,7 +575,7 @@ function portalShareFolderPrivately_(folder) {
 // If the log says "Time ran out", just press Run again: each run carries on where the last one got to.
 function lockDownExistingFolders() {
   const started = Date.now(), main = getOrCreateFolder_(DRIVE_FOLDER_NAME), subs = main.getFolders();
-  let fixed = 0, already = 0, timedOut = false;
+  let fixed = 0, already = 0, stuck = 0, timedOut = false;
   while (subs.hasNext()) {
     if (Date.now() - started > 4.5 * 60 * 1000) { timedOut = true; break; }
     const f = subs.next();
@@ -583,10 +583,16 @@ function lockDownExistingFolders() {
     f.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE);
     portalShareFolderPrivately_(f);
     const files = f.getFiles();
-    while (files.hasNext()) { const file = files.next(); if (file.getSharingAccess() !== DriveApp.Access.PRIVATE) file.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE); }
+    while (files.hasNext()) {
+      const file = files.next();
+      try { if (file.getSharingAccess() !== DriveApp.Access.PRIVATE) file.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE); }
+      catch (err) {   // a file owned by someone else can't be changed by this account; the folder above it is already private, so carry on
+        stuck++; if (stuck <= 15) Logger.log('Could not change a file (' + f.getName() + ' / ' + file.getName() + '): ' + String(err).slice(0, 100));
+      }
+    }
     fixed++;
   }
-  Logger.log((timedOut ? 'Time ran out: press Run again. ' : 'Finished. ') + 'Made private this run: ' + fixed + '. Already private: ' + already + '.');
+  Logger.log((timedOut ? 'Time ran out: press Run again. ' : 'Finished. ') + 'Made private this run: ' + fixed + '. Already private: ' + already + '. Files this account is not allowed to change: ' + stuck + '.');
 }
 
 // p = { rootName, name }. Makes a private (team-only) folder for a student under that country's main Drive folder.
@@ -610,7 +616,7 @@ function portalLockDown_(p) {
       if (f.getSharingAccess() !== DriveApp.Access.PRIVATE) f.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE);
       portalShareFolderPrivately_(f);
       const files = f.getFiles();
-      while (files.hasNext()) { const file = files.next(); if (file.getSharingAccess() !== DriveApp.Access.PRIVATE) { file.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE); out.files++; } }
+      while (files.hasNext()) { const file = files.next(); try { if (file.getSharingAccess() !== DriveApp.Access.PRIVATE) { file.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE); out.files++; } } catch (err2) { out.filesStuck = (out.filesStuck || 0) + 1; } }
       out.folders++;
     } catch (err) { out.failed.push({ id: id, error: String(err).slice(0, 120) }); }
   });
