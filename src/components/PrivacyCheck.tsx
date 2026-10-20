@@ -2,8 +2,8 @@
 import { useState } from 'react';
 import Icon from './Icon';
 
-type Part = { total: number; next: number; done: boolean; checked: number; files: number; missing: string[]; openFolders: { id: string; name: string; access: string }[]; openFiles: { id: string; name: string; folder: string; folderId?: string; access: string }[]; openFileCount: number; people: Record<string, number>; owner: string; team: string[]; main?: { name: string; access: string; editors: string[]; viewers: string[] }; error?: string };
-type Sum = { total: number; checked: number; files: number; missing: string[]; openFolders: Part['openFolders']; openFiles: Part['openFiles']; openFileCount: number; people: Record<string, number>; owner: string; team: string[]; main?: Part['main'] };
+type Part = { total: number; next: number; done: boolean; checked: number; files: number; missing: string[]; openFolders: { id: string; name: string; access: string }[]; openFiles: { id: string; name: string; folder: string; folderId?: string; access: string }[]; openFileCount: number; filesUnknown?: number; people: Record<string, number>; owner: string; team: string[]; main?: { name: string; access: string; editors: string[]; viewers: string[] }; error?: string };
+type Sum = { total: number; checked: number; files: number; missing: string[]; openFolders: Part['openFolders']; openFiles: Part['openFiles']; openFileCount: number; filesUnknown: number; people: Record<string, number>; owner: string; team: string[]; main?: Part['main'] };
 
 /** Asks Google, folder by folder, who can open the students’ documents. Read-only. */
 export default function PrivacyCheck() {
@@ -11,7 +11,7 @@ export default function PrivacyCheck() {
   const [run, setRun] = useState(false), [s, setS] = useState<Sum | null>(null), [done, setDone] = useState(false), [err, setErr] = useState('');
   async function go() {
     setRun(true); setErr(''); setDone(false);
-    const acc: Sum = { total: 0, checked: 0, files: 0, missing: [], openFolders: [], openFiles: [], openFileCount: 0, people: {}, owner: '', team: [] };
+    const acc: Sum = { total: 0, checked: 0, files: 0, missing: [], openFolders: [], openFiles: [], openFileCount: 0, filesUnknown: 0, people: {}, owner: '', team: [] };
     setS({ ...acc });
     let offset = 0;
     try {
@@ -19,7 +19,7 @@ export default function PrivacyCheck() {
         const r = await fetch('/api/privacy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ offset }) });
         const j = (await r.json()) as Part;
         if (!r.ok) throw new Error(j.error || `The server answered ${r.status}.`);
-        acc.total = j.total; acc.checked += j.checked; acc.files += j.files; acc.missing.push(...j.missing); acc.openFolders.push(...j.openFolders); acc.openFiles.push(...j.openFiles); acc.openFileCount += j.openFileCount;
+        acc.total = j.total; acc.checked += j.checked; acc.files += j.files; acc.missing.push(...j.missing); acc.openFolders.push(...j.openFolders); acc.openFiles.push(...j.openFiles); acc.openFileCount += j.openFileCount; acc.filesUnknown += j.filesUnknown || 0;
         for (const [e, n] of Object.entries(j.people)) acc.people[e] = (acc.people[e] || 0) + n;
         acc.owner = j.owner; acc.team = j.team; if (j.main) acc.main = j.main;
         setS({ ...acc, people: { ...acc.people } });
@@ -72,6 +72,7 @@ export default function PrivacyCheck() {
             <dt>Files open by link</dt><dd>{s.openFileCount}</dd>
             {s.main && <><dt>Main folder “{s.main.name}”</dt><dd>{s.main.access === 'PRIVATE' ? 'private' : s.main.access}</dd></>}
             <dt>Not found in Drive</dt><dd>{s.missing.length}</dd>
+            {s.filesUnknown > 0 && <><dt>Files this check can’t see</dt><dd>{s.filesUnknown} <span className="muted">(owned by another Google account; their folders are private, but only that account can switch their own link sharing off)</span></dd></>}
           </dl>
           {s.openFolders.length > 0 && <><b>Open folders</b><ul>{s.openFolders.slice(0, 20).map((f) => <li key={f.id}>{f.name} <span className="muted">({f.access})</span></li>)}</ul></>}
           {s.openFiles.length > 0 && <><b>Open files</b><ul>{s.openFiles.slice(0, 20).map((f) => <li key={f.id}>{f.name} <span className="muted">in {f.folder} ({f.access})</span></li>)}</ul></>}

@@ -7,7 +7,7 @@ export const maxDuration = 60;
 const no = { 'Cache-Control': 'no-store' };
 const STEP = 25;
 
-type Audit = { checked: number; files: number; missing: string[]; openFolders: { id: string; name: string; access: string }[]; openFiles: { id: string; name: string; folder: string; access: string }[]; openFileCount: number; people: Record<string, number>; owner: string; team: string[]; main?: { name: string; access: string; editors: string[]; viewers: string[] } };
+type Audit = { checked: number; files: number; missing: string[]; openFolders: { id: string; name: string; access: string }[]; openFiles: { id: string; name: string; folder: string; access: string }[]; openFileCount: number; filesUnknown?: number; people: Record<string, number>; owner: string; team: string[]; main?: { name: string; access: string; editors: string[]; viewers: string[] } };
 
 /** Admins only. Read-only: asks Google who can open the student folders, STEP folders at a time, so the page can show progress. */
 export async function POST(req: Request) {

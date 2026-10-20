@@ -557,7 +557,7 @@ function portalEnforcePrivacy_() {
     f.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE);
     portalShareFolderPrivately_(f);
     const files = f.getFiles();
-    while (files.hasNext()) files.next().setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE);
+    while (files.hasNext()) { try { files.next().setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE); } catch (err) { /* a file owned by another account can't be changed from here; the folder above it is private */ } }
   }
 }
 
@@ -646,7 +646,9 @@ function portalAuditSharing_(p) {
     while (files.hasNext()) {
       const file = files.next();
       out.files++;
-      if (file.getSharingAccess() !== DriveApp.Access.PRIVATE) { out.openFileCount++; if (out.openFiles.length < 30) out.openFiles.push({ id: file.getId(), name: file.getName(), folder: f.getName(), folderId: id, access: String(file.getSharingAccess()) }); }
+      let acc;
+      try { acc = file.getSharingAccess(); } catch (err) { out.filesUnknown = (out.filesUnknown || 0) + 1; continue; }   // owned by another account: this script can't see its sharing
+      if (acc !== DriveApp.Access.PRIVATE) { out.openFileCount++; if (out.openFiles.length < 30) out.openFiles.push({ id: file.getId(), name: file.getName(), folder: f.getName(), folderId: id, access: String(file.getSharingAccess()) }); }
     }
   });
   return out;
