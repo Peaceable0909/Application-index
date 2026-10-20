@@ -277,3 +277,10 @@ button.iconbtn { padding:0; }
 .lead-sub { color:var(--muted); font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .lead-row.unread .lead-top b::after { content:''; display:inline-block; width:8px; height:8px; margin-left:6px; border-radius:50%; background:var(--blue); }
 .lead-thread { display:flex; flex-direction:column; gap:8px; max-height:420px; overflow-y:auto; padding:12px 4px; margin:8px 0; }
+
+/* Follow-ups list */
+.nudge { transition:opacity .4s, transform .4s var(--ease), max-height .4s; } .nudge.gone { opacity:.35; transform:scale(.99); pointer-events:none; }
+.nudge-head { display:flex; align-items:center; gap:12px; flex-wrap:wrap; } .nudge-who { display:grid; flex:1; min-width:160px; } .nudge-who a { text-decoration:none; color:var(--ink); }
+.nudge-act { display:flex; gap:6px; flex-wrap:wrap; }
+.nudge-why { list-style:none; margin:10px 0 0; padding:0; display:grid; gap:6px; font-size:14px; }
+.nudge textarea { width:100%; height:auto; padding:10px 12px; line-height:1.45; }

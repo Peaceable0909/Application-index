@@ -53,11 +53,11 @@ const system = (country: string) =>
   'If the student sounds upset, unwell, unsafe or mentions money problems, set needsHuman to true. When asked for a document, name it exactly as in the facts. ' +
   'Reply as JSON: {"reply": "<the message>", "needsHuman": true|false, "why": "<one short line for the counselor: what you based this on, or what you could not answer>"}.';
 
-export async function suggestReply(appId: string, o: { question?: string; instruction?: string } = {}): Promise<BrainReply> {
+export async function suggestReply(appId: string, o: { question?: string; instruction?: string; mustMention?: string[] } = {}): Promise<BrainReply> {
   const ctx = await brainContext(appId, o.question);
   if (!ctx) throw new Error('Student not found.');
   const chat = o.question ? [...ctx.chat, { from: 'student', text: strip(o.question).slice(0, 400) }] : ctx.chat;
-  const userJson = JSON.stringify({ studentMemory: ctx.memory, facts: ctx.facts, countryBrief: ctx.brief, teamNotes: ctx.notes, fileExcerpts: ctx.files, conversation: chat, counselorInstruction: o.instruction ? strip(o.instruction).slice(0, 200) : null });
+  const userJson = JSON.stringify({ studentMemory: ctx.memory, facts: ctx.facts, countryBrief: ctx.brief, teamNotes: ctx.notes, fileExcerpts: ctx.files, conversation: chat, counselorInstruction: o.instruction ? strip(o.instruction).slice(0, 600) : null });
   // Numbers the reply may contain: those already in the file, the notes or the conversation (so it can't invent a figure).
   const allowed = (userJson.match(/\d+/g) || []).map(Number);
   const r = await generateOnce<BrainReply>({
@@ -70,6 +70,8 @@ export async function suggestReply(appId: string, o: { question?: string; instru
       if (/https?:\/\/|www\.|@|\+?\d[\d\s-]{7,}/.test(reply)) return null;
       if (/guarantee|you (have been|are) (admitted|accepted)|offer (has been|is) (approved|granted)|visa (is|will be) (approved|granted)|definitely (get|receive)/i.test(reply)) return null;
       if (!numbersWithin(reply, allowed)) return null;
+      // when the message is a request for documents, every one of them must be named so the student knows what to send
+      if (o.mustMention?.length) { const low = reply.toLowerCase(); if (!o.mustMention.every((m) => m.toLowerCase().split('/').every((part) => low.includes(part.trim())))) return null; }
       if ((reply.match(/\{\{[^}]+\}\}/g) || []).some((t) => t !== '{{FIRST_NAME}}')) return null;
       return { reply: reply.replaceAll('{{FIRST_NAME}}', ctx.first), needsHuman: d.needsHuman === true, why: typeof d.why === 'string' ? d.why.trim().slice(0, 200) : '' };
     },
