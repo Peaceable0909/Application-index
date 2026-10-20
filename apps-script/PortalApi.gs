@@ -571,19 +571,22 @@ function portalShareFolderPrivately_(folder) {
 
 // RUN ONCE BY HAND (Run menu) to make every existing submission private.
 // Links that were shared earlier with people outside your team stop working.
+// It skips folders that are already private, and stops by itself after 4.5 minutes (Google cuts a run off at 6).
+// If the log says "Time ran out", just press Run again: each run carries on where the last one got to.
 function lockDownExistingFolders() {
-  const main = getOrCreateFolder_(DRIVE_FOLDER_NAME);
-  const subs = main.getFolders();
-  let n = 0;
+  const started = Date.now(), main = getOrCreateFolder_(DRIVE_FOLDER_NAME), subs = main.getFolders();
+  let fixed = 0, already = 0, timedOut = false;
   while (subs.hasNext()) {
+    if (Date.now() - started > 4.5 * 60 * 1000) { timedOut = true; break; }
     const f = subs.next();
+    if (f.getSharingAccess() === DriveApp.Access.PRIVATE) { already++; continue; }
     f.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE);
     portalShareFolderPrivately_(f);
     const files = f.getFiles();
-    while (files.hasNext()) files.next().setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE);
-    n++;
+    while (files.hasNext()) { const file = files.next(); if (file.getSharingAccess() !== DriveApp.Access.PRIVATE) file.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE); }
+    fixed++;
   }
-  Logger.log('Locked down ' + n + ' folders');
+  Logger.log((timedOut ? 'Time ran out: press Run again. ' : 'Finished. ') + 'Made private this run: ' + fixed + '. Already private: ' + already + '.');
 }
 
 // p = { rootName, name }. Makes a private (team-only) folder for a student under that country's main Drive folder.
