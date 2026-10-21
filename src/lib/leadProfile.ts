@@ -230,12 +230,23 @@ export function ungroundedTopicClaim(reply: string, uncovered: Topic[]): string 
 export function generalClaimFromMemory(reply: string): string | null {
   const general = /\b(?:usually|typically|generally|normally|commonly|often|tend to|in general|on average|most (?:universities|schools|students|programmes|courses)|(?:may|might|would|will|could) need (?:to|some|a)|(?:may|might|would|will|could) be (?:required|needed)|are (?:limited|competitive)|is (?:limited|competitive))\b/i;
   const domain = /\b(?:degree|grade|ielts|english|deadline|intake|visa|tuition|fees?|cost|scholar\w*|requirement\w*|eligib\w*|accept\w*|admission|entry|gpa|cgpa|funding|bursar\w*|refus\w*)\b/i;
-  for (const s of reply.split(/(?<=[.!?])\s+|\n+/)) if (general.test(s) && domain.test(s) && !HEDGE.test(s) && !/\?\s*$/.test(s)) return s.trim().slice(0, 140);
+  // "I cannot say what is usually required" is honest; "we need to check, as they usually expect a degree" is still a claim from memory
+  const negated = /\b(?:cannot|can't|can not|do not|don't|unable to|not able to|not sure|unsure|would rather not)\b[^.!?]{0,60}\b(?:usually|typically|generally|normally|required|requirements?|expect)\b/i;
+  for (const s of reply.split(/(?<=[.!?])\s+|\n+/)) if (general.test(s) && domain.test(s) && !negated.test(s) && !/\?\s*$/.test(s)) return s.trim().slice(0, 140);
+  return null;
+}
+
+/** Saying how good their grades or degree are: only the school can judge that. */
+export function judgesQualification(reply: string): string | null {
+  const good = '(?:strong|good|solid|excellent|impressive|great|competitive|weak|low|poor|decent|respectable)';
+  const thing = '(?:foundation|grades?|degree|results?|class|background|qualifications?|profile|scores?|gpa|cgpa|transcript)';
+  const re = new RegExp(`\\b${good}\\b[^.!?]{0,30}\\b${thing}\\b|\\b${thing}\\b[^.!?]{0,20}\\b(?:is|are|sounds?|looks?|seems?)\\b[^.!?]{0,15}\\b${good}\\b`, 'i');
+  for (const s of reply.split(/(?<=[.!?])\s+|\n+/)) if (re.test(s) && !/\?\s*$/.test(s)) return s.trim().slice(0, 140);
   return null;
 }
 
 /** Praise and filler openers ("That's a great choice", "Great question") that make the chat sound scripted. */
 export function fillerOpening(reply: string): string | null {
-  const m = /^(?:that(?:'s| is)\s+(?:a\s+)?(?:really\s+)?(?:great|good|excellent|wonderful|fantastic|lovely|smart|solid)\b[^.!,]{0,30}|(?:great|excellent|wonderful|fantastic|lovely)\s+(?:choice|question|idea|decision|goal|start|plan|option)\b|(?:great|excellent|wonderful|fantastic|perfect|awesome)[!.,])/i.exec(reply.trim().replace(/[\u2018\u2019]/g, "'"));
+  const m = /^(?:that(?:'s| is)\s+(?:a\s+)?(?:really\s+)?(?:great|good|excellent|wonderful|fantastic|lovely|smart|solid)\b[^.!,]{0,30}|(?:great|excellent|wonderful|fantastic|lovely)\s+(?:choice|question|idea|decision|goal|start|plan|option)\b|(?:great|excellent|wonderful|fantastic|perfect|awesome)[!.,]|thank(?:s| you) for (?:sharing|asking|reaching out|letting me know|telling me|that|the (?:details|information|update)))/i.exec(reply.trim().replace(/[\u2018\u2019]/g, "'"));
   return m ? m[0] : null;
 }

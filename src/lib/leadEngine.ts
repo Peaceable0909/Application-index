@@ -1,7 +1,7 @@
 import {
   type Profile, cleanProfile, mergeProfile, firstName, nameFrom, isGreeting, wantsPerson, isAffirmative, isNegative, offeredPerson, nextToLearn,
   readyForHandover, levelFromText, cleanReply, splitGap, claimsAction, promisesOutcome, unsupportedFigures, hasContactOrLink, repeatsEarlier, supported, normLevel,
-  recentlyAsked, uncoveredTopics, ungroundedTopicClaim, generalClaimFromMemory, fillerOpening, type Topic,
+  recentlyAsked, uncoveredTopics, ungroundedTopicClaim, generalClaimFromMemory, judgesQualification, fillerOpening, type Topic,
 } from './leadProfile';
 
 // One turn of the new-student chat, written so every side effect goes through `LeadIO`. The real wiring (database, model, notifications) is in
@@ -144,6 +144,19 @@ export function parseExtraction(raw: unknown, visitorText: string): Extraction |
   };
 }
 
+/** A draft with one or two bad sentences is better mended than thrown away: drop the offending sentences, a praise opener and any extra questions. Null when too little is left. */
+export function repairReply(draft: string, o: { context: string; uncovered: Topic[]; handover: 'none' | 'done' | 'recorded' }): string | null {
+  const { text } = splitGap(cleanReply(draft));
+  const sentences = text.split(/(?<=[.!?])\s+|\n+/).map((x) => x.trim()).filter(Boolean);
+  const bad = (x: string) => hasContactOrLink(x) || (o.handover !== 'done' && !!claimsAction(x)) || !!promisesOutcome(x) || !!unsupportedFigures(x, o.context) || !!ungroundedTopicClaim(x, o.uncovered) || !!generalClaimFromMemory(x) || !!judgesQualification(x);
+  let kept = sentences.filter((x) => !bad(x));
+  if (kept.length && fillerOpening(kept[0])) kept = kept.slice(1);
+  let q = 0;
+  kept = kept.filter((x) => { if (/\?\s*$/.test(x)) { q++; return q === 1; } return true; });
+  const out = kept.join(' ').trim();
+  return out.length >= 25 ? out : null;
+}
+
 type Check = { ok: true; text: string; gap: string | null } | { ok: false; why: string };
 /** Everything a drafted reply must pass before a visitor sees it. */
 export function checkReply(draft: string, o: { context: string; earlier: string[]; handover: 'none' | 'done' | 'recorded'; uncovered?: Topic[] }): Check {
@@ -159,6 +172,8 @@ export function checkReply(draft: string, o: { context: string; earlier: string[
   if (filler) return { ok: false, why: `it opened with praise or filler ("${filler}"); start with the substance instead` };
   const ground = ungroundedTopicClaim(text, o.uncovered || []);
   if (ground) return { ok: false, why: `it stated something about a topic that is not in KNOWLEDGE ("${ground}"); say you cannot confirm it instead` };
+  const judged = judgesQualification(text);
+  if (judged) return { ok: false, why: `it judged how good their grades or qualifications are ("${judged}"); only the school can say, so do not` };
   const memory = generalClaimFromMemory(text);
   if (memory) return { ok: false, why: `it described what is "usually" or "typically" true from general knowledge ("${memory}"); only use KNOWLEDGE, otherwise say you cannot confirm it` };
   const fig = unsupportedFigures(text, o.context);
@@ -249,7 +264,11 @@ export async function runLeadTurn(lead: LeadRow, io: LeadIO): Promise<void> {
     try { draft = await io.reply(feedback ? `${system}\n\nYour previous draft was rejected because ${feedback}. Write the message again and fix exactly that.` : system, messages); } catch { draft = ''; }
     if (!draft) { feedback = 'it was empty'; continue; }
     const c = checkReply(draft, { context, earlier, handover: status, uncovered });
-    if (c.ok) chosen = { text: c.text, gap: c.gap }; else feedback = c.why;
+    if (c.ok) { chosen = { text: c.text, gap: c.gap }; break; }
+    feedback = c.why;
+    const fixed = repairReply(draft, { context, uncovered, handover: status });
+    const c2 = fixed ? checkReply(fixed, { context, earlier, handover: status, uncovered }) : null;
+    if (c2?.ok) chosen = { text: c2.text, gap: splitGap(draft).gap };
   }
 
   const ext = parseExtraction(await extractP, visitorText);
