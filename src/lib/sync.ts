@@ -4,6 +4,7 @@ import { refreshTasks } from './overview';
 import { callScript, DriveFile, MasterRow, RegentRow, SheetRow } from './appsScript';
 import { canonicalStatus, counselorKey, docTypeFromName, normEmail, normName, progressFor, schoolDisplay, schoolKey, studentKey } from './docs';
 import { pick, resolveMoved, type Moved } from './moves';
+import { sourceFromNotes } from './sources';
 import { pushPendingMoves } from './moveCore';
 import { listMasterFor } from './sheets';
 import { DEFAULT_WS, wsKey } from './workspaceCore';
@@ -87,7 +88,7 @@ async function syncWorkspace(w: Workspace, opts: { full?: boolean } = {}) {
   const sKey = (email: string | null, school: string | null, name: string) => wsKey(w.key, studentKey(email, school, name));
 
   const { data: existing } = await db.from('portal_applications')
-    .select('application_id, status, counselor, docs_synced_at, student_key, payment, interview, extra_folder_ids, moved').eq('workspace', w.key);
+    .select('application_id, status, counselor, docs_synced_at, student_key, payment, interview, extra_folder_ids, moved, source, source_by').eq('workspace', w.key);
   const known = new Map((existing || []).map((r) => [r.application_id, r]));
 
   const usedM = new Set<MasterRow>(), usedG = new Set<RegentRow>();
@@ -108,6 +109,11 @@ async function syncWorkspace(w: Workspace, opts: { full?: boolean } = {}) {
     const school = schoolDisplay(mv.school);
     const programme = mv.programme;
     const name = pick(m?.name, g?.name, r?.name) || 'Unknown';
+    // The document form writes "Lead source: Instagram" into the notes. Keep it as the student's source and hide the tag from the notes.
+    const tagged = [m?.notes, g?.notes, r?.notes].map((n) => sourceFromNotes(n)).find((x) => x.source);
+    const fromForm = tagged?.source ?? null;
+    const source = prev?.source_by && prev.source_by.includes('@') ? prev.source : fromForm ?? prev?.source ?? null;   // a person's choice in the portal always wins
+    const sourceBy = prev?.source_by && prev.source_by.includes('@') ? prev.source_by : fromForm ? 'form' : prev?.source_by ?? null;
     const payment = pick(g?.payment);
     const rawInterview = pick(g?.interview); // "To Be Booked for interview" / "...Interview" are the same thing
     const interview = rawInterview && /to be booked/i.test(rawInterview) ? 'To be booked for interview' : rawInterview;
@@ -129,7 +135,7 @@ async function syncWorkspace(w: Workspace, opts: { full?: boolean } = {}) {
       school, programme, moved: mv.moved, country: pick(m?.country, g?.country, r?.country),
       city: pick(r?.city, m?.city, g?.city), gender: pick(r?.gender, m?.gender, g?.gender), dob: pick(r?.dob, m?.dob), age: pick(r?.age, m?.age),
       counselor: pick(m?.counselor, g?.counselor, r?.counselor, prev?.counselor),
-      status, progress: progressFor(status), student_ref: ref, sheet_notes: pick(m?.notes, g?.notes, r?.notes),
+      status, progress: progressFor(status), student_ref: ref, sheet_notes: sourceFromNotes(pick(m?.notes, g?.notes, r?.notes)).notes, source, source_by: sourceBy,
       opp_id: pick(g?.oppId), payment, interview,
       // Form folder first; folders linked by hand in the portal are kept across syncs.
       drive_folder_id: r?.driveFolderId || prev?.extra_folder_ids?.[0] || null,

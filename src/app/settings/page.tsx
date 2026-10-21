@@ -3,6 +3,9 @@ import { twoStepStatus } from '@/lib/twoStep';
 import { IDLE_MIN, MAX_HOURS } from '@/lib/session';
 import { resetTwoStep, setTwoStepPolicy } from '../twoStepActions';
 import { weeklyConfig } from '@/lib/weeklyReport';
+import QRCode from 'qrcode';
+import { SOURCES, sourceSlug } from '@/lib/sources';
+import { site } from '@/lib/emailTemplate';
 import { sttModel, voiceEnabled } from '@/lib/stt';
 import { previewWeeklySummary, saveWeeklySummary } from '../reportActions';
 import Btn from '@/components/Btn';
@@ -25,6 +28,15 @@ export default async function Settings({ searchParams }: { searchParams: Promise
   const workspaces = await listWorkspaces();
   const counts: Record<string, number> = {};
   await Promise.all(workspaces.map(async (w) => { counts[w.key] = (await db.from('portal_applications').select('application_id', { count: 'exact', head: true }).eq('workspace', w.key)).count || 0; }));
+  const { data: chatFlags } = await db.from('portal_workspaces').select('key, lead_chat');
+  const chatOpen = new Set((chatFlags || []).filter((x) => x.lead_chat).map((x) => x.key));
+  const chats = await Promise.all(workspaces.filter((w) => w.active && chatOpen.has(w.key)).map(async (w) => ({
+    key: w.key, name: w.name,
+    links: await Promise.all(SOURCES.filter((x) => x !== 'Other').map(async (x) => {
+      const url = `${site()}/hello/${w.key}?src=${sourceSlug(x)}`;
+      return { source: x, slug: sourceSlug(x), url, qr: await QRCode.toDataURL(url, { width: 480, margin: 2, color: { dark: '#0d1f4d', light: '#ffffff' } }) };
+    })),
+  })));
   const [{ data: staff }, policy, weekly, twoSteps] = await Promise.all([
     db.from('portal_staff').select('*').order('email'),
     twoStepPolicy(),
@@ -89,6 +101,29 @@ export default async function Settings({ searchParams }: { searchParams: Promise
           <li>In Apps Script: <b>Services (+) → Drive API → Add</b>, then run any function once to approve the new permissions.</li>
           <li>In Vercel add the variable <code>AI_DOC_SCAN</code> = <code>on</code> and redeploy.</li>
         </ol>
+      </div>
+
+      <div className="card" id="links">
+        <h2><Icon n="globe" size={17} /> Chat links, QR codes &amp; website bubble</h2>
+        {chats.length === 0 ? <p className="muted" style={{ marginTop: 0 }}>No chat is open yet. Switch on the new-student chat for a country on the <Link href="/leads">Leads</Link> page first.</p> : (
+          <>
+            <p className="muted" style={{ marginTop: 0 }}>Each link below opens the new-student chat and remembers where the visitor came from, so <Link href="/reports">Reports</Link> can show which source brings students. Put the QR codes on flyers and posters, and the links in your Instagram, Facebook and TikTok bios.</p>
+            {chats.map((c) => (
+              <div key={c.key} style={{ marginBottom: 18 }}>
+                <b>Study in {c.name}</b>
+                <div className="scroll"><table>
+                  <thead><tr><th>Source</th><th>Link</th><th>QR code</th></tr></thead>
+                  <tbody>{c.links.map((l) => (
+                    <tr key={l.source}><td><b>{l.source}</b></td><td style={{ wordBreak: 'break-all' }}><a href={l.url} target="_blank" rel="noreferrer">{l.url.replace(/^https?:\/\//, '')}</a></td>
+                      <td>{/* eslint-disable-next-line @next/next/no-img-element */}<img src={l.qr} alt={`QR code for ${l.source}`} width={72} height={72} style={{ background: '#fff', borderRadius: 6 }} /> <a className="btn ghost sm" href={l.qr} download={`whiterock-${c.key}-${l.slug}-qr.png`}><Icon n="download" size={13} /> PNG</a></td></tr>
+                  ))}</tbody>
+                </table></div>
+                <p className="muted" style={{ margin: '8px 0 4px' }}>Chat bubble for the WhiteRock website. Paste this one line into the page, just before <code>&lt;/body&gt;</code>:</p>
+                <code style={{ display: 'block', whiteSpace: 'pre-wrap', wordBreak: 'break-all', padding: 10, borderRadius: 8, background: 'var(--paper)', border: '1px solid var(--line)' }}>{`<script src="${site()}/chat-bubble.js" data-ws="${c.key}" data-src="website" defer></script>`}</code>
+              </div>
+            ))}
+          </>
+        )}
       </div>
 
       <div className="card" id="voice">

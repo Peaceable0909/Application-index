@@ -1413,6 +1413,7 @@ export async function convertLead(f: FormData) {
     const { error } = await db.from('portal_applications').upsert({
       application_id: id, workspace: lead.workspace, name, email, phone: lead.phone || null, status: 'New Lead', progress: progressFor('New Lead'), submitted_at: now,
       student_key: key, in_master: false, in_regent: false, has_raw: false, synced_at: now, last_activity_at: now,
+      ...(lead.source ? { source: lead.source, source_by: 'chat' } : {}),
     }, { onConflict: 'application_id' });
     if (error) redirect(`/leads?lead=${leadId}&err=${encodeURIComponent(`Could not save the student: ${error.message}`)}`);
     await log(id, staff.email, 'student_added', { from: 'new-student chat' });
@@ -1420,6 +1421,7 @@ export async function convertLead(f: FormData) {
   const body = ['From the new-student chat', lead.interest ? `Wants: ${lead.interest}` : '', lead.summary || '', (lead.needs as string[] | null)?.length ? `Needs:\n${(lead.needs as string[]).map((n) => `- ${n}`).join('\n')}` : ''].filter(Boolean).join('\n\n');
   await db.from('portal_notes').upsert({ application_id: appId, author: 'ai', body, pinned: true, ai_key: 'lead' }, { onConflict: 'application_id,ai_key' });
   if (email) await db.from('portal_student_memory').upsert({ student_email: email, summary: lead.summary || '', needs: lead.needs || [], interests: lead.interest ? { wants: lead.interest } : {}, updated_at: now }, { onConflict: 'student_email', ignoreDuplicates: true });
+  if (existing && lead.source) await db.from('portal_applications').update({ source: lead.source, source_by: 'chat' }).eq('application_id', appId).is('source', null);   // keep what the form or a person already recorded
   await db.from('portal_leads').update({ converted_app: appId, status: 'converted', staff_read_at: now }).eq('id', leadId);
   let sheet = '';
   if (!existing) { const r = await pushToMaster(appId, staff.email, 'New Lead').catch((e: Error) => `failed: ${e.message}`); sheet = r === 'added' ? ' Also added to the sheet.' : r === 'exists' ? '' : ` The sheet row was not added (${r}). Use “Add to master sheet” on the student to try again.`; }

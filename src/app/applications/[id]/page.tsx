@@ -21,6 +21,8 @@ import { niceName } from '@/components/UserMenu';
 import OfferForm from '@/components/OfferForm';
 import DocTypeSelect from '@/components/DocTypeSelect';
 import { getOffer, milestones } from '@/lib/offer';
+import { setLeadSource } from '../../sourceActions';
+import { SOURCES } from '@/lib/sources';
 import { saveOffer, inviteOneStudent, sendStudentReminder, saveDates, addNote, addReminder, addToMaster, completeReminder, createDraft, scanDocs, setDocType, dismissSuggestion, generateSummary, linkFolder, refreshDocuments, scanStudent, sendCounselorEmail, unlinkFolder, updateCounselor, updateRegent, updateStatus, uploadDocument } from '../../actions';
 import { loadThread } from '@/lib/thread';
 import StaffStudentPanel from '@/components/StaffStudentPanel';
@@ -256,6 +258,15 @@ export default async function ApplicationPage({ params, searchParams }: { params
                       <Btn className="ghost sm">Save</Btn>
                     </form>
                     {app.deadline && (() => { const left = Math.ceil((new Date(app.deadline + 'T23:59:59').getTime() - Date.now()) / 864e5); return <div className={`muted`} style={{ marginTop: 8, fontSize: 13 }}>{left < 0 ? `Deadline passed ${-left} day${left === -1 ? '' : 's'} ago` : left === 0 ? 'Deadline is today' : `${left} day${left === 1 ? '' : 's'} until the deadline`}</div>; })()}
+                  </div>
+                  <div style={{ borderTop: '1px solid var(--line)', marginTop: 16, paddingTop: 14 }}>
+                    <div className="stat-l" style={{ marginBottom: 10 }}><Icon n="globe" size={14} /> How they heard about us</div>
+                    <form action={setLeadSource} className="filters" style={{ alignItems: 'flex-end' }}>
+                      <input type="hidden" name="id" value={id} />
+                      <select name="source" defaultValue={app.source || ''} style={{ flex: '1 1 180px' }}><option value="">Not recorded</option>{SOURCES.map((x) => <option key={x}>{x}</option>)}</select>
+                      <Btn className="ghost sm">Save</Btn>
+                    </form>
+                    {app.source && <div className="muted" style={{ marginTop: 6, fontSize: 12.5 }}>{app.source_by === 'form' ? 'Picked on the document form.' : app.source_by === 'chat' ? 'Came through the website chat link.' : app.source_by ? `Set by ${app.source_by}.` : ''}</div>}
                   </div>
                   <div style={{ borderTop: '1px solid var(--line)', marginTop: 16, paddingTop: 14 }}>
                     <div className="stat-l" style={{ marginBottom: 10 }}><Icon n="users" size={14} /> Counselor</div>

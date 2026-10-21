@@ -10,8 +10,8 @@ const DAY = 864e5;
 export const OFFER_STATUSES: string[] = [...Object.keys(PROGRESS).filter((s) => PROGRESS[s] >= PROGRESS['Offer Received']), 'Awaiting CAS', 'CAS Request'];
 const atOrPastOffer = (s: string | null | undefined) => !!s && OFFER_STATUSES.includes(s);
 
-type App = { application_id: string; workspace: string; status: string | null; counselor: string | null; day: string };
-type Lead = { id: string; workspace: string; status: string; converted_app: string | null; day: string };
+type App = { application_id: string; workspace: string; status: string | null; counselor: string | null; day: string; source: string | null };
+type Lead = { id: string; workspace: string; status: string; converted_app: string | null; day: string; source: string | null };
 type Facts = { apps: App[]; leads: Lead[]; firstOffer: Map<string, number>; firstEnrolled: Map<string, number> };
 
 async function pages<T>(q: (a: number, b: number) => PromiseLike<{ data: T[] | null }>): Promise<T[]> {
@@ -29,8 +29,8 @@ async function loadFacts(keys: string[]): Promise<Facts> {
   const db = admin();
   if (!keys.length) return { apps: [], leads: [], firstOffer: new Map(), firstEnrolled: new Map() };
   const [apps, leads, events] = await Promise.all([
-    pages<{ application_id: string; workspace: string; status: string | null; counselor: string | null; submitted_at: string | null; created_at: string }>((a, b) => db.from('portal_applications').select('application_id, workspace, status, counselor, submitted_at, created_at').in('workspace', keys).order('application_id').range(a, b)),
-    pages<{ id: string; workspace: string; status: string; converted_app: string | null; created_at: string }>((a, b) => db.from('portal_leads').select('id, workspace, status, converted_app, created_at').in('workspace', keys).order('id').range(a, b)),
+    pages<{ application_id: string; workspace: string; status: string | null; counselor: string | null; submitted_at: string | null; created_at: string; source: string | null }>((a, b) => db.from('portal_applications').select('application_id, workspace, status, counselor, submitted_at, created_at, source').in('workspace', keys).order('application_id').range(a, b)),
+    pages<{ id: string; workspace: string; status: string; converted_app: string | null; created_at: string; source: string | null }>((a, b) => db.from('portal_leads').select('id, workspace, status, converted_app, created_at, source').in('workspace', keys).order('id').range(a, b)),
     pages<{ application_id: string; detail: { to?: string } | null; created_at: string }>((a, b) => db.from('portal_activity').select('application_id, detail, created_at, portal_applications!inner(workspace)').eq('kind', 'status_change').in('portal_applications.workspace', keys).order('id').range(a, b)),
   ]);
   const firstOffer = new Map<string, number>(), firstEnrolled = new Map<string, number>();
@@ -41,8 +41,8 @@ async function loadFacts(keys: string[]): Promise<Facts> {
     if (to === 'Enrolled' && t < (firstEnrolled.get(e.application_id) ?? Infinity)) firstEnrolled.set(e.application_id, t);
   }
   return {
-    apps: apps.map((a) => ({ application_id: a.application_id, workspace: a.workspace, status: a.status, counselor: a.counselor, day: (a.submitted_at || a.created_at).slice(0, 10) })),
-    leads: leads.map((l) => ({ id: l.id, workspace: l.workspace, status: l.status, converted_app: l.converted_app, day: l.created_at.slice(0, 10) })),
+    apps: apps.map((a) => ({ application_id: a.application_id, workspace: a.workspace, status: a.status, counselor: a.counselor, day: (a.submitted_at || a.created_at).slice(0, 10), source: a.source })),
+    leads: leads.map((l) => ({ id: l.id, workspace: l.workspace, status: l.status, converted_app: l.converted_app, day: l.created_at.slice(0, 10), source: l.source })),
     firstOffer, firstEnrolled,
   };
 }
@@ -55,6 +55,7 @@ export type Funnel = {
   range: Range; total: Line;
   byWorkspace: ({ key: string; name: string } & Line)[];
   byCounselor: { label: string; students: number; offers: number; enrolled: number }[];
+  bySource: ({ source: string } & Line)[];
 };
 
 export async function buildFunnel(range: Range, keys: string[]): Promise<Funnel> {
@@ -75,8 +76,12 @@ function funnelFrom(f: Facts, spaces: { key: string; name: string }[], range: Ra
     const c = byCounselor.get(k) || byCounselor.set(k, { label: a.counselor?.trim() || '(unassigned)', students: 0, offers: 0, enrolled: 0 }).get(k)!;
     c.students++; if (offered(a)) c.offers++; if (enrolled(a)) c.enrolled++;
   }
+  const NONE = '(not recorded)';
+  const places = [...new Set([...apps.map((a) => a.source || NONE), ...leads.map((l) => l.source || NONE)])];
+  const bySource = places.map((p) => ({ source: p, ...line(apps.filter((a) => (a.source || NONE) === p), leads.filter((l) => (l.source || NONE) === p)) }))
+    .sort((a, b) => Number(a.source === NONE) - Number(b.source === NONE) || b.students + b.chats - (a.students + a.chats));
   return {
-    range, total: line(apps, leads),
+    range, total: line(apps, leads), bySource,
     byWorkspace: keys.map((k) => ({ key: k, name: names.get(k) || k, ...line(apps.filter((a) => a.workspace === k), leads.filter((l) => l.workspace === k)) })),
     byCounselor: [...byCounselor.values()].sort((a, b) => b.students - a.students),
   };
@@ -84,7 +89,9 @@ function funnelFrom(f: Facts, spaces: { key: string; name: string }[], range: Ra
 
 const cell = (v: unknown) => { const t = String(v ?? ''); return /[",\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
 export function funnelCsv(f: Funnel, kind: string): string {
-  const rows: (string | number)[][] = kind === 'funnel_counselor'
+  const rows: (string | number)[][] = kind === 'funnel_source'
+    ? [['Where they heard about us', 'Chats started', 'Chats that became students', 'Applications', 'Reached an offer', 'Enrolled', 'Offer rate %', 'Enrolment rate %'], ...f.bySource.map((x) => [x.source, x.chats, x.fromChats, x.students, x.offers, x.enrolled, pct(x.offers, x.students), pct(x.enrolled, x.students)])]
+    : kind === 'funnel_counselor'
     ? [['Counselor', 'Students', 'Reached an offer', 'Enrolled', 'Offer rate %', 'Enrolment rate %'], ...f.byCounselor.map((c) => [c.label, c.students, c.offers, c.enrolled, pct(c.offers, c.students), pct(c.enrolled, c.students)])]
     : [['Country', 'Chats started', 'Chats that became students', 'Chat conversion %', 'Applications', 'Reached an offer', 'Enrolled', 'Offer rate %', 'Enrolment rate %'], ...f.byWorkspace.map((w) => [w.name, w.chats, w.fromChats, pct(w.fromChats, w.chats), w.students, w.offers, w.enrolled, pct(w.offers, w.students), pct(w.enrolled, w.students)])];
   return rows.map((r) => r.map(cell).join(',')).join('\n');

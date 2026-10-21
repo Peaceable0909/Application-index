@@ -47,6 +47,16 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
             <tbody>{fn.byWorkspace.map((w) => <tr key={w.key}><td><b>{w.name}</b></td><td>{w.chats}</td><td>{w.fromChats}{w.chats ? <span className="muted"> ({pct(w.fromChats, w.chats)}%)</span> : null}</td><td>{w.students}</td><td>{w.offers}</td><td>{w.enrolled}</td><td>{pct(w.offers, w.students)}%</td><td>{pct(w.enrolled, w.students)}%</td></tr>)}</tbody>
           </table></div>
         )}
+        {fn.bySource.length > 0 && (
+          <>
+            <div className="filters" style={{ justifyContent: 'space-between', marginTop: 16 }}><b>Where they heard about us</b>{csvLink('funnel_source')}</div>
+            <div className="scroll"><table>
+              <thead><tr><th>Source</th><th>Chats</th><th>Applications</th><th>Reached an offer</th><th>Enrolled</th><th>Offer rate</th><th>Enrolment rate</th></tr></thead>
+              <tbody>{fn.bySource.map((x) => <tr key={x.source}><td><b>{x.source}</b></td><td>{x.chats}</td><td>{x.students}</td><td>{x.offers}</td><td>{x.enrolled}</td><td>{pct(x.offers, x.students)}%</td><td>{pct(x.enrolled, x.students)}%</td></tr>)}</tbody>
+            </table></div>
+            {fn.bySource.length === 1 && fn.bySource[0].source === '(not recorded)' && <p className="muted" style={{ marginBottom: 0 }}>Nothing is recorded yet. Set it on a student’s page, pick it on the document form, or share the tracked chat links in Settings.</p>}
+          </>
+        )}
         {fn.byCounselor.length > 0 && (
           <>
             <div className="filters" style={{ justifyContent: 'space-between', marginTop: 16 }}><b>By counselor</b>{csvLink('funnel_counselor')}</div>

@@ -293,3 +293,7 @@ button.iconbtn { padding:0; }
 .st-trans button:disabled { opacity:.6; cursor:default; }
 .st-trans small { display:block; color:#b91c1c; margin-top:2px; }
 .st-bub:has(.st-trans) { padding-bottom:24px; }
+
+/* the chat inside the bubble on the WhiteRock website (iframe): fill the frame, no outer card chrome */
+.hello.embed { padding:0; background:var(--card); min-height:100dvh; }
+.hello.embed .hello-card { width:100%; height:100dvh; border:0; border-radius:0; box-shadow:none; }
