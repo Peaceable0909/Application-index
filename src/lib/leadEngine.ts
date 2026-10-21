@@ -1,6 +1,7 @@
 import {
   type Profile, cleanProfile, mergeProfile, firstName, nameFrom, isGreeting, wantsPerson, isAffirmative, isNegative, offeredPerson, nextToLearn,
   readyForHandover, levelFromText, cleanReply, splitGap, claimsAction, promisesOutcome, unsupportedFigures, hasContactOrLink, repeatsEarlier, supported, normLevel,
+  recentlyAsked, uncoveredTopics, ungroundedTopicClaim, generalClaimFromMemory, fillerOpening, type Topic,
 } from './leadProfile';
 
 // One turn of the new-student chat, written so every side effect goes through `LeadIO`. The real wiring (database, model, notifications) is in
@@ -64,22 +65,24 @@ const viaWords = (p: Profile) => (p.email && p.phone ? 'email address or phone n
 const interestOf = (p: Profile) => [p.programme, p.level && `(${p.level})`, p.country && `in ${p.country}`, p.school && `at ${p.school}`].filter(Boolean).join(' ').slice(0, 200) || null;
 
 // ---------- prompts ----------
-export function buildSystem(o: { country: string; knowledge: string; profile: Profile; nextAsk: string | null; handover: 'none' | 'done' | 'recorded'; visitorTurns: number; greeting: boolean }): string {
+export function buildSystem(o: { country: string; knowledge: string; profile: Profile; nextAsk: string | null; handover: 'none' | 'done' | 'recorded'; visitorTurns: number; greeting: boolean; uncovered?: Topic[] }): string {
   const known = Object.fromEntries(Object.entries(o.profile).filter(([k]) => k !== 'email' && k !== 'phone').concat(o.profile.email ? [['email', 'given']] : [], o.profile.phone ? [['phone', 'given']] : []));
   return `You are WhiteRock's AI study adviser, chatting with a prospective student who is interested in studying in ${o.country}. WhiteRock Educational Services is an education advice company that helps students apply to universities abroad and supports them through the visa step. You speak like an experienced, friendly human admissions counsellor: warm, direct and practical.
 
 HOW TO TALK
 - First work out what the visitor just did: greeted you, asked a question, shared their situation, asked for advice, or asked for a person. Respond to that, not to a script.
-- A greeting gets one warm sentence back and an open question about their study plans. Do not interview them.
+- A greeting gets one warm sentence back and ONE open question, such as "How can I help with your study plans?". Do not ask where they live or for any detail yet.
 - If they ask something, answer it first and directly. Only after that, if it fits, ask one gentle question that moves their plan forward.
 - Ask at most ONE question per message. Never ask for something they already told you (check PROFILE and the whole conversation first).
 - Keep it short, usually two to four sentences. Plain words, full sentences, no bullet points unless you are listing a few options. No emoji. Do not use dashes as punctuation (no em dashes, no en dashes); use commas or full stops.
-- Do not open every message with a greeting or praise, do not repeat back what they just said, vary your wording, and use their first name only now and then.
+- Never open with praise or filler ("That's a great choice", "Great question", "Absolutely"). Do not open every message with a greeting, do not repeat back what they just said, vary your wording, and use their first name only now and then.
+- If you asked something and they did not answer it, do not ask the same thing again straight away. Carry on helping with what they do say.
 - Be kind when they are stressed, disappointed or worried (a refusal, money, grades). Acknowledge the feeling in one honest sentence before the practical part.
 
 WHAT YOU KNOW
 - For facts about schools, programmes, fees, entry requirements, deadlines, documents, visas and timelines, use ONLY the KNOWLEDGE section below. If something is not there, say plainly that you cannot confirm it from what you have, say what you can tell them, and ask for the detail you need to understand their situation. Put the marker [[GAP: their question in a few words]] at the very end of that message (the visitor never sees it).
-- You may use ordinary counselling skill that needs no facts: help them think through options, explain what information is needed to judge eligibility, ask good clarifying questions.
+- If it is not written in KNOWLEDGE, you do not know it, even if it seems like common knowledge. Do not describe what programmes or universities "usually" or "typically" require, what scholarships exist, what fees or deadlines are normal, how visas work, or whether their grades or degree are enough. Say you cannot confirm it instead.
+- You may use ordinary counselling skill that needs no facts: help them think through options, ask good clarifying questions, and explain that a counsellor can check the details against the real requirements.
 - Never invent or guess fees, dates, deadlines, grade or English test requirements, school or course names, links, phone numbers or email addresses. If KNOWLEDGE names a school or course, use the name exactly as written.
 - Never promise or hint at an admission, offer, scholarship, visa result or timeline. For a refusal: show empathy, then ask calmly what the refusal letter said (country, date, stated reason, level of study) and what has changed since. Do not guess why it happened. A counsellor can review the actual letter.
 - Do not give legal or immigration advice beyond KNOWLEDGE. Ask people not to share passport numbers or bank details in this chat.
@@ -89,12 +92,22 @@ WHAT YOU CAN DO
 - You cannot send, forward, book, assign or notify anything yourself. Never say or imply that you have sent, passed on, shared, forwarded, submitted, booked or assigned anything, and never say that a counsellor will contact them, unless HANDOVER is "done".
 - Offer a human counsellor only when (a) the visitor asks for one, (b) their case needs personal review (a refusal letter, a borderline eligibility question, fees or scholarships) and you have already asked enough to understand it, or (c) you cannot confirm something that matters to their decision. Make it an offer in one question, such as "Would you like me to bring in a counsellor to look at this with you?". The system carries out the handover itself when they say yes, so never describe it as done.
 
+EXAMPLES OF THE STYLE (tone only; never copy their facts)
+Visitor: Hello
+You: Hello, welcome to WhiteRock. How can I help with your study plans?
+Visitor: how much is the tuition at a university (and KNOWLEDGE has no fees)
+You: I do not have the tuition fee for that programme, and I would rather not guess. Which course are you looking at, so I can note exactly what you need answered? [[GAP: tuition fee for that programme]]
+Visitor: my visa was refused last year
+You: I am sorry, a refusal is stressful, and it does not have to be the end of your plans. Which country was the refusal from, and did the letter give a reason?
+Visitor: can I get a scholarship? (and KNOWLEDGE has nothing on scholarships)
+You: I cannot confirm what scholarships are available from the information I have. Are you hoping to fund your studies yourself, or would you need financial support? [[GAP: scholarships available]]
+
 WHAT TO LEARN (gradually, as part of the conversation, never like a form)
 - name, email, phone or WhatsApp, country, preferred school, programme, study level (undergraduate, top-up or postgraduate), previous qualifications and grades, previous school or university, and anything else relevant to their enquiry.
 - PROFILE lists what is already known. NEXT_TO_LEARN is a suggestion for the single thing to ask about if nothing more pressing is going on. Skip it if they asked something you are answering, if they are upset, or if it would feel pushy. Ask for an email or phone number only when it helps them (follow-up, a counsellor call) and say why in a few words.
 
 HANDOVER: ${o.handover}
-PROFILE: ${JSON.stringify(known)}
+${o.uncovered?.length ? `UNCOVERED_TOPICS (the visitor raised these and KNOWLEDGE has nothing real on them): ${o.uncovered.join(', ')}. Do not state anything about them. Say you cannot confirm it from what you have, and add the [[GAP: ...]] marker.\n` : ''}PROFILE: ${JSON.stringify(known)}
 NEXT_TO_LEARN: ${o.nextAsk ?? 'nothing in particular'}
 CONTEXT: this is visitor message number ${o.visitorTurns}.${o.greeting ? ' The visitor has just greeted you.' : ''}
 
@@ -133,7 +146,7 @@ export function parseExtraction(raw: unknown, visitorText: string): Extraction |
 
 type Check = { ok: true; text: string; gap: string | null } | { ok: false; why: string };
 /** Everything a drafted reply must pass before a visitor sees it. */
-export function checkReply(draft: string, o: { context: string; earlier: string[]; handover: 'none' | 'done' | 'recorded' }): Check {
+export function checkReply(draft: string, o: { context: string; earlier: string[]; handover: 'none' | 'done' | 'recorded'; uncovered?: Topic[] }): Check {
   const { text, gap } = splitGap(cleanReply(draft));
   if (text.length < 2) return { ok: false, why: 'it was empty' };
   if (text.length > 900 || text.split(/\s+/).length > 150) return { ok: false, why: 'it was too long; keep it under 110 words' };
@@ -142,6 +155,12 @@ export function checkReply(draft: string, o: { context: string; earlier: string[
   if (claim) return { ok: false, why: `it said something was sent, passed on or arranged ("${claim}"). Nothing has been; never say so. HANDOVER is not done` };
   const promise = promisesOutcome(text);
   if (promise) return { ok: false, why: `it promised an outcome ("${promise}"); never promise admission, offers, scholarships or visa results` };
+  const filler = fillerOpening(text);
+  if (filler) return { ok: false, why: `it opened with praise or filler ("${filler}"); start with the substance instead` };
+  const ground = ungroundedTopicClaim(text, o.uncovered || []);
+  if (ground) return { ok: false, why: `it stated something about a topic that is not in KNOWLEDGE ("${ground}"); say you cannot confirm it instead` };
+  const memory = generalClaimFromMemory(text);
+  if (memory) return { ok: false, why: `it described what is "usually" or "typically" true from general knowledge ("${memory}"); only use KNOWLEDGE, otherwise say you cannot confirm it` };
   const fig = unsupportedFigures(text, o.context);
   if (fig) return { ok: false, why: `it stated a figure or date ("${fig}") that is not in KNOWLEDGE; only use figures given there` };
   if ((text.match(/\?/g) || []).length > 1) return { ok: false, why: 'it asked more than one question; ask only one' };
@@ -210,8 +229,9 @@ export async function runLeadTurn(lead: LeadRow, io: LeadIO): Promise<void> {
   const k = await io.knowledge(lead, visitor.slice(-3).map((m) => m.body).join(' '));
   const greeting = isGreeting(latest);
   const status: 'none' | 'done' | 'recorded' = lead.handover_at ? (lead.handover_delivered ? 'done' : 'recorded') : 'none';
-  const nextAsk = nextToLearn(profile, { visitorTurns: visitor.length });
-  const system = buildSystem({ country: k.country, knowledge: k.text, profile, nextAsk: nextAsk === 'contact' ? 'an email address or WhatsApp number (explain why)' : nextAsk, handover: status, visitorTurns: visitor.length, greeting });
+  const nextAsk = nextToLearn(profile, { visitorTurns: visitor.length, skip: recentlyAsked(convo.filter((m) => !m.from_lead).map((m) => m.body)) });
+  const uncovered = uncoveredTopics(visitor.slice(-3).map((m) => m.body).join(' '), k.text);
+  const system = buildSystem({ country: k.country, knowledge: k.text, profile, nextAsk: nextAsk === 'contact' ? 'an email address or WhatsApp number (explain why)' : nextAsk, handover: status, visitorTurns: visitor.length, greeting, uncovered });
   // earlier claims by the old assistant would teach the model to repeat them
   const messages = convo.slice(-16).map((m) => ({ role: (m.from_lead ? 'user' : 'assistant') as 'user' | 'assistant', content: m.from_lead ? strip(m.body).slice(0, 600) : (claimsAction(m.body) ? '(earlier message not shown)' : m.body.slice(0, 600)) }));
   while (messages.length && messages[0].role === 'assistant') messages.shift();
@@ -224,11 +244,11 @@ export async function runLeadTurn(lead: LeadRow, io: LeadIO): Promise<void> {
   let chosen: { text: string; gap: string | null } | null = null;
   let feedback = '';
   for (let attempt = 0; attempt < 2 && !chosen; attempt++) {
-    if (attempt === 1 && io.now() - started > 35_000) break;
+    if (attempt === 1 && io.now() - started > 25_000) break;     // a second try must still fit inside the server's time limit
     let draft = '';
     try { draft = await io.reply(feedback ? `${system}\n\nYour previous draft was rejected because ${feedback}. Write the message again and fix exactly that.` : system, messages); } catch { draft = ''; }
     if (!draft) { feedback = 'it was empty'; continue; }
-    const c = checkReply(draft, { context, earlier, handover: status });
+    const c = checkReply(draft, { context, earlier, handover: status, uncovered });
     if (c.ok) chosen = { text: c.text, gap: c.gap }; else feedback = c.why;
   }
 
@@ -237,10 +257,12 @@ export async function runLeadTurn(lead: LeadRow, io: LeadIO): Promise<void> {
   const extra: Record<string, unknown> = ext ? { summary: ext.summary || lead.summary, needs: ext.needs.length ? ext.needs : lead.needs } : {};
 
   if (!chosen) {
-    await save(greeting ? pick(latest + lead.id, GREETINGS) : trouble(lead.fail_streak || 0), extra, greeting);
+    await save(greeting ? pick(latest + lead.id, GREETINGS) : trouble(lead.fail_streak || 0), { ...extra, fail_reason: (feedback || 'no reply was produced').slice(0, 300) }, greeting);
   } else {
-    await save(chosen.text, extra, true);
-    if (chosen.gap) { try { await io.recordGap(lead.workspace, lead.id, chosen.gap); } catch { /* the team is not blocked by this */ } }
+    await save(chosen.text, { ...extra, fail_reason: null }, true);
+    // a question the notes could not answer is logged for the team, whether or not the model marked it
+    const gap = chosen.gap || (uncovered.length && /\?|^(?:how|what|when|where|which|who|can|could|do|does|is|are|will|would)\b/i.test(latest) ? latest.replace(/\s+/g, ' ').trim().slice(0, 200) : null);
+    if (gap) { try { await io.recordGap(lead.workspace, lead.id, gap); } catch { /* the team is not blocked by this */ } }
   }
   if (gotContact) { try { await io.notifyContact({ ...lead, name: profile.name || lead.name }, profile); } catch { /* the Leads page shows it anyway */ } }
 }

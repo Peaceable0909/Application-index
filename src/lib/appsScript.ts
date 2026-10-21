@@ -1,7 +1,7 @@
 // Server-only client for the Apps Script web app (PortalApi.gs).
 type Reply<T> = { ok: true; data: T } | { ok: false; error: string };
 
-export async function callScript<T>(action: string, payload: unknown = {}): Promise<T> {
+export async function callScript<T>(action: string, payload: unknown = {}, opts: { timeoutMs?: number } = {}): Promise<T> {
   const url = process.env.APPS_SCRIPT_URL;
   const token = process.env.APPS_SCRIPT_TOKEN;
   if (!url || !token) throw new Error('APPS_SCRIPT_URL / APPS_SCRIPT_TOKEN are not set');
@@ -15,6 +15,7 @@ export async function callScript<T>(action: string, payload: unknown = {}): Prom
       body: new URLSearchParams({ action, token, payload: JSON.stringify(payload) }),
       redirect: 'follow',
       cache: 'no-store',
+      ...(opts.timeoutMs ? { signal: AbortSignal.timeout(opts.timeoutMs) } : {}),
     });
     text = await res.text();
     if (attempt === 0 && /Script function not found:\s*doGet/i.test(text)) { await new Promise((r) => setTimeout(r, 1200)); continue; }

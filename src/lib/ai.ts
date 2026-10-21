@@ -61,13 +61,13 @@ export async function askAi<T>(o: {
 }
 
 /** One-off generation (no caching) with the same daily budget and usage logging. Throws a readable error on failure. */
-export async function generateOnce<T>(o: { kind: string; system: string; user: string; maxTokens?: number; temperature?: number; validate: (raw: unknown) => T | null }): Promise<T> {
+export async function generateOnce<T>(o: { kind: string; system: string; user: string; maxTokens?: number; temperature?: number; timeoutMs?: number; validate: (raw: unknown) => T | null }): Promise<T> {
   const db = admin();
   const since = new Date(); since.setUTCHours(0, 0, 0, 0);
   const { count } = await db.from('portal_ai_usage').select('id', { count: 'exact', head: true }).gte('created_at', since.toISOString());
   if ((count || 0) >= DAILY_LIMIT) throw new Error(`Daily AI limit reached (${DAILY_LIMIT} calls). It resets at midnight UTC.`);
   let r: { text: string; model: string; tokens: number };
-  try { r = await callScript<{ text: string; model: string; tokens: number }>('aiChat', { system: o.system, user: o.user, maxTokens: o.maxTokens ?? 700, json: true, ...(o.temperature !== undefined ? { temperature: o.temperature } : {}) }); }
+  try { r = await callScript<{ text: string; model: string; tokens: number }>('aiChat', { system: o.system, user: o.user, maxTokens: o.maxTokens ?? 700, json: true, ...(o.temperature !== undefined ? { temperature: o.temperature } : {}) }, o.timeoutMs ? { timeoutMs: o.timeoutMs } : undefined); }
   catch (e) { await db.from('portal_ai_usage').insert({ kind: o.kind, ok: false }); throw e; }
   let parsed: T | null = null;
   try { parsed = o.validate(parseJson(r.text)); } catch { parsed = null; }
@@ -77,7 +77,7 @@ export async function generateOnce<T>(o: { kind: string; system: string; user: s
 }
 
 /** A chat reply written as ordinary text from a real back-and-forth (not a JSON blob). Same daily budget and usage logging as everything else. */
-export async function generateText(o: { kind: string; system: string; messages: { role: 'user' | 'assistant'; content: string }[]; maxTokens?: number; temperature?: number }): Promise<string> {
+export async function generateText(o: { kind: string; system: string; messages: { role: 'user' | 'assistant'; content: string }[]; maxTokens?: number; temperature?: number; timeoutMs?: number }): Promise<string> {
   const db = admin();
   const since = new Date(); since.setUTCHours(0, 0, 0, 0);
   const { count } = await db.from('portal_ai_usage').select('id', { count: 'exact', head: true }).gte('created_at', since.toISOString());
@@ -85,7 +85,7 @@ export async function generateText(o: { kind: string; system: string; messages: 
   // An Apps Script from before this change ignores `messages`, so the same conversation also travels as plain text in `user`.
   const transcript = o.messages.map((m) => `${m.role === 'user' ? 'Visitor' : 'Assistant'}: ${m.content}`).join('\n');
   try {
-    const r = await callScript<{ text: string; model: string; tokens: number }>('aiChat', { system: o.system, user: `Conversation so far:\n${transcript}\n\nWrite the assistant's next message. Reply with the message text only.`, messages: o.messages, maxTokens: o.maxTokens ?? 500, temperature: o.temperature ?? 0.5, json: false });
+    const r = await callScript<{ text: string; model: string; tokens: number }>('aiChat', { system: o.system, user: `Conversation so far:\n${transcript}\n\nWrite the assistant's next message. Reply with the message text only.`, messages: o.messages, maxTokens: o.maxTokens ?? 500, temperature: o.temperature ?? 0.5, json: false }, o.timeoutMs ? { timeoutMs: o.timeoutMs } : undefined);
     const text = String(r.text || '').trim();
     await db.from('portal_ai_usage').insert({ kind: o.kind, tokens: r.tokens, ok: !!text });
     if (!text) throw new Error('The AI returned an empty reply.');

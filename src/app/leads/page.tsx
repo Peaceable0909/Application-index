@@ -23,7 +23,7 @@ export default async function Leads({ searchParams }: { searchParams: Promise<{ 
   const db = admin(), ws = await currentWorkspace();
   const [{ data: wsRow }, { data: leads }] = await Promise.all([
     db.from('portal_workspaces').select('name, lead_chat').eq('key', ws).maybeSingle(),
-    db.from('portal_leads').select('id, name, email, phone, interest, summary, needs, status, ai_paused, needs_human, profile, handover_at, handover_delivered, handover_reason, converted_app, created_at, last_message_at, staff_read_at').eq('workspace', ws).order('last_message_at', { ascending: false }).limit(200),
+    db.from('portal_leads').select('id, name, email, phone, interest, summary, needs, status, ai_paused, needs_human, profile, handover_at, handover_delivered, handover_reason, fail_reason, converted_app, created_at, last_message_at, staff_read_at').eq('workspace', ws).order('last_message_at', { ascending: false }).limit(200),
   ]);
   const ids = (leads || []).map((l) => l.id);
   const { data: last } = ids.length ? await db.from('portal_lead_msgs').select('lead_id, body, from_lead, by_ai, created_at').in('lead_id', ids.slice(0, 60)).order('created_at', { ascending: false }).limit(400) : { data: [] };
@@ -96,6 +96,7 @@ export default async function Leads({ searchParams }: { searchParams: Promise<{ 
               </dl>
               {(() => { const gaps = missingFields({ ...((sel.profile as Profile) || {}), ...(sel.name ? { name: sel.name } : {}), ...(sel.email ? { email: sel.email } : {}), ...(sel.phone ? { phone: sel.phone } : {}) }).filter((f) => f !== 'school'); return gaps.length ? <p className="muted" style={{ margin: '4px 0 0', fontSize: 12.5 }}>Not asked or answered yet: {gaps.map((f) => FIELD_LABEL[f].toLowerCase()).join(', ')}.</p> : null; })()}
               {(sel.needs as string[] | null)?.length ? <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>{(sel.needs as string[]).map((n) => <li key={n}>{n}</li>)}</ul> : null}
+              {sel.fail_reason && <p className="muted" style={{ margin: '6px 0 0', fontSize: 12.5 }}>The assistant could not give a good answer to the last message: {sel.fail_reason}</p>}
               <p style={{ margin: '8px 0 0', fontSize: 13 }}><b>Counsellor handover:</b> {sel.handover_at ? (sel.handover_delivered ? <span className="ok-t">team notified on {when(sel.handover_at)}</span> : <span className="bad-t">asked for on {when(sel.handover_at)}, but the notification could not be confirmed. Please follow up.</span>) : sel.needs_human ? <span className="muted">flagged for a person</span> : <span className="muted">not requested yet</span>}</p>
             </div></div>
             <div className="lead-thread">

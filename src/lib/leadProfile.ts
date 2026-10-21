@@ -84,22 +84,32 @@ export function nameFrom(text: string, previousAssistant: string): string | null
 }
 
 // ---------- what to learn next ----------
-export type AskCtx = { visitorTurns: number; wantsContact?: boolean };
+export type AskCtx = { visitorTurns: number; wantsContact?: boolean; skip?: (Field | 'contact')[] };
 /** The one thing it would be natural to ask next, or null. Their goal first, then their background, contact details last and only once the chat has substance. */
 export function nextToLearn(p: Profile, ctx: AskCtx): Field | 'contact' | null {
   const order: Field[] = ['country', 'programme', 'level', 'qualifications', 'previousSchool', 'school'];
-  if (ctx.visitorTurns >= 2 && !p.name) return 'name';
-  for (const f of order) if (!p[f]) return f;
+  const skip = new Set(ctx.skip || []);
+  if (ctx.visitorTurns >= 2 && !p.name && !skip.has('name')) return 'name';
+  for (const f of order) if (!p[f] && !skip.has(f)) return f;
   const haveContact = !!(p.email || p.phone);
-  if (!haveContact && (ctx.wantsContact || ctx.visitorTurns >= 4)) return 'contact';
-  if (!p.email && p.phone && ctx.visitorTurns >= 6) return 'email';
-  if (!p.phone && p.email && ctx.visitorTurns >= 6) return 'phone';
+  if (!haveContact && (ctx.wantsContact || ctx.visitorTurns >= 4) && !skip.has('contact')) return 'contact';
+  if (!p.email && p.phone && ctx.visitorTurns >= 6 && !skip.has('email')) return 'email';
+  if (!p.phone && p.email && ctx.visitorTurns >= 6 && !skip.has('phone')) return 'phone';
   return null;
 }
 export const missingFields = (p: Profile): Field[] => (['name', 'email', 'phone', 'country', 'school', 'programme', 'level', 'qualifications', 'previousSchool'] as Field[]).filter((f) => !p[f]);
 
 /** Enough for a counsellor to act on: a name, a way to reach them, and what they want or asked. */
 export const readyForHandover = (p: Profile, askedSomething: boolean) => !!p.name && !!(p.email || p.phone) && !!(p.country || p.programme || p.school || p.level || p.other || askedSomething);
+
+/** Which of the pushier questions the assistant already put to the visitor in its last few messages (so it does not nag). */
+export function recentlyAsked(assistantTexts: string[]): (Field | 'contact')[] {
+  const out: (Field | 'contact')[] = [];
+  const t = assistantTexts.slice(-3).join('\n');
+  if (/\b(?:your (?:full )?name|call you|may i (?:have|know) your name)\b[^.!]*\?|\?[^.!?]*\bname\b/i.test(t)) out.push('name');
+  if (/(?:e-?mail|whatsapp|phone number|contact number)[^.!?]*\?/i.test(t)) out.push('contact');
+  return out;
+}
 
 // ---------- checks on what the assistant writes ----------
 /** No em or en dashes, no emoji, no stray markers: plain full sentences. */
@@ -120,16 +130,27 @@ export function splitGap(t: string): { text: string; gap: string | null } {
   return { text: t.replace(/\[\[[^\]]*\]\]/g, '').replace(/\s+$/g, '').trim(), gap: m ? m[1].trim() : null };
 }
 
+const RECIPIENT = /\b(?:counsel+(?:or|er)s?|advis[eo]rs?|(?:our|the|a) team|colleagues?|specialists?|admissions? (?:team|office|officers?)|someone (?:from|at|on) )\b/i;
+const SEND_VERB = /\b(?:sent|send(?:ing)?|pass(?:ed|ing)?|forward(?:ed|ing)?|share[ds]?|sharing|submit(?:ted|ting)?|refer(?:red|ring)?|hand(?:ed|ing)?(?: over)?|escalat(?:ed|ing)|notif(?:ied|y|ying)|inform(?:ed|ing)|assign(?:ed|ing)|book(?:ed|ing)|schedul(?:ed|ing)|connect(?:ed|ing)|flag(?:ged|ging))\b/i;
 const ACTION_CLAIMS: RegExp[] = [
-  /\b(?:i|we)\s+(?:have\s+|'ve\s+|just\s+|already\s+)*(?:sent|shared|passed|forwarded|submitted|referred|assigned|booked|scheduled|notified|informed|escalated|handed)\b/i,
-  /\b(?:i(?:'ve| have| had)|i(?:'ll| will)|we(?:'ve| have|'ll| will)|i am|i'm)\b[^.!?\n]{0,60}\b(?:sent|send|sending|passed|pass|passing|forwarded|forward|forwarding|shared|share|sharing|submitted|submit|referred|refer|assigned|assign|booked|book|scheduled|schedule|notified|notify|informed|inform|escalated|escalate|handed|hand)\b/i,
-  /\b(?:your|the)\s+(?:details|information|message|messages|enquiry|inquiry|chat|conversation|request|file|profile|case)\b[^.!?\n]{0,40}\b(?:has|have|had|is|are|was|were|will be|has been|have been)\b[^.!?\n]{0,25}\b(?:sent|passed|forwarded|shared|submitted|referred|assigned|booked|noted|logged|recorded|received)\b/i,
-  /\b(?:counsel+(?:or|er)s?|advis[eo]rs?|(?:our|the) team|someone from)\b[^.!?\n]{0,50}\b(?:will|is going to|are going to|shall|'ll|has been|have been)\b[^.!?\n]{0,40}\b(?:contact|call|reach|email|message|reply|respond|get back|follow up|be in touch|review|assigned|help you personally)\b/i,
+  // "your message has been passed to the team", "details were sent to a counsellor"
+  /\b(?:your|the)\s+(?:details|information|message|messages|enquiry|inquiry|chat|conversation|request|file|profile|case|documents?)\b[^.!?\n]{0,40}\b(?:has|have|had|is|are|was|were|will be)\s+(?:been\s+)?(?:sent|passed|forwarded|shared|submitted|referred|assigned|booked|noted|logged|recorded|received|flagged)\b/i,
+  // a team member will do something
+  /\b(?:counsel+(?:or|er)s?|advis[eo]rs?|(?:our|the) team|someone from [^.!?\n]{0,20}team)\b[^.!?\n]{0,50}\b(?:will|is going to|are going to|shall|'ll|has been|have been)\b[^.!?\n]{0,40}\b(?:contact|call|reach|email|message|reply|respond|get back|follow up|be in touch|review|assigned|help you personally)\b/i,
   /\b(?:you(?:'ve| have) been|you are now|you're now)\b[^.!?\n]{0,30}\b(?:connected|assigned|matched|registered|enrolled|booked|added|referred)\b/i,
 ];
-/** A sentence in which the assistant says it did, or someone will do, something the system has not done. Returns the sentence, or null. */
+const OFFER_VERB = /(?:\b(?:i|we)\s+(?:can|could|may|might|would|am (?:happy|glad|able) to|'d be (?:happy|glad) to)\s+(?:also\s+)?|\b(?:like|want) me to\s+|\bshall i\s+|\bshould i\s+)(?:\w+\s+){0,2}?(?:pass|send|share|forward|refer|connect|bring|hand|notify|inform|escalate|assign|book|schedule|flag)/i;
+const CONDITIONAL = /^\s*(?:if|once|when|after)\b|\b(?:if you|once you|when you|after you)\b/i;
+/** A sentence in which the assistant says it did, or someone will do, something the system has not done. Offers, questions and "if you ..." conditions are fine. Returns the sentence, or null. */
 export function claimsAction(t: string): string | null {
-  for (const s of t.replace(/[\u2018\u2019]/g, "'").split(/(?<=[.!?])\s+|\n+/)) for (const re of ACTION_CLAIMS) if (re.test(s)) return s.trim().slice(0, 140);
+  for (const s of t.replace(/[\u2018\u2019]/g, "'").split(/(?<=[.!?])\s+|\n+/)) {
+    if (/\?\s*$/.test(s)) continue;                                  // a question cannot claim anything
+    const first = /\b(?:i|we)\b/i.test(s) && SEND_VERB.test(s) && RECIPIENT.test(s) && !OFFER_VERB.test(s);
+    if (first) return s.trim().slice(0, 140);                          // "I passed / I've sent / I'll forward ... to the team"
+    if (ACTION_CLAIMS[0].test(s)) return s.trim().slice(0, 140);       // "your details have been sent to ..."
+    if (ACTION_CLAIMS[1].test(s) && !CONDITIONAL.test(s)) return s.trim().slice(0, 140);   // "a counsellor will contact you"
+    if (ACTION_CLAIMS[2].test(s)) return s.trim().slice(0, 140);       // "you have been assigned"
+  }
   return null;
 }
 
@@ -164,3 +185,57 @@ export function repeatsEarlier(reply: string, earlier: string[]): boolean {
   return earlier.some((e) => { const b = words(e); if (b.size < 5) return false; let i = 0; a.forEach((w) => { if (b.has(w)) i++; }); return i / (a.size + b.size - i) > 0.75; });
 }
 
+
+// ---------- facts the assistant must not make up ----------
+export type Topic = 'fees' | 'scholarships' | 'deadlines' | 'requirements' | 'visa' | 'accommodation' | 'work';
+const TOPIC_WORDS: Record<Topic, RegExp> = {
+  fees: /\b(?:fees?|tuition|costs?|price|how much|pay(?:ing|ment|ments)?|instal+ments?|deposit|afford)\b/i,
+  scholarships: /\b(?:scholar\w*|bursar\w*|funding|funded|grants?|discounts?|financial aid)\b/i,
+  deadlines: /\b(?:deadlines?|closing date|intakes?|start dates?|apply by|cut-?off|how long (?:does|will) (?:it|the) (?:take|process))\b/i,
+  requirements: /\b(?:requirements?|eligib\w*|entry|ielts|toefl|pte|duolingo|english (?:test|language|proficiency)|minimum|gpa|cgpa|grades?|class of degree|2:1|2:2|qualif\w*|admission criteria)\b/i,
+  visa: /\b(?:visa|cas|immigration|brp|ihs|tb test|refus\w*|proof of funds|bank statement|dependants?|dependents?)\b/i,
+  accommodation: /\b(?:accommodation|housing|halls?|rent|where (?:to|will) (?:i )?live)\b/i,
+  work: /\b(?:work rights|part[- ]time work|post[- ]study|graduate route|work (?:while|during)|jobs?)\b/i,
+};
+// what in the team's own notes counts as having an answer for a topic (a mere mention of the word is not enough)
+const TOPIC_EVIDENCE: Record<Topic, RegExp> = {
+  fees: /[£$€₦]\s?\d|\d[\d,]*\s?(?:pounds|gbp|naira|usd)\b/i,
+  scholarships: /\b(?:scholarship|bursary)\b[^.\n]{0,120}\b(?:\d|available|offer|worth|eligible|apply)/i,
+  deadlines: /\b(?:deadline|closing date|apply by|intake)\b[^.\n]{0,80}\b(?:\d{1,2}(?:st|nd|rd|th)?|january|february|march|april|may|june|july|august|september|october|november|december)\b/i,
+  requirements: /\b(?:ielts|toefl|pte|duolingo)\b[^.\n]{0,40}\d|\b(?:2:1|2:2|first class|second class|minimum grade|gpa|cgpa)\b|\bentry requirements?\b[^.\n]{0,80}\b(?:degree|grade|gpa|ielts|2:1|\d)/i,
+  visa: /\b(?:visa|cas)\b[^.\n]{0,100}\b(?:require|need|apply|interview|document|fund|fee|\d)/i,
+  accommodation: /\b(?:accommodation|halls?)\b[^.\n]{0,100}\b(?:\d|£|available|offer|book)/i,
+  work: /\b(?:work rights|part[- ]time|graduate route)\b[^.\n]{0,100}\b(?:\d|allowed|hours|permit)/i,
+};
+export const ALL_TOPICS = Object.keys(TOPIC_WORDS) as Topic[];
+export const topicsIn = (text: string): Topic[] => ALL_TOPICS.filter((t) => TOPIC_WORDS[t].test(text));
+/** Topics the visitor raised that the knowledge text says nothing real about. */
+export const uncoveredTopics = (visitorRecent: string, knowledge: string): Topic[] => topicsIn(visitorRecent).filter((t) => !TOPIC_EVIDENCE[t].test(knowledge));
+
+const HEDGE = /\b(?:cannot|can't|can not|don't have|do not have|not able|unable|unsure|not sure|isn't in|is not in|no information|don't know|do not know|not something i can|cannot confirm|can't confirm|rather not guess|counsellor can|counsellor could|team can|would need to check|need to check)\b/i;
+/** A sentence that states something about an uncovered topic as if it were known. Questions and honest "I cannot confirm" sentences are fine. Returns the sentence, or null. */
+export function ungroundedTopicClaim(reply: string, uncovered: Topic[]): string | null {
+  if (!uncovered.length) return null;
+  const EMPATHY = /\b(?:sorry|understand|stressful|frustrating|difficult|hard|worr(?:y|ied|ying)|hear that|upsetting|disappointing|you mentioned|you said|you told me)\b/i;
+  const YOURS = /\byour (?:\w+ ){0,2}(?:visa|refus\w*|fees?|budget|funding|scholarship|situation|plans?)\b/i;
+  for (const s of reply.split(/(?<=[.!?])\s+|\n+/)) {
+    if (/\?\s*$/.test(s) || HEDGE.test(s) || EMPATHY.test(s) || YOURS.test(s)) continue;   // questions, honest "cannot confirm", empathy and talk about their own situation are fine
+    const hit = topicsIn(s).filter((t) => uncovered.includes(t));
+    if (hit.length) return s.trim().slice(0, 140);
+  }
+  return null;
+}
+
+/** "usually", "typically", "most universities" about admissions subjects: general knowledge from memory, not from the team's notes. */
+export function generalClaimFromMemory(reply: string): string | null {
+  const general = /\b(?:usually|typically|generally|normally|commonly|often|tend to|in general|on average|most (?:universities|schools|students|programmes|courses)|(?:may|might|would|will|could) need (?:to|some|a)|(?:may|might|would|will|could) be (?:required|needed)|are (?:limited|competitive)|is (?:limited|competitive))\b/i;
+  const domain = /\b(?:degree|grade|ielts|english|deadline|intake|visa|tuition|fees?|cost|scholar\w*|requirement\w*|eligib\w*|accept\w*|admission|entry|gpa|cgpa|funding|bursar\w*|refus\w*)\b/i;
+  for (const s of reply.split(/(?<=[.!?])\s+|\n+/)) if (general.test(s) && domain.test(s) && !HEDGE.test(s) && !/\?\s*$/.test(s)) return s.trim().slice(0, 140);
+  return null;
+}
+
+/** Praise and filler openers ("That's a great choice", "Great question") that make the chat sound scripted. */
+export function fillerOpening(reply: string): string | null {
+  const m = /^(?:that(?:'s| is)\s+(?:a\s+)?(?:really\s+)?(?:great|good|excellent|wonderful|fantastic|lovely|smart|solid)\b[^.!,]{0,30}|(?:great|excellent|wonderful|fantastic|lovely)\s+(?:choice|question|idea|decision|goal|start|plan|option)\b|(?:great|excellent|wonderful|fantastic|perfect|awesome)[!.,])/i.exec(reply.trim().replace(/[\u2018\u2019]/g, "'"));
+  return m ? m[0] : null;
+}

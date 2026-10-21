@@ -75,9 +75,9 @@ function realIO(): LeadIO {
     },
     aiEnabled: () => brainEnabled(),
     budgetLeft: async () => (await leadAiToday()) < LEAD_DAILY(),
-    reply: (system, messages) => generateText({ kind: 'lead', system, messages, maxTokens: 450, temperature: 0.5 }),
+    reply: (system, messages) => generateText({ kind: 'lead', system, messages, maxTokens: 320, temperature: 0.5, timeoutMs: 28_000 }),
     extract: async (system, user) => {
-      try { return await generateOnce<Record<string, unknown>>({ kind: 'lead_x', system, user, maxTokens: 450, temperature: 0.1, validate: (raw) => (raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : null) }); }
+      try { return await generateOnce<Record<string, unknown>>({ kind: 'lead_x', system, user, maxTokens: 400, temperature: 0.1, timeoutMs: 28_000, validate: (raw) => (raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : null) }); }
       catch { return null; }
     },
     async notifyHandover(lead, profile, summary, recent): Promise<Handover> {
