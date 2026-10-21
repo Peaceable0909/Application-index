@@ -5,7 +5,7 @@ import { brainEnabled } from '@/lib/brain';
 import Btn from '@/components/Btn';
 import Icon from '@/components/Icon';
 import BrainTest from '@/components/BrainTest';
-import { addBrainNote, deleteBrainDoc, deleteBrainNote, saveCountryBrief, saveRequiredDocs, setAutoReply, toggleBrainDoc, toggleBrainNote } from '../brainActions';
+import { addBrainNote, deleteBrainDoc, deleteBrainNote, saveCountryBrief, resolveChatGap, saveRequiredDocs, setAutoReply, toggleBrainDoc, toggleBrainNote } from '../brainActions';
 import BrainLearn from '@/components/BrainLearn';
 import { requiredDocs } from '@/lib/workspace';
 
@@ -22,6 +22,8 @@ export default async function Brain({ searchParams }: { searchParams: Promise<{ 
     db.from('portal_brain_notes').select('*').eq('workspace', ws).order('updated_at', { ascending: false }),
     db.from('portal_applications').select('school').eq('workspace', ws).not('school', 'is', null).limit(1500),
   ]);
+  const { data: gapRows } = await db.from('portal_chat_gaps').select('id, question, created_at').eq('workspace', ws).eq('resolved', false).order('created_at', { ascending: false }).limit(30);
+  const gaps = gapRows || [];
   const schoolList = [...new Set((schools || []).map((s) => (s.school || '').trim()).filter(Boolean))].sort().slice(0, 80);
   const on = brainEnabled();
   return (
@@ -98,6 +100,12 @@ export default async function Brain({ searchParams }: { searchParams: Promise<{ 
               </div>))}
           </div>
         )}
+      </div>
+
+      <div className="card">
+        <h2><Icon n="chat" size={17} /> Questions the new-student chat could not answer{gaps.length ? <span className="badge amber plain" style={{ marginLeft: 8 }}>{gaps.length}</span> : null}</h2>
+        <p className="muted" style={{ marginTop: 0 }}>When someone asks something that is not in what you taught the Brain, the chat tells them honestly that it cannot confirm it, and the question appears here. Add the answer as a note below (or upload a file), then tick it off.</p>
+        {gaps.length === 0 ? <p className="muted" style={{ margin: 0 }}>Nothing yet.</p> : <table><tbody>{gaps.map((g) => <tr key={g.id}><td>{g.question}</td><td className="muted" style={{ whiteSpace: 'nowrap' }}>{new Date(g.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</td><td><form action={resolveChatGap}><input type="hidden" name="id" value={g.id} /><Btn className="ghost sm">Done</Btn></form></td></tr>)}</tbody></table>}
       </div>
 
       <div className="card">

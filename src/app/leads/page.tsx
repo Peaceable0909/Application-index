@@ -1,4 +1,6 @@
 import Link from 'next/link';
+import { Fragment } from 'react';
+import { FIELDS, FIELD_LABEL, firstName, missingFields, type Profile } from '@/lib/leadProfile';
 import { headers } from 'next/headers';
 import { requireTeam } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
@@ -21,7 +23,7 @@ export default async function Leads({ searchParams }: { searchParams: Promise<{ 
   const db = admin(), ws = await currentWorkspace();
   const [{ data: wsRow }, { data: leads }] = await Promise.all([
     db.from('portal_workspaces').select('name, lead_chat').eq('key', ws).maybeSingle(),
-    db.from('portal_leads').select('id, name, email, phone, interest, summary, needs, status, ai_paused, needs_human, converted_app, created_at, last_message_at, staff_read_at').eq('workspace', ws).order('last_message_at', { ascending: false }).limit(200),
+    db.from('portal_leads').select('id, name, email, phone, interest, summary, needs, status, ai_paused, needs_human, profile, handover_at, handover_delivered, handover_reason, converted_app, created_at, last_message_at, staff_read_at').eq('workspace', ws).order('last_message_at', { ascending: false }).limit(200),
   ]);
   const ids = (leads || []).map((l) => l.id);
   const { data: last } = ids.length ? await db.from('portal_lead_msgs').select('lead_id, body, from_lead, by_ai, created_at').in('lead_id', ids.slice(0, 60)).order('created_at', { ascending: false }).limit(400) : { data: [] };
@@ -66,7 +68,7 @@ export default async function Leads({ searchParams }: { searchParams: Promise<{ 
                   <span className="lead-sub">{p ? `${p.from_lead ? '' : 'You: '}${p.body}` : ''}</span>
                   <span className="chips">
                     {l.status === 'converted' && <span className="badge green plain">Student</span>}
-                    {l.needs_human && l.status !== 'converted' && <span className="badge amber plain">Needs a person</span>}
+                    {l.needs_human && l.status !== 'converted' && <span className="badge amber plain">{l.handover_at && l.handover_delivered === false ? 'Handover not confirmed' : 'Wants a counsellor'}</span>}
                     {(l.email || l.phone) && <span className="badge plain">Contact left</span>}
                     {l.interest && <span className="badge plain">{l.interest.slice(0, 34)}</span>}
                   </span>
@@ -85,7 +87,17 @@ export default async function Leads({ searchParams }: { searchParams: Promise<{ 
                 {me.role === 'admin' && <form action={deleteLead}><input type="hidden" name="leadId" value={sel.id} /><Btn className="ghost sm">Delete</Btn></form>}
               </div>
             </div>
-            {sel.summary && <div className="callout" style={{ marginTop: 10 }}><Icon n="spark" className="ci" /><div><b>What the assistant understood</b><p style={{ margin: '2px 0 0' }}>{sel.summary}</p>{(sel.needs as string[] | null)?.length ? <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>{(sel.needs as string[]).map((n) => <li key={n}>{n}</li>)}</ul> : null}</div></div>}
+            <div className={`callout`} style={{ marginTop: 10, alignItems: 'flex-start' }}><Icon n="spark" className="ci" /><div style={{ flex: 1 }}>
+              <b>What we know about {firstName(sel.name) || 'this visitor'}</b>
+              {sel.summary && <p style={{ margin: '2px 0 6px' }}>{sel.summary}</p>}
+              <dl className="kv narrow-k" style={{ margin: '6px 0' }}>
+                {FIELDS.filter((f) => f !== 'other' && ((f === 'name' && sel.name) || (f === 'email' && sel.email) || (f === 'phone' && sel.phone) || ((sel.profile as Record<string, string> | null)?.[f]))).map((f) => <Fragment key={f}><dt>{FIELD_LABEL[f]}</dt><dd>{f === 'name' ? sel.name : f === 'email' ? sel.email : f === 'phone' ? sel.phone : (sel.profile as Record<string, string>)[f]}</dd></Fragment>)}
+                {(sel.profile as Record<string, string> | null)?.other && <><dt>Other</dt><dd>{(sel.profile as Record<string, string>).other}</dd></>}
+              </dl>
+              {(() => { const gaps = missingFields({ ...((sel.profile as Profile) || {}), ...(sel.name ? { name: sel.name } : {}), ...(sel.email ? { email: sel.email } : {}), ...(sel.phone ? { phone: sel.phone } : {}) }).filter((f) => f !== 'school'); return gaps.length ? <p className="muted" style={{ margin: '4px 0 0', fontSize: 12.5 }}>Not asked or answered yet: {gaps.map((f) => FIELD_LABEL[f].toLowerCase()).join(', ')}.</p> : null; })()}
+              {(sel.needs as string[] | null)?.length ? <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>{(sel.needs as string[]).map((n) => <li key={n}>{n}</li>)}</ul> : null}
+              <p style={{ margin: '8px 0 0', fontSize: 13 }}><b>Counsellor handover:</b> {sel.handover_at ? (sel.handover_delivered ? <span className="ok-t">team notified on {when(sel.handover_at)}</span> : <span className="bad-t">asked for on {when(sel.handover_at)}, but the notification could not be confirmed. Please follow up.</span>) : sel.needs_human ? <span className="muted">flagged for a person</span> : <span className="muted">not requested yet</span>}</p>
+            </div></div>
             <div className="lead-thread">
               {(thread || []).map((m) => (
                 <div key={m.id} className={`hello-b ${m.from_lead ? 'them' : 'me'}`}>
@@ -105,6 +117,8 @@ export default async function Leads({ searchParams }: { searchParams: Promise<{ 
               <input type="hidden" name="leadId" value={sel.id} />
               <div className="filters"><input name="name" defaultValue={sel.name || ''} placeholder="Name" /><input name="email" defaultValue={sel.email || ''} placeholder="Email" /><input name="phone" defaultValue={sel.phone || ''} placeholder="Phone / WhatsApp" /></div>
               <input name="interest" defaultValue={sel.interest || ''} placeholder="What they want to study, where, when" />
+              <div className="filters"><input name="country" defaultValue={(sel.profile as Record<string, string> | null)?.country || ''} placeholder="Country of study" /><input name="school" defaultValue={(sel.profile as Record<string, string> | null)?.school || ''} placeholder="Preferred school" /><input name="programme" defaultValue={(sel.profile as Record<string, string> | null)?.programme || ''} placeholder="Programme" /><select name="level" defaultValue={(sel.profile as Record<string, string> | null)?.level || ''}><option value="">Study level</option><option>Undergraduate</option><option>Top-up</option><option>Postgraduate</option><option>Foundation</option><option>Pre-masters</option><option>Doctorate</option></select></div>
+              <div className="filters"><input name="qualifications" defaultValue={(sel.profile as Record<string, string> | null)?.qualifications || ''} placeholder="Qualifications and grades" /><input name="previousSchool" defaultValue={(sel.profile as Record<string, string> | null)?.previousSchool || ''} placeholder="Previous school or university" /></div>
               <div><Btn className="ghost sm">Save details</Btn></div>
             </form>
             <div className="filters" style={{ marginTop: 14 }}>

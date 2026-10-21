@@ -81,3 +81,10 @@ export async function deleteBrainDoc(f: FormData) {
   await admin().from('portal_brain_docs').delete().eq('id', txt(f, 'id')).eq('workspace', await currentWorkspace());
   done('File deleted.');
 }
+
+/** A question the chat could not answer is dealt with (an answer was added as a note, or it does not matter). */
+export async function resolveChatGap(f: FormData) {
+  await requireTeam();
+  await admin().from('portal_chat_gaps').update({ resolved: true }).eq('id', txt(f, 'id')).eq('workspace', await currentWorkspace());
+  done('Marked as done.');
+}

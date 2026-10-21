@@ -1,13 +1,19 @@
 import { createHmac, randomBytes } from 'node:crypto';
 import { admin } from './supabase';
-import { generateOnce, numbersWithin } from './ai';
+import { generateOnce, generateText } from './ai';
 import { relevantPassages } from './brainDocs';
 import { brainEnabled } from './brain';
 import { sendPush } from './push';
+import { sendMail, signFor } from './mail';
+import { site } from './emailTemplate';
+import { requiredDocs } from './workspace';
+import { runLeadTurn, type LeadIO, type LeadRow, type Handover } from './leadEngine';
+import { FIELDS, FIELD_LABEL, type Profile } from './leadProfile';
 
 // The new-student chat: people who are not in the portal yet talk to an assistant that knows the country (brief, notes, uploaded files),
-// answers what it can, and asks for their name and contact details so a counselor can follow up. Public, so it is rate limited,
-// has its own daily AI budget, needs consent before the first message, and never sees any student's data.
+// answers what it can, learns about them gradually and, when a person is really needed, hands over to the team. The conversation logic is in
+// leadEngine.ts; this file connects it to the database, the model and the notifications. Public, so it is rate limited, has its own daily AI
+// budget, needs consent before the first message, and never sees any student's data.
 const secret = () => process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.PORTAL_TOKEN || 'dev';
 export const newToken = () => randomBytes(24).toString('base64url');
 export const tokenHash = (t: string) => createHmac('sha256', secret()).update('lead:' + t).digest('hex');
@@ -38,90 +44,73 @@ export async function staffEmailsFor(ws: string): Promise<string[]> {
   return (data || []).filter((s) => s.role === 'admin' || (s.role !== 'counselor' && (s.workspaces || ['uk']).includes(ws))).map((s) => s.email);
 }
 
-const SYSTEM = (country: string) =>
-  `You are the AI assistant of WhiteRock, an education-advice company, chatting with someone who is thinking about studying in: ${country}. They are not a student of ours yet. ` +
-  'Use ONLY the "countryBrief", "teamNotes" and "fileExcerpts" in the JSON for facts about studying, schools, costs, requirements and deadlines. If the answer is not there, do not guess: say a counselor will confirm it, and set needsHuman to true. ' +
-  'Be warm, clear and short (at most 90 words), like a helpful text message, in plain English, with at most one emoji. Ask at most one question at a time. ' +
-  'Your goals: help with what they ask; learn what they want to study, where, and when, and their current qualification; and, once you have been helpful, ask once, naturally, for their name and an email or WhatsApp number so a counselor can follow up. Do not repeat back their email or number. ' +
-  'If asked, say you are an AI assistant and that a counselor can take over. NEVER invent dates, fees, links, phone numbers or emails, and NEVER promise or hint at admission, an offer, a visa or any outcome. Do not give legal or immigration advice. Tell people not to share passport numbers or bank details in the chat. ' +
-  'Reply as JSON: {"reply": "<message>", "needsHuman": true|false, "name": "<their name if they said it, else null>", "interest": "<short phrase: what/where/when they want to study, else null>", "summary": "<at most 400 characters: who they are, what they want, what is still open>", "needs": ["<up to 6 short things they need or asked for>"]}.';
+export type { LeadRow };
 
-export type LeadRow = { id: string; workspace: string; name: string | null; email: string | null; phone: string | null; interest: string | null; summary: string | null; needs: string[]; ai_paused: boolean; needs_human: boolean };
+const clip = (t: string, n: number) => (t.length > n ? t.slice(0, n - 1) + '…' : t);
 
-/** Writes the assistant's next message for a lead and updates what we know about them. Returns the saved messages. */
-export async function leadTurn(lead: LeadRow): Promise<void> {
+/** The real connections for one chat turn. */
+function realIO(): LeadIO {
   const db = admin();
-  const { data: rows } = await db.from('portal_lead_msgs').select('from_lead, by_ai, body, created_at').eq('lead_id', lead.id).order('created_at', { ascending: false }).limit(20);
-  const convo = (rows || []).reverse();
-  const leadText = convo.filter((m) => m.from_lead).map((m) => m.body).join('\n');
-  const put = async (body: string) => { await db.from('portal_lead_msgs').insert({ lead_id: lead.id, from_lead: false, by_ai: true, body }); };
-
-  // contact details come from what they typed, never from the model
-  const email = lead.email || findEmail(leadText), phone = lead.phone || findPhone(leadText);
-  const gotContact = (!lead.email && !!email) || (!lead.phone && !!phone);
-  const patch: Record<string, unknown> = { ...(email && !lead.email ? { email } : {}), ...(phone && !lead.phone ? { phone } : {}) };
-
-  if (!brainEnabled() || (await leadAiToday()) >= LEAD_DAILY()) {
-    await put('Thanks for your message. A counselor will get back to you soon.');
-    await db.from('portal_leads').update({ ...patch, needs_human: true, last_message_at: new Date().toISOString() }).eq('id', lead.id);
-    await notify(lead, 'needs a person', gotContact || !lead.needs_human);
-    return;
-  }
-
-  const { data: w } = await db.from('portal_workspaces').select('name, brief').eq('key', lead.workspace).maybeSingle();
-  const { data: notes } = await db.from('portal_brain_notes').select('title, body').eq('workspace', lead.workspace).eq('active', true).limit(80);
-  const asked = convo.filter((m) => m.from_lead).slice(-3).map((m) => m.body).join(' ');
-  const files = await relevantPassages(lead.workspace, undefined, asked);
-  const userJson = JSON.stringify({
-    countryBrief: w?.brief || null, teamNotes: (notes || []).map((n) => ({ topic: n.title, info: n.body })), fileExcerpts: files,
-    alreadyKnown: { name: lead.name, interest: lead.interest, haveEmail: !!email, haveWhatsAppOrPhone: !!phone },
-    conversation: convo.map((m) => ({ from: m.from_lead ? 'visitor' : 'assistant', text: strip(m.body).slice(0, 600) })),
-  });
-  const allowed = (userJson.match(/\d+/g) || []).map(Number);
-  type Out = { reply: string; needsHuman: boolean; name: string | null; interest: string | null; summary: string; needs: string[] };
-  let out: Out | null = null;
-  try {
-    out = await generateOnce<Out>({
-      kind: 'lead', maxTokens: 500, system: SYSTEM(w?.name || 'a country we serve'), user: userJson,
-      validate: (raw) => {
-        const d = raw as Record<string, unknown>;
-        if (typeof d?.reply !== 'string') return null;
-        const reply = d.reply.trim();
-        if (reply.length < 6 || reply.length > 800) return null;
-        if (/https?:\/\/|www\.|@|\+?\d[\d\s-]{7,}/.test(reply)) return null;
-        if (/guarantee|you (have been|are) (admitted|accepted)|offer (has been|is) (approved|granted)|visa (is|will be) (approved|granted)|definitely (get|receive)/i.test(reply)) return null;
-        if (!numbersWithin(reply, allowed)) return null;
-        const str = (v: unknown, n: number) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, n) : null);
-        const name = str(d.name, 60);
-        return {
-          reply, needsHuman: d.needsHuman === true,
-          name: name && /^[\p{L}][\p{L} .'-]*$/u.test(name) && leadText.toLowerCase().includes(name.split(' ')[0].toLowerCase()) ? name : null,
-          interest: str(d.interest, 200), summary: str(d.summary, 500) || '',
-          needs: Array.isArray(d.needs) ? d.needs.filter((x): x is string => typeof x === 'string' && x.length > 2).map((x) => x.slice(0, 100)).slice(0, 6) : [],
-        };
-      },
-    });
-  } catch { out = null; }
-
-  if (!out) {
-    await put('Thanks, I’ve passed your message to a counselor and they’ll reply soon.');
-    await db.from('portal_leads').update({ ...patch, needs_human: true, last_message_at: new Date().toISOString() }).eq('id', lead.id);
-    await notify(lead, 'needs a person', true);
-    return;
-  }
-  await put(out.reply);
-  await db.from('portal_leads').update({
-    ...patch, ...(out.name && !lead.name ? { name: out.name } : {}), ...(out.interest ? { interest: out.interest } : {}),
-    summary: out.summary || lead.summary, needs: out.needs.length ? out.needs : lead.needs, needs_human: lead.needs_human || out.needsHuman, last_message_at: new Date().toISOString(),
-  }).eq('id', lead.id);
-  if (gotContact) await notify({ ...lead, name: out.name || lead.name }, 'shared contact details', true);
-  else if (out.needsHuman && !lead.needs_human) await notify({ ...lead, name: out.name || lead.name }, 'needs a person', true);
+  return {
+    now: () => Date.now(),
+    async loadConvo(leadId) {
+      const { data } = await db.from('portal_lead_msgs').select('from_lead, by_ai, body, created_at').eq('lead_id', leadId).order('created_at', { ascending: false }).limit(24);
+      return (data || []).reverse();
+    },
+    async saveReply(leadId, body) { await db.from('portal_lead_msgs').insert({ lead_id: leadId, from_lead: false, by_ai: true, body }); },
+    async updateLead(leadId, patch) { await db.from('portal_leads').update(patch).eq('id', leadId); },
+    async knowledge(lead, query) {
+      const [{ data: w }, { data: notes }, files, docs] = await Promise.all([
+        db.from('portal_workspaces').select('name, brief').eq('key', lead.workspace).maybeSingle(),
+        db.from('portal_brain_notes').select('title, body').eq('workspace', lead.workspace).eq('active', true).limit(80),
+        relevantPassages(lead.workspace, undefined, query),
+        requiredDocs(lead.workspace).catch(() => [] as string[]),
+      ]);
+      const parts: string[] = [];
+      if (w?.brief) parts.push(`Country brief:\n${w.brief}`);
+      if (notes?.length) parts.push('Notes from our team:\n' + notes.map((n) => `- ${n.title}: ${clip(n.body, 2600)}`).join('\n'));
+      if (files.length) parts.push('Excerpts from our documents:\n' + files.map((f) => `- (${f.source}) ${f.excerpt}`).join('\n'));
+      if (docs.length) parts.push(`Documents our team normally collects for an application: ${docs.join(', ')}.`);
+      return { country: w?.name || 'a country we serve', text: clip(parts.join('\n\n'), 16000) };
+    },
+    aiEnabled: () => brainEnabled(),
+    budgetLeft: async () => (await leadAiToday()) < LEAD_DAILY(),
+    reply: (system, messages) => generateText({ kind: 'lead', system, messages, maxTokens: 450, temperature: 0.5 }),
+    extract: async (system, user) => {
+      try { return await generateOnce<Record<string, unknown>>({ kind: 'lead_x', system, user, maxTokens: 450, temperature: 0.1, validate: (raw) => (raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : null) }); }
+      catch { return null; }
+    },
+    async notifyHandover(lead, profile, summary, recent): Promise<Handover> {
+      const emails = await staffEmailsFor(lead.workspace);
+      const who = profile.name || lead.name || 'A visitor', link = `${site()}/leads?lead=${lead.id}`;
+      const facts = FIELDS.filter((f) => profile[f]).map((f) => `${FIELD_LABEL[f]}: ${profile[f]}`);
+      const body = [`${who} asked to speak to a counsellor.`, '', ...facts, ...(summary ? ['', `What the assistant understood: ${summary}`] : []), '', 'Their latest messages:', ...recent.map((m) => `- ${clip(m, 300)}`), '', `Open the chat: ${link}`].join('\n');
+      const sign = await signFor(null, 'WhiteRock Educational Services');
+      const [push, mails] = await Promise.all([
+        sendPush({ emails, title: 'A chat visitor wants a counsellor', body: clip(`${who}${lead.interest ? ` · ${lead.interest}` : ''}`, 120), url: `/leads?lead=${lead.id}`, tag: `lead-${lead.id}`, calmMs: 600_000 }).catch(() => ({ sent: 0 })),
+        Promise.allSettled(emails.slice(0, 8).map((to) => sendMail({
+          to, subject: `New chat enquiry: ${who}`, body, eyebrow: 'New student enquiry', title: `${who} wants to speak to a counsellor`, sign,
+          blocks: [{ type: 'list', items: facts.length ? facts : ['No details were collected yet.'] }, ...(summary ? [{ type: 'p' as const, text: summary }] : []), { type: 'quote', from: 'Latest messages', text: recent.map((m) => clip(m, 300)).join('\n') }],
+          cta: { label: 'Open the chat', href: link },
+        }))),
+      ]);
+      const emailSent = mails.filter((r) => r.status === 'fulfilled').length;
+      return { delivered: push.sent > 0 || emailSent > 0, pushSent: push.sent, emailSent };
+    },
+    async notifyContact(lead, profile: Profile) {
+      const emails = await staffEmailsFor(lead.workspace);
+      await sendPush({ emails, title: 'New lead shared contact details', body: `${profile.name || lead.name || 'A visitor'} on the new-student chat`, url: `/leads?lead=${lead.id}`, tag: `lead-${lead.id}`, skipIfActiveMs: 30_000, calmMs: 3600_000 }).catch(() => ({ sent: 0 }));
+    },
+    async recordGap(workspace, leadId, question) {
+      const q = question.replace(/\s+/g, ' ').trim().slice(0, 200);
+      const since = new Date(Date.now() - 14 * 864e5).toISOString();
+      const { data } = await db.from('portal_chat_gaps').select('id').eq('workspace', workspace).eq('resolved', false).ilike('question', q.replace(/[\\%_]/g, '\\$&')).gte('created_at', since).limit(1);
+      if (!data?.length) await db.from('portal_chat_gaps').insert({ workspace, question: q, lead_id: leadId });
+    },
+  };
 }
 
-async function notify(lead: LeadRow, why: string, go: boolean) {
-  if (!go) return;
-  try {
-    const emails = await staffEmailsFor(lead.workspace);
-    await sendPush({ emails, title: `New lead ${why}`, body: `${lead.name || 'A visitor'} on the new-student chat`, url: `/leads?lead=${lead.id}`, tag: `lead-${lead.id}`, skipIfActiveMs: 30_000, calmMs: 3600_000 });
-  } catch { /* the Leads page shows it anyway */ }
+/** Writes the assistant's next message for a lead and updates what we know about them. */
+export async function leadTurn(lead: LeadRow): Promise<void> {
+  await runLeadTurn(lead, realIO());
 }

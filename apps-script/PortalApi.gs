@@ -413,10 +413,15 @@ function portalAiChat_(p) {
   if (!key) throw new Error('Qwen API key not found: add QWEN_API_KEY to Script properties');
   const base = (props.getProperty('QWEN_BASE_URL') || 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1').replace(/\/$/, '');
   const model = props.getProperty('QWEN_MODEL') || 'qwen-plus';
+  // A real back-and-forth (p.messages: [{role:'user'|'assistant', content}]) when given, otherwise the single message in p.user.
+  const turns = Array.isArray(p.messages) && p.messages.length
+    ? p.messages.slice(-30).map(function (m) { return { role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content || '').slice(0, 4000) }; })
+    : [{ role: 'user', content: String(p.user || '') }];
+  const temp = Number(p.temperature);
   const body = {
     model: model,
-    messages: [{ role: 'system', content: String(p.system || '') }, { role: 'user', content: String(p.user || '') }],
-    temperature: 0.2,
+    messages: [{ role: 'system', content: String(p.system || '') }].concat(turns),
+    temperature: isFinite(temp) && temp >= 0 && temp <= 1.2 ? temp : 0.2,
     max_tokens: Math.min(Number(p.maxTokens) || 700, 1200)
   };
   if (p.json) body.response_format = { type: 'json_object' };

@@ -3,9 +3,9 @@ import { canonicalSource } from '@/lib/sources';
 import { admin } from '@/lib/supabase';
 import { LIMITS, cookieName, ipHash, leadTurn, newToken, shapeLead, tokenHash, type LeadRow } from '@/lib/leads';
 
-export const maxDuration = 30;
+export const maxDuration = 60;
 const no = { 'Cache-Control': 'no-store' };
-const COLS = 'id, workspace, name, email, phone, interest, summary, needs, ai_paused, needs_human';
+const COLS = 'id, workspace, name, email, phone, interest, summary, needs, ai_paused, needs_human, profile, handover_at, handover_delivered, fail_streak';
 
 async function findLead(req: Request, ws: string) {
   // Inside the chat bubble on another website the browser may refuse our cookie, so that case sends the same secret in a header instead.

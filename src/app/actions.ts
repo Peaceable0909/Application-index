@@ -1412,13 +1412,14 @@ export async function convertLead(f: FormData) {
   if (!existing) {
     const { error } = await db.from('portal_applications').upsert({
       application_id: id, workspace: lead.workspace, name, email, phone: lead.phone || null, status: 'New Lead', progress: progressFor('New Lead'), submitted_at: now,
+      ...((lead.profile as Record<string, string> | null)?.school ? { school: (lead.profile as Record<string, string>).school } : {}), ...((lead.profile as Record<string, string> | null)?.programme ? { programme: (lead.profile as Record<string, string>).programme } : {}), ...((lead.profile as Record<string, string> | null)?.country ? { country: (lead.profile as Record<string, string>).country } : {}),
       student_key: key, in_master: false, in_regent: false, has_raw: false, synced_at: now, last_activity_at: now,
       ...(lead.source ? { source: lead.source, source_by: 'chat' } : {}),
     }, { onConflict: 'application_id' });
     if (error) redirect(`/leads?lead=${leadId}&err=${encodeURIComponent(`Could not save the student: ${error.message}`)}`);
     await log(id, staff.email, 'student_added', { from: 'new-student chat' });
   }
-  const body = ['From the new-student chat', lead.interest ? `Wants: ${lead.interest}` : '', lead.summary || '', (lead.needs as string[] | null)?.length ? `Needs:\n${(lead.needs as string[]).map((n) => `- ${n}`).join('\n')}` : ''].filter(Boolean).join('\n\n');
+  const body = ['From the new-student chat', lead.interest ? `Wants: ${lead.interest}` : '', ...(['level', 'qualifications', 'previousSchool', 'other'] as const).flatMap((k) => { const v = (lead.profile as Record<string, string> | null)?.[k]; return v ? [`${{ level: 'Study level', qualifications: 'Qualifications', previousSchool: 'Previous school', other: 'Other' }[k]}: ${v}`] : []; }), lead.summary || '', (lead.needs as string[] | null)?.length ? `Needs:\n${(lead.needs as string[]).map((n) => `- ${n}`).join('\n')}` : ''].filter(Boolean).join('\n\n');
   await db.from('portal_notes').upsert({ application_id: appId, author: 'ai', body, pinned: true, ai_key: 'lead' }, { onConflict: 'application_id,ai_key' });
   if (email) await db.from('portal_student_memory').upsert({ student_email: email, summary: lead.summary || '', needs: lead.needs || [], interests: lead.interest ? { wants: lead.interest } : {}, updated_at: now }, { onConflict: 'student_email', ignoreDuplicates: true });
   if (existing && lead.source) await db.from('portal_applications').update({ source: lead.source, source_by: 'chat' }).eq('application_id', appId).is('source', null);   // keep what the form or a person already recorded

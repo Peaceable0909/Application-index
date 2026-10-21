@@ -38,7 +38,7 @@ export default function LeadChat({ ws, country, src, embed }: { ws: string; coun
     <div className="hello-chat">
       <div className="hello-log" aria-live="polite">
         <div className="hello-note">You’re chatting with WhiteRock’s AI assistant. It answers from what our team has taught it, and a counselor can step in. Please don’t share passport numbers or bank details here.</div>
-        {!started && ready && <div className="hello-b them"><p>Hi! I can help with studying in {country}: schools, requirements, costs and next steps. What would you like to study, and when are you hoping to start?</p><span className="meta"><i className="ai-tag">AI assistant</i></span></div>}
+        {!started && ready && <div className="hello-b them"><p>Hello, welcome to WhiteRock. I can help with choosing a course, entry requirements and the application process for studying in {country}. How can I help with your study plans?</p><span className="meta"><i className="ai-tag">AI assistant</i></span></div>}
         {msgs.map((m) => (
           <div key={m.id} className={`hello-b ${m.mine ? 'me' : 'them'}`}>
             <p>{m.body}</p>

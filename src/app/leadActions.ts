@@ -8,6 +8,7 @@ import { workspacesFor, currentWorkspace } from '@/lib/workspace';
 import { sendMail } from '@/lib/mail';
 import { site } from '@/lib/emailTemplate';
 import { findEmail, findPhone } from '@/lib/leads';
+import { cleanProfile } from '@/lib/leadProfile';
 
 const txt = (f: FormData, k: string) => String(f.get(k) || '').trim();
 const go = (lead: string | null, msg: string, err = false) => { revalidatePath('/leads'); redirect(`/leads?${lead ? `lead=${lead}&` : ''}${err ? 'err' : 'msg'}=${encodeURIComponent(msg)}`); };
@@ -42,7 +43,9 @@ export async function saveLeadDetails(f: FormData) {
   const name = txt(f, 'name').slice(0, 80) || null, email = txt(f, 'email').toLowerCase() || null, phone = txt(f, 'phone').slice(0, 30) || null, interest = txt(f, 'interest').slice(0, 200) || null;
   if (email && !findEmail(email)) return go(lead.id, 'That email doesn’t look right.', true);
   if (phone && !findPhone(phone)) return go(lead.id, 'That phone number doesn’t look right.', true);
-  await admin().from('portal_leads').update({ name, email, phone, interest }).eq('id', lead.id);
+  // what staff type here replaces what the assistant learned; blank fields are left out
+  const profile = cleanProfile({ ...((lead.profile as Record<string, unknown>) || {}), ...Object.fromEntries(['country', 'school', 'programme', 'level', 'qualifications', 'previousSchool'].map((k) => [k, txt(f, k)])) });
+  await admin().from('portal_leads').update({ name, email, phone, interest, profile: { ...profile, ...(((lead.profile as Record<string, unknown>) || {})._handover ? { _handover: '1' } : {}) } }).eq('id', lead.id);
   go(lead.id, 'Saved.');
 }
 
