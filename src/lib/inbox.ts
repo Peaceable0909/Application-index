@@ -43,7 +43,7 @@ export async function inboxList(staff: Pick<Staff, 'role' | 'counselor_key'>, o:
   const term = (o.q || '').trim().replace(/[%_,()]/g, ' ').slice(0, 60).toLowerCase();
   const said = new Set<string>();
   if (term.length >= 2) {
-    let sq = db.from('portal_student_msgs').select('student_email, portal_applications!inner(workspace)').eq('portal_applications.workspace', ws).or(`body.ilike.%${term}%,att_name.ilike.%${term}%`).is('deleted_at', null).limit(400);
+    let sq = db.from('portal_student_msgs').select('student_email, portal_applications!inner(workspace)').eq('portal_applications.workspace', ws).or(`body.ilike.%${term}%,att_name.ilike.%${term}%,transcript.ilike.%${term}%`).is('deleted_at', null).limit(400);
     if (scope) sq = sq.in('application_id', scope);
     for (const m of (await sq).data || []) said.add(m.student_email as string);
   }

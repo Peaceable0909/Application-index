@@ -3,6 +3,7 @@ import { twoStepStatus } from '@/lib/twoStep';
 import { IDLE_MIN, MAX_HOURS } from '@/lib/session';
 import { resetTwoStep, setTwoStepPolicy } from '../twoStepActions';
 import { weeklyConfig } from '@/lib/weeklyReport';
+import { sttModel, voiceEnabled } from '@/lib/stt';
 import { previewWeeklySummary, saveWeeklySummary } from '../reportActions';
 import Btn from '@/components/Btn';
 import { admin } from '@/lib/supabase';
@@ -87,6 +88,16 @@ export default async function Settings({ searchParams }: { searchParams: Promise
         <ol style={{ margin: 0, paddingLeft: 20, lineHeight: 1.7 }}>
           <li>In Apps Script: <b>Services (+) → Drive API → Add</b>, then run any function once to approve the new permissions.</li>
           <li>In Vercel add the variable <code>AI_DOC_SCAN</code> = <code>on</code> and redeploy.</li>
+        </ol>
+      </div>
+
+      <div className="card" id="voice">
+        <h2>Reading voice notes <span className={`badge plain ${voiceEnabled() ? 'green' : ''}`} style={{ marginLeft: 6 }}>{voiceEnabled() ? 'on' : 'off'}</span></h2>
+        <p className="muted" style={{ marginTop: 0 }}>Students send voice notes. When this is on, each one is written down: the team sees the words under the recording, the Brain and each student’s memory can use them, and the inbox search finds them. Automatic replies still only answer typed messages. Because the <b>recording itself is sent to a speech service</b> ({process.env.STT_BASE_URL ? 'your own server' : 'Groq by default'}, model {sttModel()}), it is <b>off by default</b>. Use it only if your students have agreed to that.</p>
+        <ol style={{ margin: 0, paddingLeft: 20, lineHeight: 1.7 }}>
+          <li>Make an account with a speech service that offers the standard “audio transcriptions” API (for example Groq or OpenAI) and create a key there.</li>
+          <li>In Vercel add <code>STT_API_KEY</code> (the key, you type it yourself) and <code>AI_VOICE</code> = <code>on</code>, then redeploy. Optional: <code>STT_BASE_URL</code> and <code>STT_MODEL</code> if you use a different service.</li>
+          <li>Each voice note counts as one of today’s AI calls.</li>
         </ol>
       </div>
 

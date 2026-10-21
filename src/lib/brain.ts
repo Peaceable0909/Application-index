@@ -31,8 +31,9 @@ export async function brainContext(appId: string, question?: string) {
   const key = schoolKey(app.school);
   const rel = (notes || []).filter((n) => !n.school || schoolKey(n.school) === key);
   const email = (await db.from('portal_applications').select('email').eq('application_id', appId).maybeSingle()).data?.email?.toLowerCase() || '';
-  const { data: msgs } = email ? await db.from('portal_student_msgs').select('from_student, body, created_at').eq('student_email', email).order('created_at', { ascending: false }).limit(16) : { data: [] as { from_student: boolean; body: string; created_at: string }[] };
-  const chat = (msgs || []).reverse().map((m) => ({ from: m.from_student ? 'student' : 'team', text: strip(m.body).slice(0, 400) }));
+  const { data: msgs } = email ? await db.from('portal_student_msgs').select('from_student, body, transcript, created_at').eq('student_email', email).order('created_at', { ascending: false }).limit(16) : { data: [] as { from_student: boolean; body: string; transcript?: string | null; created_at: string }[] };
+  // a voice note counts by what was said in it (written down when voice reading is on); names, numbers and links are stripped like in typed messages
+  const chat = (msgs || []).reverse().filter((m) => (m.body || m.transcript || '').trim()).map((m) => ({ from: m.from_student ? 'student' : 'team', text: strip(m.body || `(voice note) ${m.transcript}`).slice(0, 400) }));
   const facts = {
     university: schoolDisplay(app.school) || null, programme: app.programme || null, stage: app.status || null, country: app.country || null,
     interviewStatus: app.interview || null, paymentRecorded: !!app.payment,

@@ -39,8 +39,8 @@ export async function maybeUpdateMemory(appId: string, studentEmail: string): Pr
     const n = count || 0;
     if (n - (prev?.msgs_seen || 0) < (prev ? MIN_NEW : 1) || (prev && Date.now() - new Date(prev.updated_at).getTime() < EVERY_MS)) return;
 
-    const { data: rows } = await db.from('portal_student_msgs').select('from_student, by_ai, body, created_at').eq('student_email', studentEmail).is('deleted_at', null).order('created_at', { ascending: false }).limit(40);
-    const convo = (rows || []).reverse().filter((m) => (m.body || '').trim()).map((m) => ({ from: m.from_student ? 'student' : m.by_ai ? 'assistant' : 'counselor', text: strip(m.body).slice(0, 400) }));
+    const { data: rows } = await db.from('portal_student_msgs').select('from_student, by_ai, body, transcript, created_at').eq('student_email', studentEmail).is('deleted_at', null).order('created_at', { ascending: false }).limit(40);
+    const convo = (rows || []).reverse().filter((m) => (m.body || m.transcript || '').trim()).map((m) => ({ from: m.from_student ? 'student' : m.by_ai ? 'assistant' : 'counselor', text: strip(m.body || `(voice note) ${m.transcript}`).slice(0, 400) }));
     if (!convo.some((m) => m.from === 'student')) return;
     const user = JSON.stringify({ previousProfile: prev ? { summary: prev.summary, needs: prev.needs, interests: prev.interests, concerns: prev.concerns, nextSteps: prev.next_steps } : null, conversation: convo });
     const out = await generateOnce<Memory>({

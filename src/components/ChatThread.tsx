@@ -90,6 +90,23 @@ function Voice({ m }: { m: Local }) {
   );
 }
 
+/** What is said in a voice note, for the team: the words when they have been written down, or a button that writes them down. */
+function VoiceText({ m, appId, onText }: { m: Local; appId: string; onText: (id: string, text: string) => void }) {
+  const [busy, setBusy] = useState(false), [err, setErr] = useState('');
+  if (m.transcript) return <details className="st-trans" onClick={(e) => e.stopPropagation()}><summary>Transcript</summary><p>{m.transcript}</p></details>;
+  if (!m.canRead) return null;
+  const go = async () => {
+    setBusy(true); setErr('');
+    try {
+      const r = await fetch('/api/thread/transcribe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ appId, id: m.id }) });
+      const j = (await r.json()) as { ok?: boolean; transcript?: string; error?: string };
+      if (j.ok && j.transcript) onText(m.id, j.transcript); else setErr(j.error || 'Could not write it down.');
+    } catch { setErr('Could not write it down. Check your connection.'); }
+    setBusy(false);
+  };
+  return <div className="st-trans" onClick={(e) => e.stopPropagation()}><button type="button" onClick={go} disabled={busy}>{busy ? 'Writing it down…' : 'Write down what was said'}</button>{err && <small>{err}</small>}</div>;
+}
+
 export default function ChatThread({ appId, msgs, as, other: otherName, otherInit, backHref, onBack, fill, avatar, title, brain }: { brain?: boolean; appId: string; msgs: ThreadMsg[]; as: 'student' | 'staff'; other: string; otherInit?: Other; backHref?: string; onBack?: () => void; fill?: boolean; avatar?: { name: string; url: string | null; color: string | null }; title?: string }) {
   const [list, setList] = useState<Local[]>(msgs);
   const [srvCall, setSrvCall] = useState<CallView | null>(null);
@@ -320,6 +337,7 @@ export default function ChatThread({ appId, msgs, as, other: otherName, otherIni
                 {m.deleted ? <p><em><Icon n="ban" size={14} className="ic-in" />This message was deleted</em></p> : <>
                   {m.kind === 'image' && m.att && /* eslint-disable-next-line @next/next/no-img-element */ <img className={`st-img ${stkImg ? 'stkimg' : ''}`} src={m.localUrl || m.att.url} alt={m.att.name} loading="lazy" onClick={(e) => { e.stopPropagation(); setLightbox(m.localUrl || m.att!.url); }} />}
                   {m.kind === 'voice' && <Voice m={m} />}
+                  {m.kind === 'voice' && as === 'staff' && <VoiceText m={m} appId={appId} onText={(id, text) => setList((l) => l.map((x) => (x.id === id ? { ...x, transcript: text, canRead: false } : x)))} />}
                   {m.kind === 'file' && m.att && <a className="st-file" href={m.att.url ? `${m.att.url}${m.att.url.includes('?') ? '&' : '?'}download=1` : '#'} onClick={(e) => e.stopPropagation()}><span className="ic"><Icon n="file" size={20} /></span><span className="tx"><b>{m.att.name}</b><small>{kb(m.att.size)}</small></span><Icon n="download" size={16} /></a>}
                   {stk ? <Sticker s={stk} size="lg" /> : m.body && (callLn ? <p className={`callln ${callLn.missed ? 'missed' : ''}`}><Icon n={callLn.video ? 'video' : 'phone'} size={16} />{callLn.text}</p> : <p>{linkify(m.body, sq)}</p>)}
                 </>}

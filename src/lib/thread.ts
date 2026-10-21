@@ -18,6 +18,8 @@ import { staffFor } from './recipients';
 import { after } from 'next/server';
 import { maybeAutoReply } from './autoReply';
 import { maybeUpdateMemory } from './memory';
+import { voiceEnabled } from './stt';
+import { transcribeMessage } from './voice';
 
 export type Role = 'student' | 'staff';
 export type Actor = { role: Role; email: string; appId: string; studentEmail: string; staff?: Staff };
@@ -27,6 +29,8 @@ export type ThreadMsg = {
   reply: { id: string; who: 'me' | 'them'; preview: string } | null;
   reactions: Record<string, { n: number; me: boolean }>;
   read: boolean; ai?: boolean;
+  /** What is said in a voice note (written down by the speech step), and whether a team member can ask for it now. */
+  transcript?: string | null; canRead?: boolean;
 };
 
 export const ATT_MAX = 4 * 1024 * 1024;           // what a request to the server can carry
@@ -35,8 +39,8 @@ const slug = (e: string) => e.replace(/[^a-z0-9]+/g, '_');
 const safeName = (n: string) => (n || 'file').replace(/[^\w.\- ]+/g, '_').slice(-80);
 const OK_MIME = /^(image\/(jpeg|png|webp|gif|heic|heif)|application\/pdf|application\/(msword|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet|presentationml\.presentation)|vnd\.ms-excel|vnd\.ms-powerpoint)|text\/plain|audio\/(webm|ogg|mp4|mpeg|aac|x-m4a)|video\/mp4)/i;
 export const REACTIONS = ['👍', '❤️', '😂', '🙏', '✅', '😮'];
-const COLS = 'id, student_email, application_id, from_student, sender_email, body, created_at, student_read_at, staff_read_at, att_path, att_name, att_mime, att_size, duration_ms, reply_to, reactions, deleted_at, by_ai';
-type Row = { by_ai?: boolean | null; id: string; student_email: string; application_id: string | null; from_student: boolean; sender_email: string; body: string; created_at: string; student_read_at: string | null; staff_read_at: string | null; att_path: string | null; att_name: string | null; att_mime: string | null; att_size: number | null; duration_ms: number | null; reply_to: string | null; reactions: Record<string, string[]> | null; deleted_at: string | null };
+const COLS = 'id, student_email, application_id, from_student, sender_email, body, created_at, student_read_at, staff_read_at, att_path, att_name, att_mime, att_size, duration_ms, reply_to, reactions, deleted_at, by_ai, transcript';
+type Row = { transcript?: string | null; by_ai?: boolean | null; id: string; student_email: string; application_id: string | null; from_student: boolean; sender_email: string; body: string; created_at: string; student_read_at: string | null; staff_read_at: string | null; att_path: string | null; att_name: string | null; att_mime: string | null; att_size: number | null; duration_ms: number | null; reply_to: string | null; reactions: Record<string, string[]> | null; deleted_at: string | null };
 
 /** Works out who is calling and which student's thread they mean. Staff pass appId; students always get their own thread. */
 export async function actor(appIdParam?: string | null): Promise<Actor | null> {
@@ -72,6 +76,7 @@ export function shape(rows: Row[], a: Actor): ThreadMsg[] {
       reply: q ? { id: q.id, who: (a.role === 'student' ? q.from_student : !q.from_student) ? 'me' : 'them', preview: preview(q) } : null,
       reactions: rx,
       read: mine ? !!(a.role === 'student' ? r.staff_read_at : r.student_read_at) : true,
+      ...(mime.startsWith('audio/') && !del ? { transcript: a.role === 'staff' ? r.transcript || null : null, canRead: a.role === 'staff' && !r.transcript && voiceEnabled() } : {}),
     };
   });
 }
@@ -156,6 +161,8 @@ export async function postMessage(a: Actor, o: { body: string; replyTo?: string 
   const text = plainBody(body) || (sent?.type.startsWith('image/') ? (isStickerFile(sent.name, sent.type) ? 'Sticker' : 'Photo') : sent?.type.startsWith('audio/') ? 'Voice note' : (sent?.name || 'File'));
   if (a.role === 'student') {
     if (body) { const work = async () => { await maybeAutoReply(a.appId, a.studentEmail); await maybeUpdateMemory(a.appId, a.studentEmail); }; try { after(work); } catch { void work(); } }
+    // a voice note with nothing typed: write down what was said (only when an admin has switched voice reading on), so staff and the Brain can use it
+    else if (sent?.type.startsWith('audio/') && voiceEnabled()) { const work = async () => { await transcribeMessage(data.id); }; try { after(work); } catch { void work(); } }
     // phone alert for the counselor (or the admins when nobody is assigned)
     try {
       const { data: ap } = await db.from('portal_applications').select('name, counselor').eq('application_id', a.appId).maybeSingle();
