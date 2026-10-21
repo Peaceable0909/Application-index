@@ -2,6 +2,8 @@ import { requireTeam, twoStepPolicy } from '@/lib/auth';
 import { twoStepStatus } from '@/lib/twoStep';
 import { IDLE_MIN, MAX_HOURS } from '@/lib/session';
 import { resetTwoStep, setTwoStepPolicy } from '../twoStepActions';
+import { weeklyConfig } from '@/lib/weeklyReport';
+import { previewWeeklySummary, saveWeeklySummary } from '../reportActions';
 import Btn from '@/components/Btn';
 import { admin } from '@/lib/supabase';
 import Link from 'next/link';
@@ -22,9 +24,10 @@ export default async function Settings({ searchParams }: { searchParams: Promise
   const workspaces = await listWorkspaces();
   const counts: Record<string, number> = {};
   await Promise.all(workspaces.map(async (w) => { counts[w.key] = (await db.from('portal_applications').select('application_id', { count: 'exact', head: true }).eq('workspace', w.key)).count || 0; }));
-  const [{ data: staff }, policy, twoSteps] = await Promise.all([
+  const [{ data: staff }, policy, weekly, twoSteps] = await Promise.all([
     db.from('portal_staff').select('*').order('email'),
     twoStepPolicy(),
+    weeklyConfig(),
     me.role === 'admin' ? twoStepStatus().catch(() => new Map<string, boolean>()) : Promise.resolve(new Map<string, boolean>()),
   ]);
   return (
@@ -122,6 +125,22 @@ export default async function Settings({ searchParams }: { searchParams: Promise
                 <td>{st && s.email !== me.email && <form action={resetTwoStep}><input type="hidden" name="email" value={s.email} /><Btn className="ghost sm" data-busy="Resetting…">Reset (lost phone)</Btn></form>}</td></tr>;
             })}</tbody>
           </table>
+        </div>
+      )}
+
+      {me.role === 'admin' && (
+        <div className="card" id="weekly">
+          <h2><Icon n="mail" size={17} /> Weekly summary for management <span className={`badge plain ${weekly.on ? 'green' : ''}`} style={{ marginLeft: 6 }}>{weekly.on ? 'on' : 'off'}</span></h2>
+          <p className="muted" style={{ marginTop: 0 }}>Every Monday morning a short email goes to the people below: new chats, new students, offers and enrolments for the last 7 days (next to the 7 before), by country, with a link to the full <Link href="/reports">report</Link>.</p>
+          <form action={saveWeeklySummary} className="grid" style={{ gap: 10, maxWidth: 460 }}>
+            <label>Send to (up to 5 email addresses, separated by commas or spaces)
+              <textarea name="emails" rows={2} defaultValue={weekly.emails.join(', ')} placeholder="boss@example.com, manager@example.com" style={{ width: '100%' }} />
+            </label>
+            <label style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}><input type="checkbox" name="on" value="1" defaultChecked={weekly.on} /> Send it every Monday</label>
+            <div className="filters"><Btn data-busy="Saving…">Save</Btn></div>
+          </form>
+          <form action={previewWeeklySummary} style={{ marginTop: 10 }}><Btn className="ghost" data-busy="Sending…">Send me a preview now</Btn></form>
+          {weekly.last_sent && <p className="muted" style={{ marginBottom: 0 }}>Last sent: {new Date(weekly.last_sent).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}.</p>}
         </div>
       )}
 

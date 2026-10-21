@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { syncAll } from '@/lib/sync';
 import { sendWeeklyDigests } from '@/lib/requests';
+import { sendWeeklyReport } from '@/lib/weeklyReport';
 import { runBackup } from '@/lib/backup';
 import { sendInterviewReminders } from '@/lib/interviews';
 
@@ -16,10 +17,12 @@ async function handle(req: Request) {
     const result = await syncAll();
     // Mondays: opt-in digest to each counselor (WEEKLY_DIGEST=on)
     const digest = new Date().getUTCDay() === 1 ? await sendWeeklyDigests().catch((e) => ({ error: (e as Error).message })) : undefined;
+    // Mondays: the management summary (only when an admin switched it on in Settings)
+    const summary = new Date().getUTCDay() === 1 ? await sendWeeklyReport().catch((e) => ({ error: (e as Error).message })) : undefined;
     // Daily: private backup of the portal's data (only on the scheduled GET, not on every sheet-change webhook)
     const backup = req.method === 'GET' ? await runBackup('nightly backup').catch((e) => ({ error: (e as Error).message })) : undefined;
     const reminders = req.method === 'GET' ? await sendInterviewReminders().catch((e) => ({ error: (e as Error).message })) : undefined;
-    return NextResponse.json({ ...result, ...(reminders ? { reminders } : {}), ...(digest ? { digest } : {}), ...(backup ? { backup } : {}) });
+    return NextResponse.json({ ...result, ...(reminders ? { reminders } : {}), ...(digest ? { digest } : {}), ...(summary ? { summary } : {}), ...(backup ? { backup } : {}) });
   }
   catch (e) { return NextResponse.json({ error: (e as Error).message }, { status: 500 }); }
 }

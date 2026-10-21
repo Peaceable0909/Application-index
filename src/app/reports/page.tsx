@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { requireTeam } from '@/lib/auth';
 import { buildReport, defaultRange } from '@/lib/reports';
+import { buildFunnel, pct } from '@/lib/funnel';
+import { workspacesFor } from '@/lib/workspace';
 import Btn from '@/components/Btn';
 import Icon from '@/components/Icon';
 
@@ -12,11 +14,13 @@ function Bars({ data, unit = '' }: { data: { label: string; n: number; sub?: str
 }
 
 export default async function Reports({ searchParams }: { searchParams: Promise<{ from?: string; to?: string }> }) {
-  await requireTeam();
+  const me = await requireTeam();
   const sp = await searchParams, d = defaultRange();
   const range = { from: /^\d{4}-\d{2}-\d{2}$/.test(sp.from || '') ? sp.from! : d.from, to: /^\d{4}-\d{2}-\d{2}$/.test(sp.to || '') ? sp.to! : d.to };
-  const r = await buildReport(range);
+  const [r, fn] = await Promise.all([buildReport(range), workspacesFor(me).then((ws) => buildFunnel(range, ws.map((w) => w.key)))]);
+  const t = fn.total;
   const qs = `from=${range.from}&to=${range.to}`;
+  const csvLink = (kind: string) => <a className="btn ghost sm" href={`/api/reports?kind=${kind}&from=${range.from}&to=${range.to}`}><Icon n="download" size={13} /> CSV</a>;
   const csv = (kind: string) => <a className="btn ghost sm" href={`/api/reports?kind=${kind}&${qs}`}><Icon n="download" size={13} /> CSV</a>;
   const kpi = (icon: string, tone: string, label: string, n: string | number, sub?: string) => <div className="sc"><div className={`ico ${tone}`}><Icon n={icon} size={22} /></div><div className="lbl">{label}</div><div className="num">{n}</div>{sub && <div className="muted" style={{ fontSize: 12.5 }}>{sub}</div>}</div>;
   return (
@@ -27,6 +31,32 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
         <label>From <input type="date" name="from" defaultValue={range.from} /></label><label>To <input type="date" name="to" defaultValue={range.to} /></label><Btn>Update</Btn>
         <Link href="/reports" className="muted">Last 12 months</Link>
       </form>
+      <div className="card">
+        <div className="filters" style={{ justifyContent: 'space-between' }}><h2 style={{ margin: 0 }}>From chat to enrolment</h2>{csvLink('funnel_country')}</div>
+        <p className="muted" style={{ marginTop: 4 }}>People who started a chat on the website, and students who applied, in this period, followed to where they are now. “Reached an offer” counts a student once they have had an offer, even if they were rejected or withdrew later.</p>
+        <Bars data={[
+          { label: 'Chats started', n: t.chats },
+          { label: 'Chats that became students', n: t.fromChats, sub: t.chats ? ` · ${pct(t.fromChats, t.chats)}% of chats` : '' },
+          { label: 'Applications', n: t.students },
+          { label: 'Reached an offer', n: t.offers, sub: t.students ? ` · ${pct(t.offers, t.students)}% of applications` : '' },
+          { label: 'Enrolled', n: t.enrolled, sub: t.students ? ` · ${pct(t.enrolled, t.students)}% of applications` : '' },
+        ]} />
+        {fn.byWorkspace.length > 1 && (
+          <div className="scroll" style={{ marginTop: 14 }}><table>
+            <thead><tr><th>Country</th><th>Chats</th><th>Became students</th><th>Applications</th><th>Offers</th><th>Enrolled</th><th>Offer rate</th><th>Enrolment rate</th></tr></thead>
+            <tbody>{fn.byWorkspace.map((w) => <tr key={w.key}><td><b>{w.name}</b></td><td>{w.chats}</td><td>{w.fromChats}{w.chats ? <span className="muted"> ({pct(w.fromChats, w.chats)}%)</span> : null}</td><td>{w.students}</td><td>{w.offers}</td><td>{w.enrolled}</td><td>{pct(w.offers, w.students)}%</td><td>{pct(w.enrolled, w.students)}%</td></tr>)}</tbody>
+          </table></div>
+        )}
+        {fn.byCounselor.length > 0 && (
+          <>
+            <div className="filters" style={{ justifyContent: 'space-between', marginTop: 16 }}><b>By counselor</b>{csvLink('funnel_counselor')}</div>
+            <div className="scroll"><table>
+              <thead><tr><th>Counselor</th><th>Students</th><th>Reached an offer</th><th>Enrolled</th><th>Offer rate</th><th>Enrolment rate</th></tr></thead>
+              <tbody>{fn.byCounselor.map((c) => <tr key={c.label}><td><b>{c.label}</b></td><td>{c.students}</td><td>{c.offers}</td><td>{c.enrolled}</td><td>{pct(c.offers, c.students)}%</td><td>{pct(c.enrolled, c.students)}%</td></tr>)}</tbody>
+            </table></div>
+          </>
+        )}
+      </div>
       <div className="grid g5" style={{ marginBottom: 16 }}>
         {kpi('users', '', 'Applications', r.total, 'in this period')}
         {kpi('trend', 'purple', 'Still active', r.active)}
