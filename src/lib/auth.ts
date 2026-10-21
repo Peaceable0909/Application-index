@@ -1,5 +1,7 @@
 import { cache } from 'react';
+import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { MAX_MS } from './session';
 import { admin, sessionClient } from './supabase';
 import { counselorKey } from './docs';
 import { currentStudent } from './student';
@@ -10,21 +12,69 @@ export type Staff = {
   workspaces: string[] | null; display_name: string | null; avatar_url: string | null; title: string | null; phone: string | null; bio: string | null; color: string | null; notify_email: boolean | null;
 };
 
+export type TwoStepWho = 'off' | 'admins' | 'everyone';
+let policyMemo: { at: number; who: TwoStepWho } | null = null;
+
+/** Who must use the authenticator-app code (an admin setting; "off" until an admin turns it on). Remembered for 30 seconds. */
+export async function twoStepPolicy(fresh = false): Promise<TwoStepWho> {
+  if (!fresh && policyMemo && Date.now() - policyMemo.at < 30_000) return policyMemo.who;
+  const { data } = await admin().from('portal_settings').select('value').eq('key', 'two_step').maybeSingle();
+  const w = (data?.value as { who?: string } | null)?.who;
+  const who: TwoStepWho = w === 'admins' || w === 'everyone' ? w : 'off';
+  policyMemo = { at: Date.now(), who };
+  return who;
+}
+export const twoStepRequired = (who: TwoStepWho, role: Staff['role']) => who === 'everyone' || (who === 'admins' && role === 'admin');
+
+/** Where a visitor stands: fully in, not on the team, timed out, or still owing the second step. */
+export type Gate = { state: 'ok'; staff: Staff } | { state: 'enroll'; staff: Staff } | { state: 'needs2fa' } | { state: 'expired' } | { state: 'none' };
+
 /** Cached per request: the layout and the page both ask, but the lookup only runs once. */
-export const currentStaff = cache(async (): Promise<Staff | null> => {
+export const staffGate = cache(async (): Promise<Gate> => {
   const sb = await sessionClient();
   const { data } = await sb.auth.getUser();
-  const email = data.user?.email?.toLowerCase();
-  if (!email) return null;
+  const user = data.user, email = user?.email?.toLowerCase();
+  if (!user || !email) return { state: 'none' };
   const { data: row } = await admin().from('portal_staff').select('email, role, workspaces, last_seen_at, counselor_key, display_name, avatar_url, title, phone, bio, color, notify_email').eq('email', email).maybeSingle();
-  return row ? (row as Staff) : null;
+  if (!row) return { state: 'none' };
+  const staff = row as Staff;
+  // Time limits: silent for too long (the browser stopped saying "still here"), or signed in for longer than a working day.
+  const signedIn = user.last_sign_in_at ? Date.parse(user.last_sign_in_at) : 0;
+  if ((await headers()).get('x-wr-idle') === '1' || (signedIn && Date.now() - signedIn > MAX_MS)) return { state: 'expired' };
+  // Emergency switch: TWO_STEP_DISABLED=1 in Vercel skips the second step for everyone (use only if an authenticator problem locks the team out).
+  if (process.env.TWO_STEP_DISABLED === '1') return { state: 'ok', staff };
+  // Second step: anyone with an authenticator app set up must have typed the code in this session.
+  if (user.factors?.some((f) => f.factor_type === 'totp' && f.status === 'verified')) {
+    const { data: aal, error } = await sb.auth.mfa.getAuthenticatorAssuranceLevel();
+    return error || aal?.currentLevel !== 'aal2' ? { state: 'needs2fa' } : { state: 'ok', staff };
+  }
+  if (twoStepRequired(await twoStepPolicy(), staff.role)) return { state: 'enroll', staff };
+  return { state: 'ok', staff };
 });
+
+/** The fully signed-in team member, or null (also null while the second step, the setup or a re-sign-in is still owed). */
+export const currentStaff = cache(async (): Promise<Staff | null> => {
+  const g = await staffGate();
+  return g.state === 'ok' ? g.staff : null;
+});
+
+/** For the two-step setup screens only: a signed-in team member who may not have finished setting up the second step yet. */
+export async function staffForSetup(): Promise<Staff> {
+  const g = await staffGate();
+  if (g.state === 'ok' || g.state === 'enroll') return g.staff;
+  if (g.state === 'expired') redirect('/auth/expired');
+  redirect(g.state === 'needs2fa' ? '/login/verify' : '/login');
+}
 
 /** Any signed-in person on the allowlist (team member or counselor). */
 export async function requireStaff(): Promise<Staff> {
-  const s = await currentStaff();
-  if (!s) { if (await currentStudent()) redirect('/student'); redirect('/login'); }
-  return s;
+  const g = await staffGate();
+  if (g.state === 'ok') return g.staff;
+  if (g.state === 'expired') redirect('/auth/expired');
+  if (g.state === 'needs2fa') redirect('/login/verify');
+  if (g.state === 'enroll') redirect('/login/setup');
+  if (await currentStudent()) redirect('/student');
+  redirect('/login');
 }
 
 /** Team-only (admin / staff). Counselors are sent to their own page. Use on every page and action that touches all students. */

@@ -38,3 +38,10 @@
 
 - Passports are read exactly from their machine-readable lines (`src/lib/mrz.ts`, ICAO 9303 check digits): no AI call, and the passport text never leaves the portal. Everything else is read by Drive OCR (Apps Script `extractText`) and understood by the AI after `redactForAi` hides ID-like strings. `portal_doc_scans.method` is `mrz`, `ai` or `unreadable`; the Documents page reports the split so we only add a stronger OCR server if too many files are unreadable.
 - "Check all" reads three files at a time (`scanNext` in `src/lib/scanQueue.ts`).
+
+## Sign-in security
+
+- Staff identity goes through one gate, `staffGate()` in `src/lib/auth.ts` (`requireStaff` / `currentStaff` are built on it). It answers `ok`, `enroll`, `needs2fa`, `expired` or `none`; never read the session yourself to decide if someone is staff.
+- Two-step sign-in is Supabase MFA (TOTP authenticator app). It is optional per person; an admin can make it required for admins or everyone (`portal_settings.two_step`, Settings → Sign-in security). Anyone with a verified factor must reach `aal2` in each session. `TWO_STEP_DISABLED=1` in Vercel is the emergency off switch.
+- Time limits live in `src/lib/session.ts` (`SESSION_IDLE_MINUTES` default 60, `SESSION_MAX_HOURS` default 12). The `wr_act` cookie is written only by sign-in and by `IdleLock` through `/api/session/touch` (after real input), never by background polling or `router.refresh()`; middleware turns an old cookie into the `x-wr-idle` header that the gate reads.
+- Every staff open or download of a document through `/api/files/[fileId]` is written to `portal_audit` (`doc_opened` / `doc_downloaded`, one line per person per file per 10 minutes). Students opening their own files are not logged.

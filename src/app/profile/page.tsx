@@ -1,6 +1,9 @@
-import { requireStaff } from '@/lib/auth';
+import { requireStaff, twoStepPolicy, twoStepRequired } from '@/lib/auth';
+import { sessionClient } from '@/lib/supabase';
 import { roleLabel } from '@/lib/profile';
 import { removeAvatar, saveProfile, setPassword, uploadAvatar } from '../actions';
+import { stopTwoStep } from '../twoStepActions';
+import TwoStepSetup from '@/components/TwoStepSetup';
 import Btn from '@/components/Btn';
 import ProfileEditor from '@/components/ProfileEditor';
 import PushToggle from '@/components/PushToggle';
@@ -12,6 +15,8 @@ export default async function Profile({ searchParams }: { searchParams: Promise<
   const staff = await requireStaff();
   const sp = await searchParams;
   const theme = parseTheme((await cookies()).get(COOKIE)?.value);
+  const [{ data: factors }, policy] = await Promise.all([(await sessionClient()).auth.mfa.listFactors(), twoStepPolicy()]);
+  const twoOn = !!factors?.totp?.length, twoRequired = twoStepRequired(policy, staff.role);
   return (
     <>
       <div className="head"><h1>My profile</h1></div>
@@ -34,6 +39,14 @@ export default async function Profile({ searchParams }: { searchParams: Promise<
           <input name="again" type="password" placeholder="Type it again" autoComplete="new-password" minLength={10} required />
           <div><Btn data-busy="Saving…">Save password</Btn></div>
         </form>
+      </div>
+      <div className="card" id="two-step" style={{ marginTop: 16 }}>
+        <h2 style={{ marginTop: 0 }}>Two-step sign-in <span className={`badge plain ${twoOn ? 'green' : ''}`} style={{ marginLeft: 6 }}>{twoOn ? 'on' : 'off'}</span></h2>
+        <p className="muted">Students’ passports and certificates are in this portal. With two-step sign-in, a stolen password or a borrowed laptop is not enough: you also type a 6-number code from an app on your phone.</p>
+        {twoOn
+          ? (twoRequired ? <p className="muted" style={{ marginBottom: 0 }}>Your admin requires this for your role, so it stays on. Lost your phone? Ask an admin to reset it.</p>
+            : <form action={stopTwoStep}><Btn className="ghost" data-busy="Turning off…">Turn off two-step sign-in</Btn></form>)
+          : <TwoStepSetup next={`/profile?msg=${encodeURIComponent('Two-step sign-in is on. From now on you will be asked for a code when you sign in.')}#two-step`} />}
       </div>
       <div className="card" style={{ marginTop: 16 }}>
         <h2 style={{ marginTop: 0 }}>Phone notifications</h2>

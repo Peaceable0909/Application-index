@@ -11,14 +11,14 @@ import Icon from '@/components/Icon';
 
 const KINDS = ['new_application', 'student_added', 'status_change', 'counselor_change', 'doc_uploaded', 'email_sent', 'note', 'moved_to_master', 'folder_linked', 'payment_change', 'interview_change', 'task_done'];
 
-export default async function Activity({ searchParams }: { searchParams: Promise<{ kind?: string; actor?: string; from?: string; to?: string; tab?: string }> }) {
+export default async function Activity({ searchParams }: { searchParams: Promise<{ kind?: string; actor?: string; from?: string; to?: string; tab?: string; act?: string }> }) {
   const people = await loadPeople();
   await requireTeam();
   const sp = await searchParams;
   const admin_ = sp.tab === 'admin';
   const dayStart = (d?: string) => (d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? `${d}T00:00:00Z` : null), dayEnd = (d?: string) => (d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? `${d}T23:59:59Z` : null);
   const { data: actors } = await admin().from('portal_staff').select('email');
-  const { data: audits } = admin_ ? await (() => { let a = admin().from('portal_audit').select('id, actor, action, target, detail, created_at').order('created_at', { ascending: false }).limit(300); if (sp.actor) a = a.eq('actor', sp.actor); if (dayStart(sp.from)) a = a.gte('created_at', dayStart(sp.from)!); if (dayEnd(sp.to)) a = a.lte('created_at', dayEnd(sp.to)!); return a; })() : { data: [] as never[] };
+  const { data: audits } = admin_ ? await (() => { let a = admin().from('portal_audit').select('id, actor, action, target, detail, created_at').order('created_at', { ascending: false }).limit(300); if (sp.act === 'docs') a = a.in('action', ['doc_opened', 'doc_downloaded']); else if (sp.act === 'security') a = a.or('action.like.two_step%,action.eq.password_set'); if (sp.actor) a = a.eq('actor', sp.actor); if (dayStart(sp.from)) a = a.gte('created_at', dayStart(sp.from)!); if (dayEnd(sp.to)) a = a.lte('created_at', dayEnd(sp.to)!); return a; })() : { data: [] as never[] };
   const ws = await currentWorkspace();
   let q = admin().from('portal_activity').select('id,kind,actor,detail,created_at,application_id,portal_applications!inner(name)').eq('portal_applications.workspace', ws).order('created_at', { ascending: false }).limit(250);
   if (sp.kind) q = q.eq('kind', sp.kind);
@@ -38,17 +38,18 @@ export default async function Activity({ searchParams }: { searchParams: Promise
       </div>
       <form className="card toolbar filters" method="get">
         {admin_ && <input type="hidden" name="tab" value="admin" />}
+        {admin_ && <select name="act" defaultValue={sp.act || ''}><option value="">All admin actions</option><option value="docs">Documents opened or downloaded</option><option value="security">Sign-in security</option></select>}
         {!admin_ && <select name="kind" defaultValue={sp.kind || ''}><option value="">All activity</option>{KINDS.map((k) => <option key={k} value={k}>{describeActivity(k, {}).title.replace(/ ·.*/, '')}</option>)}</select>}
         <select name="actor" defaultValue={sp.actor || ''}><option value="">Everyone</option>{(actors || []).map((a) => <option key={a.email} value={a.email}>{personFor(people, a.email).name}</option>)}</select>
         <label>From <input type="date" name="from" defaultValue={sp.from} /></label><label>To <input type="date" name="to" defaultValue={sp.to} /></label>
-        <Btn>Filter</Btn>{(sp.kind || sp.actor || sp.from || sp.to) && <Link href={admin_ ? '/activity?tab=admin' : '/activity'} className="muted">Clear</Link>}
+        <Btn>Filter</Btn>{(sp.kind || sp.actor || sp.from || sp.to || sp.act) && <Link href={admin_ ? '/activity?tab=admin' : '/activity'} className="muted">Clear</Link>}
         <a className="btn ghost sm" style={{ marginLeft: 'auto' }} href={`/api/activity-csv?${new URLSearchParams(Object.entries(sp).filter(([, v]) => v) as [string, string][]).toString()}`}><Icon n="download" size={13} /> CSV</a>
       </form>
       {admin_ && (
         <div className="card tablecard"><div className="scroll"><table>
           <thead><tr><th>When</th><th>Who</th><th>What</th><th>Target</th></tr></thead>
           <tbody>
-            {(audits || []).map((a) => <tr key={a.id}><td className="muted" style={{ whiteSpace: 'nowrap' }}>{dateTime(a.created_at)}</td><td><Who people={people} email={a.actor} size={22} /></td><td><b>{String(a.action).replace(/_/g, ' ')}</b></td><td className="muted">{a.target || '—'}</td></tr>)}
+            {(audits || []).map((a) => <tr key={a.id}><td className="muted" style={{ whiteSpace: 'nowrap' }}>{dateTime(a.created_at)}</td><td><Who people={people} email={a.actor} size={22} /></td><td><b>{String(a.action).replace(/_/g, ' ')}</b></td><td className="muted">{(a.detail as { application_id?: string } | null)?.application_id ? <Link href={`/applications/${(a.detail as { application_id: string }).application_id}`}>{a.target || 'Student'}</Link> : a.target || '—'}{(a.detail as { type?: string } | null)?.type && <span className="badge plain" style={{ marginLeft: 8 }}>{(a.detail as { type: string }).type}</span>}</td></tr>)}
             {!(audits || []).length && <tr><td colSpan={4} className="muted" style={{ textAlign: 'center', padding: 30 }}>No admin actions logged yet. Access changes and backups appear here.</td></tr>}
           </tbody></table></div></div>
       )}

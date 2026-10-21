@@ -1,9 +1,13 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
+import { ACT_COOKIE, IDLE_MS } from '@/lib/session';
 
 // Refreshes the Supabase session cookie and sends signed-out users to /login.
-// (Staff-allowlist enforcement happens server-side in requireStaff().)
+// (Staff-allowlist enforcement, the idle/overall time limit and the two-step check happen server-side in requireStaff().)
 export async function middleware(req: NextRequest) {
+  // Tell the pages whether this browser has been silent for too long. The header is always overwritten here, so a visitor cannot send their own.
+  const lastSeen = Number(req.cookies.get(ACT_COOKIE)?.value) || 0;
+  req.headers.set('x-wr-idle', lastSeen && Date.now() - lastSeen > IDLE_MS ? '1' : '0');
   let res = NextResponse.next({ request: req });
   const sb = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
     cookies: {

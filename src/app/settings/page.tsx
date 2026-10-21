@@ -1,4 +1,7 @@
-import { requireTeam } from '@/lib/auth';
+import { requireTeam, twoStepPolicy } from '@/lib/auth';
+import { twoStepStatus } from '@/lib/twoStep';
+import { IDLE_MIN, MAX_HOURS } from '@/lib/session';
+import { resetTwoStep, setTwoStepPolicy } from '../twoStepActions';
 import Btn from '@/components/Btn';
 import { admin } from '@/lib/supabase';
 import Link from 'next/link';
@@ -19,9 +22,10 @@ export default async function Settings({ searchParams }: { searchParams: Promise
   const workspaces = await listWorkspaces();
   const counts: Record<string, number> = {};
   await Promise.all(workspaces.map(async (w) => { counts[w.key] = (await db.from('portal_applications').select('application_id', { count: 'exact', head: true }).eq('workspace', w.key)).count || 0; }));
-  const [{ data: staff }] = await Promise.all([
-    
+  const [{ data: staff }, policy, twoSteps] = await Promise.all([
     db.from('portal_staff').select('*').order('email'),
+    twoStepPolicy(),
+    me.role === 'admin' ? twoStepStatus().catch(() => new Map<string, boolean>()) : Promise.resolve(new Map<string, boolean>()),
   ]);
   return (
     <>
@@ -94,6 +98,32 @@ export default async function Settings({ searchParams }: { searchParams: Promise
       </div>
 
       {me.role === 'admin' && <PrivacyCheck />}
+
+      {me.role === 'admin' && (
+        <div className="card" id="security">
+          <h2><Icon n="lock" size={17} /> Sign-in security</h2>
+          <p className="muted" style={{ marginTop: 0 }}>Team sign-ins end by themselves after <b>{IDLE_MIN} minutes</b> without use, and after <b>{MAX_HOURS} hours</b> in any case. Every time a person opens or downloads a student’s document it is written to the <Link href="/activity?tab=admin&act=docs">admin log</Link> (who, which file, when).</p>
+          <form action={setTwoStepPolicy} className="filters">
+            <label>Authenticator code (two-step) is required for&nbsp;
+              <select name="who" defaultValue={policy}>
+                <option value="off">nobody (optional)</option>
+                <option value="admins">admins</option>
+                <option value="everyone">everyone on the team and all counselors</option>
+              </select>
+            </label>
+            <Btn className="ghost" data-busy="Saving…">Save</Btn>
+          </form>
+          <p className="muted">Turn it on for your own account first (<Link href="/profile#two-step">My profile</Link>). Anyone required to use it who has not set it up is taken to a short setup screen at their next page.</p>
+          <table style={{ marginTop: 8 }}>
+            <thead><tr><th>Email</th><th>Role</th><th>Two-step</th><th /></tr></thead>
+            <tbody>{(staff || []).map((s) => {
+              const st = twoSteps.get(String(s.email).toLowerCase());
+              return <tr key={s.email}><td>{s.email}</td><td>{s.role}</td><td>{st === undefined ? <span className="muted">never signed in</span> : st ? <span className="badge plain green">on</span> : <span className="badge plain">off</span>}</td>
+                <td>{st && s.email !== me.email && <form action={resetTwoStep}><input type="hidden" name="email" value={s.email} /><Btn className="ghost sm" data-busy="Resetting…">Reset (lost phone)</Btn></form>}</td></tr>;
+            })}</tbody>
+          </table>
+        </div>
+      )}
 
       <div className="card">
         <h2>Counselors</h2>

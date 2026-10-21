@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { currentStaff } from '@/lib/auth';
+import { staffGate } from '@/lib/auth';
 import { sessionClient } from '@/lib/supabase';
 import { currentStudent } from '@/lib/student';
 import { sendPasswordReset, signIn, signInWithGoogle, signOut } from '../actions';
@@ -10,10 +10,14 @@ export const metadata = { title: 'Team sign-in', robots: { index: false, follow:
 
 export default async function Login({ searchParams }: { searchParams: Promise<{ error?: string; notice?: string }> }) {
   const { error, notice } = await searchParams;
-  if (await currentStaff()) redirect('/');
+  const gate = await staffGate();
+  if (gate.state === 'ok') redirect('/');
+  if (gate.state === 'needs2fa') redirect('/login/verify');   // password or Google step is done; the code is still owed
+  if (gate.state === 'enroll') redirect('/login/setup');
+  if (gate.state === 'expired' && !notice) redirect('/auth/expired');   // (with a notice we have just come from there; never loop)
   if (await currentStudent()) redirect('/student');
   const { data } = await (await sessionClient()).auth.getUser();
-  const blocked = data.user?.email;
+  const blocked = gate.state === 'none' ? data.user?.email : undefined;
   return (
     <div className="auth">
       <div className="auth-logo"><Logo height={46} /></div>

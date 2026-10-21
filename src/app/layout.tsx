@@ -22,6 +22,8 @@ import Haptics from '@/components/Haptics';
 import AppBadge from '@/components/AppBadge';
 import ThemeColor from '@/components/ThemeColor';
 import Presence from '@/components/Presence';
+import IdleLock from '@/components/IdleLock';
+import { IDLE_MIN } from '@/lib/session';
 import { unreadTotal } from '@/lib/chat';
 import { currentStudent } from '@/lib/student';
 import StudentShell from '@/components/StudentShell';
@@ -84,6 +86,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <NavProgress />
         <CallProvider enabled={!!(staff || student)}>
         {staff && <Presence />}
+        {staff && <IdleLock idleMinutes={IDLE_MIN} />}
         {staff ? (
           <div className="shell">
             <aside className="side">

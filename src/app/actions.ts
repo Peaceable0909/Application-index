@@ -19,6 +19,7 @@ import { requestDocs, summarise, digestEmail, sendPaymentReminders, summariseRem
 import { sendMail } from '@/lib/mail';
 import { site, studentSite } from '@/lib/emailTemplate';
 import { audit } from '@/lib/audit';
+import { ACT_COOKIE, actCookie } from '@/lib/session';
 import { addNotice } from '@/lib/notices';
 import { shownName } from '@/lib/profile';
 import { cleanLabel, resolveLabel } from '@/lib/docLabel';
@@ -70,6 +71,7 @@ export async function signIn(f: FormData) {
   const sb = await sessionClient();
   const { error } = await sb.auth.signInWithPassword({ email: s(f, 'email'), password: s(f, 'password') });
   if (error) redirect(`/login?error=${encodeURIComponent(error.message)}`);
+  (await cookies()).set(ACT_COOKIE, String(Date.now()), actCookie());   // a fresh sign-in restarts the "still here" clock
   redirect('/');
 }
 export async function signInWithGoogle() {
@@ -115,6 +117,7 @@ export async function sendPasswordReset(f: FormData) {
 export async function signOut() {
   const sb = await sessionClient();
   await sb.auth.signOut();
+  (await cookies()).delete(ACT_COOKIE);
   redirect('/login');
 }
 
