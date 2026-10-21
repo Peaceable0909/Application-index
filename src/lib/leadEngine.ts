@@ -1,7 +1,7 @@
 import {
   type Profile, cleanProfile, mergeProfile, firstName, nameFrom, isGreeting, wantsPerson, isAffirmative, isNegative, offeredPerson, nextToLearn,
   readyForHandover, levelFromText, cleanReply, splitGap, claimsAction, promisesOutcome, unsupportedFigures, hasContactOrLink, repeatsEarlier, supported, normLevel,
-  recentlyAsked, uncoveredTopics, ungroundedTopicClaim, generalClaimFromMemory, judgesQualification, fillerOpening, type Topic,
+  recentlyAsked, uncoveredTopics, ungroundedTopicClaim, generalClaimFromMemory, judgesQualification, fillerOpening, fillerMatch, type Topic,
 } from './leadProfile';
 
 // One turn of the new-student chat, written so every side effect goes through `LeadIO`. The real wiring (database, model, notifications) is in
@@ -150,7 +150,11 @@ export function repairReply(draft: string, o: { context: string; uncovered: Topi
   const sentences = text.split(/(?<=[.!?])\s+|\n+/).map((x) => x.trim()).filter(Boolean);
   const bad = (x: string) => hasContactOrLink(x) || (o.handover !== 'done' && !!claimsAction(x)) || !!promisesOutcome(x) || !!unsupportedFigures(x, o.context) || !!ungroundedTopicClaim(x, o.uncovered) || !!generalClaimFromMemory(x) || !!judgesQualification(x);
   let kept = sentences.filter((x) => !bad(x));
-  if (kept.length && fillerOpening(kept[0])) kept = kept.slice(1);
+  if (kept.length) {
+    // cut out only the praise ("That's a great choice,") and keep the rest of the sentence; drop the sentence if nothing useful is left
+    const m = fillerMatch(kept[0]);
+    if (m) { const rest = kept[0].trim().slice(m[0].length).replace(/^[\s,.;:!-]+/, ''); if (rest.length >= 15) kept[0] = rest.charAt(0).toUpperCase() + rest.slice(1); else kept = kept.slice(1); }
+  }
   let q = 0;
   kept = kept.filter((x) => { if (/\?\s*$/.test(x)) { q++; return q === 1; } return true; });
   const out = kept.join(' ').trim();
