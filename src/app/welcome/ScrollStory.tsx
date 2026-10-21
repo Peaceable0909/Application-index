@@ -206,7 +206,7 @@ export default function ScrollStory({ ws, unis }: { ws: string | null; unis: str
   return (
     <div className="wl-story" ref={track}>
       <div className="wl-pin" ref={pin}>
-        <div className={`wl-stage${ready ? ' on' : ''}`} ref={stage}>
+        <div className={`wl-stage${ready ? ' on' : ''}`} ref={stage} style={{ backgroundImage: `url(${frameUrl(0)})` }}>
           <canvas ref={canvas} className="wl-canvas" aria-hidden="true" />
           {panels.map((p) => {
             const on = active.includes(p.id);

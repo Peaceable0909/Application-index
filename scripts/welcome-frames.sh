@@ -1,7 +1,8 @@
 #!/bin/sh
 # Cuts a video into the stills the /welcome page plays (public/welcome/frames/f001.webp ...).
 #   scripts/welcome-frames.sh path/to/video.mp4        (FFMPEG=/path/to/ffmpeg if it is not on the PATH)
-# Afterwards: set FRAME_COUNT in src/app/welcome/frames.ts to the number printed here. If the new video is the same
+# Afterwards: set FRAME_COUNT in src/app/welcome/frames.ts to the number printed here, and BUMP FRAMES_VERSION there (browsers keep the stills
+# for a year; without a new version, returning visitors keep seeing the old film). If the new video is the same
 # shots in the same order (for example the same film in higher quality) nothing else changes. If the shots, their
 # timing or the person's position changed, re-measure the white space with scripts/welcome-camera.mjs and update
 # TIMELINE, CAMERA, FOCUS and the `still` numbers in src/app/welcome/content.ts.

@@ -3,4 +3,8 @@
 // their timing changed re-measure with scripts/welcome-camera.mjs and update TIMELINE, CAMERA, FOCUS and the `still` frames in content.ts.
 export const FRAME_COUNT = 183;
 
-export const frameUrl = (i: number) => `/welcome/frames/f${String(Math.min(FRAME_COUNT, Math.max(1, i + 1))).padStart(3, '0')}.webp`;
+// The stills are cached hard by browsers (they never change under one version). BUMP THIS whenever the stills are replaced, or
+// returning visitors keep seeing the old film.
+export const FRAMES_VERSION = 3;
+
+export const frameUrl = (i: number) => `/welcome/frames/f${String(Math.min(FRAME_COUNT, Math.max(1, i + 1))).padStart(3, '0')}.webp?v=${FRAMES_VERSION}`;
