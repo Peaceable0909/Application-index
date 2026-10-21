@@ -33,6 +33,14 @@ export async function middleware(req: NextRequest) {
     if (!ok) return NextResponse.redirect(new URL('/student', req.url));
   }
 
+  // The front door: someone who is not signed in and opens the bare address sees the landing page (the address stays "/").
+  // Signed-in staff and students are not affected, and the installed app starts at /student.
+  if (!data.user && pathname === '/') {
+    const url = req.nextUrl.clone();
+    url.pathname = '/welcome';
+    return NextResponse.rewrite(url, { request: req });
+  }
+
   const open = pathname === '/login' || pathname === '/student/login' || pathname.startsWith('/auth/') || pathname.startsWith('/api/sync') || pathname.startsWith('/hello/') || pathname.startsWith('/api/hello/') || pathname === '/api/email/logo' || pwa;
   if (!data.user && !open) {
     // The front door (/) and anything under /student is for students; every staff page sends you to the team sign-in.
