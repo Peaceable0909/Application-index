@@ -34,8 +34,8 @@ export function startMock(db: Rows, port: number): Promise<http.Server> {
         const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : null;
         const accept = String(req.headers.accept || ''), prefer = String(req.headers.prefer || '');
         const filters: [string, string][] = [];
-        let order: string | null = null, limit: number | null = null, select = '*';
-        url.searchParams.forEach((v, k) => { if (k === 'select') select = v; else if (k === 'order') order = v; else if (k === 'limit') limit = Number(v); else if (k === 'on_conflict' || k === 'columns') { /* handled below */ } else filters.push([k, v]); });
+        let order: string | null = null, limit: number | null = null, offset = 0, select = '*';
+        url.searchParams.forEach((v, k) => { if (k === 'select') select = v; else if (k === 'order') order = v; else if (k === 'limit') limit = Number(v); else if (k === 'offset') offset = Number(v); else if (k === 'on_conflict' || k === 'columns') { /* handled below */ } else filters.push([k, v]); });
         const sel = (rows: Record<string, unknown>[]) => rows.filter((r) => filters.every(([k, v]) => match(r, k, v)));
         const proj = (r: Record<string, unknown>) => (select === '*' ? { ...r } : Object.fromEntries(select.split(',').map((c) => c.trim()).filter(Boolean).map((c) => [c, r[c] ?? null])));
         const send = (code: number, data: unknown) => {
@@ -50,6 +50,7 @@ export function startMock(db: Rows, port: number): Promise<http.Server> {
         if (req.method === 'GET') {
           let rows = sel(db[table]);
           if (order) { const [col, dir] = (order as string).split('.'); rows = [...rows].sort((a, b) => (String(a[col] ?? '') < String(b[col] ?? '') ? -1 : String(a[col] ?? '') > String(b[col] ?? '') ? 1 : 0) * (dir === 'desc' ? -1 : 1)); }
+          if (offset) rows = rows.slice(offset);
           if (typeof limit === 'number') rows = rows.slice(0, limit);
           log.push(`GET ${table} ${url.search}`); send(200, rows.map(proj));
         } else if (req.method === 'POST') {

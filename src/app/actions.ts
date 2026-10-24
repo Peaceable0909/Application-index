@@ -32,6 +32,8 @@ import { checkMeetingUrl } from '@/lib/meet';
 import { appsForEmail, currentStudent, isStudentEmail } from '@/lib/student';
 import { runBackup } from '@/lib/backup';
 import { notifyAssigned } from '@/lib/notify';
+import { reassign, reassignMany, routeApplications } from '@/lib/assignCore';
+import { notifyOwnerByKey, notifyRouting } from '@/lib/assignNotify';
 import { after } from 'next/server';
 import { canAccessApp } from '@/lib/auth';
 import { docScanEnabled, scanOne } from '@/lib/docscan';
@@ -202,21 +204,21 @@ export async function bulkAssign(f: FormData) {
   const pick = s(f, 'setCounselor');
   if (!pick) bulkBack(f, 'Choose a counselor first.', true);
   const counselor = pick === '__clear' ? '' : pick;
-  const { ids, left } = pickIds(f);
+  const picked = pickIds(f), left = picked.left;
+  const ids: string[] = [];
+  for (const id of picked.ids) if (await canAccessApp(staff, id)) ids.push(id);   // only students in workspaces this person may open
   const db = admin();
-  let ok = 0, sheetFail = 0;
-  const assigned: { id: string; name: string; school: string | null; programme: string | null }[] = [];
-  for (const id of ids) {
-    const { data: cur } = await db.from('portal_applications').select('counselor, name, school, programme').eq('application_id', id).single();
-    await db.from('portal_applications').update({ counselor: counselor || null }).eq('application_id', id);
-    await log(id, staff.email, 'counselor_change', { from: cur?.counselor ?? null, to: counselor });
-    if (counselor && cur && cur.counselor !== counselor) assigned.push({ id, name: cur.name, school: cur.school, programme: cur.programme });
-    try { await writeBack(id, { counselor }); } catch { sheetFail++; }
-    ok++;
+  // one history row per student (who, when, from whom, to whom); students who already belong to this counselor are left alone
+  const r = await reassignMany(db, { ids, toKey: counselor ? counselorKey(counselor) : null, actor: staff.email, reason: s(f, 'reason') });
+  let sheetFail = 0;
+  for (const c of r.changed) {
+    await log(c.student.id, staff.email, 'counselor_change', { from: c.from, to: c.to ?? '' });
+    try { await writeBack(c.student.id, { counselor: c.to ?? '' }); } catch { sheetFail++; }
   }
-  revalidatePath('/applications'); revalidatePath('/counselors');
-  if (counselor && assigned.length) after(() => notifyAssigned(counselor, assigned, staff.email));
-  bulkBack(f, `${counselor ? `Assigned to ${counselor}` : 'Unassigned'}: ${ok} student${ok === 1 ? '' : 's'}${sheetFail ? ` (${sheetFail} could not be written to the sheet)` : ''}.${leftNote(left)}`, sheetFail > 0);
+  revalidatePath('/applications'); revalidatePath('/counselors'); revalidatePath('/head');
+  if (counselor && r.changed.length) { const key = counselorKey(counselor); const students = r.changed.map((c) => c.student); after(() => notifyOwnerByKey(key, students, staff.email)); }
+  const ok = r.changed.length;
+  bulkBack(f, `${counselor ? `Assigned to ${counselor}` : 'Unassigned'}: ${ok} student${ok === 1 ? '' : 's'}${r.unchanged ? `, ${r.unchanged} already ${counselor ? 'theirs' : 'without a counselor'}` : ''}${r.failed ? `, ${r.failed} could not be changed` : ''}${sheetFail ? ` (${sheetFail} could not be written to the sheet)` : ''}.${leftNote(left)}`, sheetFail > 0 || r.failed > 0);
 }
 
 // One email per counselor listing the selected students that belong to them.
@@ -283,16 +285,19 @@ export async function updateStatus(f: FormData) {
 export async function updateCounselor(f: FormData) {
   const staff = await requireTeam();
   const id = s(f, 'id'), counselor = s(f, 'counselor');
-  const db = admin();
-  const { data: cur } = await db.from('portal_applications').select('counselor').eq('application_id', id).single();
-  await db.from('portal_applications').update({ counselor: counselor || null }).eq('application_id', id);
-  await log(id, staff.email, 'counselor_change', { from: cur?.counselor ?? null, to: counselor });
-  if (counselor && counselor !== cur?.counselor) { const { data: st } = await db.from('portal_applications').select('name, school, programme').eq('application_id', id).single(); if (st) after(() => notifyAssigned(counselor, [{ id, ...st }], staff.email)); }
+  await guardApp(staff, id);
   const ret = s(f, 'returnTo');
-  try { await writeBack(id, { counselor }); }
-  catch (e) { rethrow(e); return back(id, `Saved in portal but sheet write-back failed: ${(e as Error).message}`, true, ret); }
-  revalidatePath('/');
-  back(id, 'Counselor updated', false, ret);
+  // the change goes through the assignment system, so it is recorded with who, when and (if the rules pointed elsewhere) that it was an override
+  const r = await reassign(admin(), { appId: id, toKey: counselor ? counselorKey(counselor) : null, actor: staff.email, reason: s(f, 'reason') });
+  if (!r.ok) return back(id, r.error, true, ret);
+  if (r.changed) {
+    await log(id, staff.email, 'counselor_change', { from: r.from, to: r.to ?? '' });
+    if (r.toKey) { const key = r.toKey, student = r.student; after(() => notifyOwnerByKey(key, [student], staff.email)); }
+    try { await writeBack(id, { counselor: r.to ?? '' }); }
+    catch (e) { rethrow(e); return back(id, `Saved in portal but sheet write-back failed: ${(e as Error).message}`, true, ret); }
+  }
+  revalidatePath('/'); revalidatePath('/head');
+  back(id, r.changed ? 'Counselor updated' : 'No change: that is already the counselor', false, ret);
 }
 
 export async function addNote(f: FormData) {
@@ -780,12 +785,19 @@ export async function createApplication(f: FormData) {
   if (error) fail(`Could not save the student: ${error.message}`);
   await log(id, staff.email, 'student_added', { school, programme: fields.programme || null });
   if (counselor) after(() => notifyAssigned(counselor, [{ id, name, school, programme: fields.programme || null }], staff.email));
+  // No counselor picked: the responsibilities decide (a counselor picked by hand is kept and recorded).
+  let owner = counselor;
+  try {
+    const routed = await routeApplications(db, { ids: [id], actor: staff.email, mode: 'new' });
+    owner = counselor || routed.assigned[0]?.counselorName || null;
+    after(() => notifyRouting(routed));
+  } catch { /* the student is saved; the queue on the Team Head page picks them up */ }
 
   // Step two: the Sheet1 row. A failure here never loses the student.
   let sheet = '', sheetFailed = false;
   try {
     const r = await callScript<{ exists: boolean; row: number }>('addMaster', {
-      ...(await tabArgs(addWs)), date: now, name, email, ...fields, school: schoolShort(school), counselor: counselor || '', status,
+      ...(await tabArgs(addWs)), date: now, name, email, ...fields, school: schoolShort(school), counselor: owner || '', status,
     });
     await log(id, staff.email, 'moved_to_master', { row: r.row, status, exists: r.exists });
     try { await syncAll(); } catch { /* the next sync links the row */ }
@@ -1417,6 +1429,8 @@ export async function convertLead(f: FormData) {
     }, { onConflict: 'application_id' });
     if (error) redirect(`/leads?lead=${leadId}&err=${encodeURIComponent(`Could not save the student: ${error.message}`)}`);
     await log(id, staff.email, 'student_added', { from: 'new-student chat' });
+    try { const routed = await routeApplications(db, { ids: [id], actor: staff.email, mode: 'new' }); after(() => notifyRouting(routed)); }
+    catch { /* the student is saved; the queue on the Team Head page picks them up */ }
   }
   const body = ['From the new-student chat', lead.interest ? `Wants: ${lead.interest}` : '', ...(['level', 'qualifications', 'previousSchool', 'other'] as const).flatMap((k) => { const v = (lead.profile as Record<string, string> | null)?.[k]; return v ? [`${{ level: 'Study level', qualifications: 'Qualifications', previousSchool: 'Previous school', other: 'Other' }[k]}: ${v}`] : []; }), lead.summary || '', (lead.needs as string[] | null)?.length ? `Needs:\n${(lead.needs as string[]).map((n) => `- ${n}`).join('\n')}` : ''].filter(Boolean).join('\n\n');
   await db.from('portal_notes').upsert({ application_id: appId, author: 'ai', body, pinned: true, ai_key: 'lead' }, { onConflict: 'application_id,ai_key' });

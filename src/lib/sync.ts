@@ -6,6 +6,10 @@ import { canonicalStatus, counselorKey, docTypeFromName, normEmail, normName, pr
 import { pick, resolveMoved, type Moved } from './moves';
 import { sourceFromNotes } from './sources';
 import { pushPendingMoves } from './moveCore';
+import { writeBack } from './sheetWrite';
+import { isPlaceholderCounselor } from './assignEngine';
+import { recordSheetOwner, routeApplications } from './assignCore';
+import { notifyRouting } from './assignNotify';
 import { listMasterFor } from './sheets';
 import { DEFAULT_WS, wsKey } from './workspaceCore';
 import type { Workspace } from './workspace';
@@ -91,10 +95,15 @@ async function syncWorkspace(w: Workspace, opts: { full?: boolean } = {}) {
     .select('application_id, status, counselor, docs_synced_at, student_key, payment, interview, extra_folder_ids, moved, source, source_by').eq('workspace', w.key);
   const known = new Map((existing || []).map((r) => [r.application_id, r]));
 
+  const stubIdByKey = new Map<string, string>();
+  for (const [kid, prev] of known) if (kid.startsWith('stub:') && prev.student_key) stubIdByKey.set(prev.student_key, kid);
+
   const usedM = new Set<MasterRow>(), usedG = new Set<RegentRow>();
   const activity: object[] = [];
   let created = 0, changedBySheet = 0;
   const touched: string[] = [];
+  const newIds: string[] = [];                                                            // applications seen for the first time: routed to a counselor below
+  const ownerChanges: { id: string; from: string | null; to: string | null }[] = [];     // the sheet named a different counselor
 
   const build = (id: string, r: SheetRow | null, m: MasterRow | null, g: RegentRow | null) => {
     const prev = known.get(id);
@@ -117,10 +126,18 @@ async function syncWorkspace(w: Workspace, opts: { full?: boolean } = {}) {
     const payment = pick(g?.payment);
     const rawInterview = pick(g?.interview); // "To Be Booked for interview" / "...Interview" are the same thing
     const interview = rawInterview && /to be booked/i.test(rawInterview) ? 'To be booked for interview' : rawInterview;
+    const skey = sKey(pick(r?.email, m?.email, g?.email), school, name);
+    // The owner: a real name on the sheet wins; otherwise the one we already have. The form's "I don't have a counselor yet" never replaces an owner
+    // the rules (or a person) gave, and a student who had a hand-made stub keeps the stub's counselor when the form arrives.
+    const sheetOwner = [m?.counselor, g?.counselor, r?.counselor].map((c) => (c || '').trim()).find((c) => c && !isPlaceholderCounselor(c)) || null;
+    const inherited = prev ? null : known.get(stubIdByKey.get(skey) ?? '')?.counselor ?? null;
+    const heldOwner = [prev?.counselor, inherited].find((c) => c && !isPlaceholderCounselor(c)) || null;
+    const counselor = sheetOwner || heldOwner || pick(m?.counselor, g?.counselor, r?.counselor, prev?.counselor);
     if (!prev) {
-      created++;
+      created++; newIds.push(id);
       activity.push({ application_id: id, actor: 'system', kind: r ? 'new_application' : 'imported_from_sheet', detail: { school, programme: pick(m?.programme, g?.programme, r?.programme) } });
     } else {
+      if (sheetOwner && sheetOwner !== prev.counselor) ownerChanges.push({ id, from: prev.counselor ?? null, to: sheetOwner });
       if (prev.status && status && prev.status !== status) {
         changedBySheet++; touched.push(id);
         activity.push({ application_id: id, actor: 'sheet', kind: 'status_change', detail: { from: prev.status, to: status } });
@@ -134,14 +151,14 @@ async function syncWorkspace(w: Workspace, opts: { full?: boolean } = {}) {
       submitted_at: submitted, name, email: pick(r?.email, m?.email, g?.email), phone: pick(r?.phone, m?.phone, g?.phone),
       school, programme, moved: mv.moved, country: pick(m?.country, g?.country, r?.country),
       city: pick(r?.city, m?.city, g?.city), gender: pick(r?.gender, m?.gender, g?.gender), dob: pick(r?.dob, m?.dob), age: pick(r?.age, m?.age),
-      counselor: pick(m?.counselor, g?.counselor, r?.counselor, prev?.counselor),
+      counselor,
       status, progress: progressFor(status), student_ref: ref, sheet_notes: sourceFromNotes(pick(m?.notes, g?.notes, r?.notes)).notes, source, source_by: sourceBy,
       opp_id: pick(g?.oppId), payment, interview,
       // Form folder first; folders linked by hand in the portal are kept across syncs.
       drive_folder_id: r?.driveFolderId || prev?.extra_folder_ids?.[0] || null,
       drive_folder_url: (r?.driveFolderId || prev?.extra_folder_ids?.[0]) ? `https://drive.google.com/drive/folders/${r?.driveFolderId || prev?.extra_folder_ids?.[0]}` : null,
       extra_folder_ids: prev?.extra_folder_ids || [],
-      student_key: sKey(pick(r?.email, m?.email, g?.email), school, name),
+      student_key: skey,
       in_master: !!m, in_regent: !!g, has_raw: !!r, master_data: m, regent_data: g, raw_data: r, synced_at: new Date().toISOString(),
     };
   };
@@ -159,8 +176,6 @@ async function syncWorkspace(w: Workspace, opts: { full?: boolean } = {}) {
   const stubs = new Map<string, ReturnType<typeof build>>();
   // A stub's id comes from its school. If the school changed (a move, then the sheet followed), keep the id it already has
   // so its documents, messages and history stay attached.
-  const stubIdByKey = new Map<string, string>();
-  for (const [kid, prev] of known) if (kid.startsWith('stub:') && prev.student_key) stubIdByKey.set(prev.student_key, kid);
   const stubFor = (m: MasterRow | null, g: RegentRow | null) => {
     const key = sKey(pick(m?.email, g?.email), schoolDisplay(pick(m?.school, g?.school)), pick(m?.name, g?.name) || '');
     const std = 'stub:' + createHash('sha1').update(key).digest('hex').slice(0, 16);
@@ -188,16 +203,29 @@ async function syncWorkspace(w: Workspace, opts: { full?: boolean } = {}) {
     if (!target || target === id) continue;
     await db.from('portal_notes').update({ application_id: target }).eq('application_id', id);
     await db.from('portal_activity').update({ application_id: target }).eq('application_id', id);
+    await db.from('portal_assign_log').update({ application_id: target }).eq('application_id', id);
     await db.from('portal_applications').delete().eq('application_id', id);
   }
 
   // Counselors: make sure each name exists so an email can be attached in Settings.
   const names = new Map<string, string>();
-  all.forEach((r) => { const k = counselorKey(r.counselor); if (k && !names.has(k)) names.set(k, (r.counselor || '').trim()); });
+  all.forEach((r) => { const k = counselorKey(r.counselor); if (k && !names.has(k) && !isPlaceholderCounselor(r.counselor)) names.set(k, (r.counselor || '').trim()); });
   if (names.size) {
     await db.from('portal_counselors').upsert([...names].map(([name_key, name]) => ({ name_key, name })),
       { onConflict: 'name_key', ignoreDuplicates: true });
   }
+
+  // Automatic routing: every application seen for the first time goes to whoever the rules make responsible. Best effort: a routing problem
+  // is logged and never fails the sync, and an owner the application already has is never replaced.
+  try {
+    if (ownerChanges.length) await recordSheetOwner(db, ownerChanges);
+    if (newIds.length) {
+      const routed = await routeApplications(db, { ids: newIds, actor: 'system', mode: 'new' });
+      // Put the new owner in the sheet too, so people working from it see the same counselor (a few at a time; the portal already has it).
+      for (const a of routed.assigned.slice(0, 10)) { try { await writeBack(a.id, { counselor: a.counselorName }); } catch { /* the sheet can be filled in by hand */ } }
+      await notifyRouting(routed);
+    }
+  } catch (e) { console.error('routing failed', e); }
 
   const now = Date.now();
   const needFiles = all.map((r) => ({ r, folders: [...new Set([r.drive_folder_id, ...(r.extra_folder_ids || [])].filter(Boolean) as string[])] }))

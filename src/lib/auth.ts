@@ -6,10 +6,13 @@ import { admin, sessionClient } from './supabase';
 import { counselorKey } from './docs';
 import { currentStudent } from './student';
 import { mayOpen } from './workspaceCore';
+import { inScope, type Scope } from './assignEngine';
 
 export type Staff = {
   email: string; role: 'admin' | 'staff' | 'counselor'; last_seen_at: string | null; counselor_key: string | null;
   workspaces: string[] | null; display_name: string | null; avatar_url: string | null; title: string | null; phone: string | null; bio: string | null; color: string | null; notify_email: boolean | null;
+  /** Oversees the schools / destinations / locations listed in portal_head_scopes (on top of their normal role). */
+  team_head: boolean | null;
 };
 
 export type TwoStepWho = 'off' | 'admins' | 'everyone';
@@ -35,7 +38,7 @@ export const staffGate = cache(async (): Promise<Gate> => {
   const { data } = await sb.auth.getUser();
   const user = data.user, email = user?.email?.toLowerCase();
   if (!user || !email) return { state: 'none' };
-  const { data: row } = await admin().from('portal_staff').select('email, role, workspaces, last_seen_at, counselor_key, display_name, avatar_url, title, phone, bio, color, notify_email').eq('email', email).maybeSingle();
+  const { data: row } = await admin().from('portal_staff').select('email, role, workspaces, last_seen_at, counselor_key, display_name, avatar_url, title, phone, bio, color, notify_email, team_head').eq('email', email).maybeSingle();
   if (!row) return { state: 'none' };
   const staff = row as Staff;
   // Time limits: silent for too long (the browser stopped saying "still here"), or signed in for longer than a working day.
@@ -89,14 +92,22 @@ export const isCounselor = (s: Staff) => s.role === 'counselor';
 /** Can this person see this application? Team: all. Counselor: only students assigned to them. */
 export const canSee = (s: Staff, appCounselor: string | null) => s.role !== 'counselor' || (!!s.counselor_key && counselorKey(appCounselor) === s.counselor_key);
 
-/** One lookup per request per application: who it is assigned to and which workspace (country) it is in. */
-const appInfo = cache(async (applicationId: string) => (await admin().from('portal_applications').select('counselor, workspace').eq('application_id', applicationId).maybeSingle()).data);
+/** One lookup per request per application: who it is assigned to, which workspace (country) it is in, and what a Team Head's scope is matched on. */
+const appInfo = cache(async (applicationId: string) => (await admin().from('portal_applications').select('counselor, workspace, school, city').eq('application_id', applicationId).maybeSingle()).data);
+
+/** What a Team Head oversees (schools, destinations, locations). One lookup per request. */
+export const headScopes = cache(async (email: string): Promise<Scope[]> => {
+  const { data } = await admin().from('portal_head_scopes').select('workspace, scope, school_key, location_key').eq('email', email.toLowerCase());
+  return (data || []) as Scope[];
+});
 
 export async function canAccessApp(s: Staff, applicationId: string): Promise<boolean> {
   const data = await appInfo(applicationId);
   if (!data) return s.role !== 'counselor';
   if (!mayOpen(s, data.workspace)) return false;                       // another country's student
-  return s.role !== 'counselor' || canSee(s, data.counselor);
+  if (s.role !== 'counselor' || canSee(s, data.counselor)) return true;
+  // a counselor who is also a Team Head may open the students inside what they oversee, and only those
+  return !!s.team_head && inScope(await headScopes(s.email), data);
 }
 
 /** For server actions: stop (and send the person home) if the student isn't theirs. */
