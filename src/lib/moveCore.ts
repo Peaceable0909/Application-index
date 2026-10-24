@@ -4,6 +4,7 @@ import { callScript } from './appsScript';
 import { progressFor, schoolDisplay, schoolKey, schoolShort, studentKey } from './docs';
 import { tabArgs } from './sheets';
 import { wsKey } from './workspaceCore';
+import { resetStage, restoreStage } from './stageCore';
 import { progKey, sheetProgramme, sheetSchool, type Moved, type Pair } from './moves';
 
 export type Snap = { email: string; name: string; school: string; programme?: string };
@@ -72,6 +73,8 @@ export async function commitRow(r: Row, to: { school: string | null; programme: 
   const patch: Record<string, unknown> = { school, programme: to.programme, student_key: wsKey(r.workspace, studentKey(r.email, school, r.name)), moved, master_data: r.master_data };
   if (to.status !== r.status) { patch.status = to.status; patch.progress = progressFor(to.status); }
   await admin().from('portal_applications').update(patch).eq('application_id', r.application_id);
+  // Each school has its own stages: a different school means the old stage no longer applies. The history keeps it.
+  if (schoolKey(r.school) !== schoolKey(school)) { try { await resetStage(admin(), r.application_id, by, `School changed from ${r.school || 'none'} to ${school || 'none'}`); await restoreStage(admin(), r.application_id, by); } catch { /* the application can be placed again by hand */ } }
 }
 
 

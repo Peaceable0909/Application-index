@@ -4,6 +4,7 @@ import { AppRow, attentionReasons, isFormSubmission } from './attention';
 import { effType, missingDocs } from './docs';
 import { FINAL_STATUSES, REQUIRED_DOCS, STALE_DAYS } from './constants';
 import { askAi, hashOf, numbersWithin } from './ai';
+import { stageTaskDrafts } from './stageBoard';
 
 export type AppFull = AppRow & { created_at: string; dob: string | null; age: string | null; intake: string | null; deadline: string | null; preferred_name: string | null };
 export type SRow = { a: AppFull; have: Set<string>; docCount: number; judged: boolean; missing: string[]; reasons: string[]; submissions: number; required: string[] };
@@ -71,7 +72,7 @@ export function desiredTasks(rows: SRow[], now = Date.now()): TaskDraft[] {
 export async function refreshTasks(rows?: SRow[], workspace?: string) {
   const db = admin(), ws = workspace ?? (await currentWorkspace());
   const list = rows || (await loadStudents({ workspace: ws })).rows;
-  const drafts = desiredTasks(list);
+  const drafts = [...desiredTasks(list), ...(await stageTaskDrafts(ws).catch(() => [] as TaskDraft[]))];
   const { data: ex } = await db.from('portal_tasks').select('id,task_key,status,suppress_until,title,detail,priority, portal_applications!inner(workspace)').eq('portal_applications.workspace', ws);
   const have = new Map((ex || []).map((t) => [t.task_key, t]));
   const want = new Set(drafts.map((d) => d.key));

@@ -8,6 +8,7 @@ const ITEMS = [
   { href: '/', label: 'Overview', icon: 'grid', exact: true },
   { href: '/applications', label: 'Applications', icon: 'file' },
   { href: '/pipeline', label: 'Pipeline', icon: 'bolt' },
+  { href: '/stages', label: 'Stages', icon: 'trend' },
   { href: '/calendar', label: 'Deadlines', icon: 'clock' },
   { href: '/interviews', label: 'Interviews', icon: 'video' },
   { href: '/payments', label: 'Payments', icon: 'trend' },
@@ -27,17 +28,18 @@ const ITEMS = [
   { href: '/activity', label: 'Activity', icon: 'clock' },
   { href: '/drive', label: 'Drive matches', icon: 'link' },
   { href: '/team', label: 'Team', icon: 'user' },
+  { href: '/workflows', label: 'Workflows', icon: 'swap', adminOnly: true },
   { href: '/settings', label: 'Settings', icon: 'settings' },
 ];
 
-const COUNSELOR_ITEMS: typeof ITEMS = [{ href: '/my', label: 'My students', icon: 'users' }, { href: '/outreach', label: 'Follow-ups', icon: 'bell' }, { href: '/pipeline', label: 'Pipeline', icon: 'bolt' }, { href: '/calendar', label: 'Deadlines', icon: 'clock' }, { href: '/interviews', label: 'Interviews', icon: 'video' }, { href: '/extracted', label: 'Extracted text', icon: 'note' }, { href: '/inbox', label: 'Student chats', icon: 'mail', badge: 'inbox' }, { href: '/credibility', label: 'Credibility training', icon: 'spark' }, { href: '/chat', label: 'Chat', icon: 'chat', badge: 'chat' }, { href: '/team', label: 'Team', icon: 'user' }];
+const COUNSELOR_ITEMS: typeof ITEMS = [{ href: '/my', label: 'My students', icon: 'users' }, { href: '/outreach', label: 'Follow-ups', icon: 'bell' }, { href: '/pipeline', label: 'Pipeline', icon: 'bolt' }, { href: '/stages', label: 'Stages', icon: 'trend' }, { href: '/calendar', label: 'Deadlines', icon: 'clock' }, { href: '/interviews', label: 'Interviews', icon: 'video' }, { href: '/extracted', label: 'Extracted text', icon: 'note' }, { href: '/inbox', label: 'Student chats', icon: 'mail', badge: 'inbox' }, { href: '/credibility', label: 'Credibility training', icon: 'spark' }, { href: '/chat', label: 'Chat', icon: 'chat', badge: 'chat' }, { href: '/team', label: 'Team', icon: 'user' }];
 
 export default function Nav({ taskCount = 0, chatCount = 0, inboxCount = 0, mobile = false, role = 'staff' }: { taskCount?: number; chatCount?: number; inboxCount?: number; mobile?: boolean; role?: string }) {
   const p = usePathname();
   const [chat, setChat] = useState(chatCount);
   useEffect(() => setChat(chatCount), [chatCount]);
   useEffect(() => { const h = (e: Event) => setChat((e as CustomEvent<number>).detail || 0); window.addEventListener('chat-unread', h); return () => window.removeEventListener('chat-unread', h); }, []);
-  const items = role === 'counselor' ? COUNSELOR_ITEMS : ITEMS;
+  const items = role === 'counselor' ? COUNSELOR_ITEMS : ITEMS.filter((i) => !('adminOnly' in i && i.adminOnly) || role === 'admin');
   const on = (i: (typeof ITEMS)[number]) => (i.exact ? p === '/' : p.startsWith(i.href) || (i.href === '/my' && p.startsWith('/applications/')));
   return (
     <nav className={mobile ? 'mnav' : ''}>

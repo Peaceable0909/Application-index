@@ -13,9 +13,9 @@ import { completeReminder, completeTask, dismissTask, markSeen, refreshOverview,
 
 export const maxDuration = 60;
 
-const KIND_ORDER = ['no_documents', 'review_new', 'missing_docs', 'ready_next', 'interview_book', 'no_counselor', 'stale', 'add_to_sheet1', 'incomplete_info'];
+const KIND_ORDER = ['no_documents', 'review_new', 'missing_docs', 'ready_next', 'stage_late', 'stage_docs', 'stage_ready', 'interview_book', 'no_counselor', 'stale', 'add_to_sheet1', 'incomplete_info'];
 const KIND_LABEL: Record<string, string> = {
-  no_documents: 'Possible upload problems', review_new: 'New applications to review', missing_docs: 'Missing documents', ready_next: 'Ready for the next stage',
+  no_documents: 'Possible upload problems', review_new: 'New applications to review', missing_docs: 'Missing documents', ready_next: 'Ready for the next stage', stage_late: 'Overdue in a stage', stage_docs: 'Documents holding up a stage', stage_ready: 'Ready to move to the next stage',
   interview_book: 'Interviews to book', no_counselor: 'Assign a counselor', stale: 'Follow-ups', add_to_sheet1: 'Add to Sheet1', incomplete_info: 'Incomplete details',
 };
 const ago = (t: string) => { const m = Math.max(1, Math.round((Date.now() - new Date(t).getTime()) / 60000)); return m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; };

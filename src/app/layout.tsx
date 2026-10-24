@@ -35,6 +35,7 @@ import './themes.css';
 import './whatsapp.css';
 import './calls.css';
 import './ios.css';
+import './stage.css';
 import { cookies } from 'next/headers';
 import { COOKIE, parseTheme } from '@/lib/theme';
 import { site } from '@/lib/emailTemplate';

@@ -33,9 +33,13 @@ import MoveButton from '@/components/MoveSheet';
 import { UndoMove, RetrySheet } from '@/components/MoveBits';
 import { getCatalog } from '@/lib/moveCatalog';
 import type { Moved } from '@/lib/moves';
+import { stageViewFor } from '@/lib/stageView';
+import { readiness } from '@/lib/stageEngine';
+import StageCard from '@/components/StageCard';
+import StageDetails from '@/components/StageDetails';
 
 type SP = { msg?: string; err?: string; preview?: string; tab?: string; compose?: string; draft?: string };
-const TABS = ['overview', 'documents', 'offer', 'notes', 'activity', 'messages', 'regent', 'sources'] as const;
+const TABS = ['overview', 'stage', 'documents', 'offer', 'notes', 'activity', 'messages', 'regent', 'sources'] as const;
 const FIELDS: [string, string][] = [['oppId', 'OPP ID'], ['payment', 'Payment'], ['interview', 'Interview booking'], ['name', 'Name'], ['email', 'Email'], ['phone', 'Phone'], ['school', 'University'], ['programme', 'Programme'], ['country', 'Country'], ['city', 'City'], ['gender', 'Gender'], ['dob', 'Date of birth'], ['age', 'Age'], ['counselor', 'Counselor'], ['status', 'Status'], ['notes', 'Notes']];
 const kb = (n: number | null) => (n ? `${Math.max(1, Math.round(n / 1024))} KB` : '');
 const ext = (n: string) => (n.match(/\.([a-z0-9]+)$/i)?.[1] || '').toLowerCase();
@@ -51,6 +55,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
   if (!app || !(await canAccessApp(staff, id))) notFound();
   const REQUIRED_DOCS = await requiredDocs(app.workspace), DOC_TYPES = [...REQUIRED_DOCS, ...ALL_DOC_TYPES.filter((t) => !REQUIRED_DOCS.includes(t))];
 
+  const stageP = stageViewFor(id, staff);
   // everything below only needs the application row, so it all loads at the same time
   const [{ data: siblings }, { data: notes }, { data: activity }, { data: counselors }, { data: suggestions }, { data: messages }, { data: reminders }, offerRow, chatRows, { data: checkRows }, { data: cached }, { data: draftRow }, catalog] = await Promise.all([
     db.from('portal_applications').select('application_id,submitted_at').eq('student_key', app.student_key).order('submitted_at', { ascending: false }),
@@ -143,6 +148,9 @@ export default async function ApplicationPage({ params, searchParams }: { params
   );
 
   const photo = await studentPhoto(app.email);
+  const sv = await stageP;
+  const stageRd = sv?.ok ? readiness(sv.wf, sv.st) : null;
+  const stagePeople = sv?.ok ? Object.fromEntries([...sv.history.map((h) => h.actor), ...(sv.app.stage_by ? [sv.app.stage_by] : [])].map((e) => [e.toLowerCase(), personFor(people, e).name])) : {};
   return (
     <>
       <Link href={staff.role === 'counselor' ? '/my' : '/applications'} className="crumb"><Icon n="left" size={15} /> {staff.role === 'counselor' ? 'Back to My students' : 'Back to Applications'}</Link>
@@ -156,6 +164,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
         <div className="chips">
           {judged && missing.length > 0 && <span className="badge plain red">Missing Docs</span>}
           {app.status && <span className={`badge plain tone-${statusTone(app.status)}`}>{app.status}</span>}
+          {stageRd?.current && <Link href={tabHref('stage')} className="badge plain blue" title="Open the stage checklist"><Icon n="trend" size={13} /> Stage: {stageRd.current.name}</Link>}
           {app.counselor && <span className="badge plain purple"><Icon n="users" size={13} /> Assigned: {app.counselor}</span>}
           <Link href={`/chat?about=${encodeURIComponent(id)}`} className="badge plain blue" title="Send this student to a teammate in chat"><Icon n="chat" size={13} /> Discuss in chat</Link>
           {app.in_regent && app.payment && <span className={`badge plain ${/^paid/i.test(app.payment) ? 'green' : 'amber'}`}>{app.payment}</span>}
@@ -193,8 +202,18 @@ export default async function ApplicationPage({ params, searchParams }: { params
         </div>
       )}
 
+      {sv?.ok && <StageCard app={{ id, name: app.name, school: sv.app.school, programme: sv.app.programme, counselor: app.counselor, status: app.status }} wf={sv.wf} st={sv.st} role={sv.role} files={sv.files} stageBy={sv.stageByName} detailsHref={tabHref('stage')} />}
+      {sv && !sv.ok && (
+        <div className="card sg-card">
+          <small className="sg-eyebrow">Stage workflow</small>
+          {sv.reason === 'no-school'
+            ? <p className="sg-hint" style={{ fontSize: 14 }}>No school is set for this student, so there is no stage workflow to show. Set the university and the right stages appear here.</p>
+            : <p className="sg-hint" style={{ fontSize: 14 }}>{sv.school ? `“${sv.school}” has no stage workflow yet, so the existing pipeline status is used.` : 'No stage workflow for this school yet.'} {staff.role === 'admin' ? <Link href={`/workflows?new=${encodeURIComponent(sv.school || '')}`} className="linkish">Create one on the Workflows page <Icon n="right" size={13} /></Link> : 'Ask an admin to set one up.'}</p>}
+        </div>
+      )}
+
       <div className="tabs" role="tablist">
-        {([['overview', 'Overview', null], ['documents', 'Documents', judged ? `${presentRequired}/${REQUIRED_DOCS.length}` : null], ['offer', 'Offer & visa', offerRow?.offer_type ? <Icon n="check" size={11} /> : null], ['notes', 'Notes', (notes || []).length || null], ['activity', 'Activity', null], ['messages', 'Messages', (messages || []).length || null], ...(app.in_regent ? [['regent', 'Regent', null]] : []), ['sources', 'Sources', null]] as [string, string, ReactNode][]).map(([k, label, n]) => (
+        {([['overview', 'Overview', null], ...(sv?.ok ? [['stage', 'Stage', stageRd && stageRd.blockers.length ? stageRd.blockers.length : null]] : []), ['documents', 'Documents', judged ? `${presentRequired}/${REQUIRED_DOCS.length}` : null], ['offer', 'Offer & visa', offerRow?.offer_type ? <Icon n="check" size={11} /> : null], ['notes', 'Notes', (notes || []).length || null], ['activity', 'Activity', null], ['messages', 'Messages', (messages || []).length || null], ...(app.in_regent ? [['regent', 'Regent', null]] : []), ['sources', 'Sources', null]] as [string, string, ReactNode][]).map(([k, label, n]) => (
           <Link key={k} href={tabHref(k)} scroll={false} role="tab" aria-selected={tab === k} className={`tab ${tab === k ? 'active' : ''}`}>{label}{n ? <span className="n">{n}</span> : null}</Link>
         ))}
       </div>
@@ -368,6 +387,9 @@ export default async function ApplicationPage({ params, searchParams }: { params
             </div>
           </div>
         )}
+
+        {tab === 'stage' && !sv?.ok && <div className="card"><p className="muted" style={{ margin: 0 }}>There is no stage workflow for this student’s school. <Link href={tabHref('overview')}>Back to the overview</Link></p></div>}
+        {tab === 'stage' && sv?.ok && <StageDetails appId={id} appName={app.name} wf={sv.wf} st={sv.st} role={sv.role} files={sv.files} history={sv.history} people={stagePeople} />}
 
         {tab === 'documents' && (
           <div className="card">

@@ -34,6 +34,11 @@ export function describeActivity(kind: string, d: Record<string, string>): { tit
     case 'school_moved': return { title: moveTitle(d as never), icon: 'swap', tone: 'purple' };
     case 'school_move_undone': return { title: 'School or programme change undone', icon: 'left', tone: 'amber' };
     case 'move_reset': return { title: `${d.field === 'school' ? 'School' : 'Programme'} follows the sheet again${d.value ? ` · ${d.value}` : ''}`, icon: 'swap', tone: 'amber' };
+    case 'stage_change': return { title: d.placed ? `Placed in stage · ${d.to || ''}` : `Stage · ${d.from ? `${d.from} → ` : ''}${d.to || ''}${d.override ? ' (override)' : ''}`, icon: 'right', tone: d.override ? 'amber' : 'purple' };
+    case 'req_checked': return { title: `${d.label || 'Requirement'} · ${d.state || ''}`, icon: d.state === 'rejected' || d.state === 'Failed' ? 'alert' : 'check-circle', tone: d.state === 'rejected' ? 'amber' : 'green' };
+    case 'req_added': return { title: `Extra requirement added · ${d.label || ''}`, icon: 'file', tone: '' };
+    case 'req_removed': return { title: `Extra requirement removed · ${d.label || ''}`, icon: 'file', tone: 'amber' };
+    case 'stage_flag': return { title: `${d.flag || 'Stage'} ${d.on === 'yes' ? 'switched on' : 'switched off'}`, icon: 'swap', tone: '' };
     case 'move_sheet_updated': return { title: 'Sheet1 updated with the new school or programme', icon: 'check-circle', tone: 'green' };
     default: return { title: kind.replace(/_/g, ' '), icon: 'file', tone: '' };
   }

@@ -11,6 +11,10 @@ import { createHash } from 'crypto';
 import { ALL_DOC_TYPES, CAS_STATUSES, VISA_STATUSES } from '@/lib/constants';
 import { syncAll, syncFolders } from '@/lib/sync';
 import { tabArgs } from '@/lib/sheets';
+import { writeBack } from '@/lib/sheetWrite';
+import { loadContext as loadStageContext } from '@/lib/stageCore';
+import { studentAsks } from '@/lib/stageEngine';
+import { typeFields } from '@/lib/driveUpload';
 import { ensureFolder } from '@/lib/driveFolders';
 import { requiredDocs, workspacesFor } from '@/lib/workspace';
 import { wsKey } from '@/lib/workspaceCore';
@@ -51,20 +55,6 @@ async function log(applicationId: string, actor: string, kind: string, detail: o
   const db = admin();
   await db.from('portal_activity').insert({ application_id: applicationId, actor, kind, detail });
   await db.from('portal_applications').update({ last_activity_at: new Date().toISOString() }).eq('application_id', applicationId);
-}
-
-// Status/counselor/notes live in the hand-maintained master sheet when the student is in it;
-// otherwise they go to the raw Applications sheet. Notes are appended, never overwritten.
-async function writeBack(id: string, fields: Record<string, string>, notesAppend?: string, by?: string) {
-  const { data: app } = await admin().from('portal_applications')
-    .select('in_master, has_raw, master_data, workspace').eq('application_id', id).single();
-  if (!app) throw new Error('Application not found');
-  if (app.in_master && app.master_data) {
-    const m = app.master_data as { email: string; name: string; school: string };
-    await callScript('updateMaster', { email: m.email, name: m.name, school: m.school, fields, notesAppend, by, ...(await tabArgs(app.workspace)) });
-  } else if (app.has_raw) {
-    await callScript('updateRow', { applicationId: id, fields, notesAppend, by });
-  }
 }
 
 export async function signIn(f: FormData) {
@@ -1060,7 +1050,15 @@ export async function studentUpload(f: FormData): Promise<{ ok: boolean; error?:
   if (!me) return { ok: false, error: 'Please sign in again.' };
   const appId = s(f, 'appId'), docType = s(f, 'docType'), file = f.get('file');
   if (!me.ids.includes(appId)) return { ok: false, error: 'That application isn’t yours.' };
-  if (!(await docTypeOk(appId, docType))) return { ok: false, error: 'Choose what kind of document this is.' };
+  // A document the school's stage is asking for right now is filed exactly as asked (so "TB certificate" is never mistaken for a degree certificate).
+  let asked: string | null = null;
+  if (s(f, 'reqType')) {
+    const c = await loadStageContext(admin(), appId);
+    const hit = 'error' in c ? undefined : studentAsks(c.wf, c.st).find((a) => a.docType && a.docType.toLowerCase() === s(f, 'reqType').toLowerCase());
+    if (!hit) return { ok: false, error: 'That document is not being asked for right now.' };
+    asked = hit.docType;
+  }
+  if (!asked && !(await docTypeOk(appId, docType))) return { ok: false, error: 'Choose what kind of document this is.' };
   if (!(file instanceof File) || !file.size) return { ok: false, error: 'Choose a file first.' };
   if (!ALLOWED_EXT.test(file.name)) return { ok: false, error: 'Please upload a PDF, photo (JPG/PNG) or Word file.' };
   if (file.size > 4 * 1024 * 1024) return { ok: false, error: 'That file is over 4 MB. Please send a smaller or compressed copy.' };
@@ -1077,11 +1075,12 @@ export async function studentUpload(f: FormData): Promise<{ ok: boolean; error?:
   if ((count || 0) >= 25) return { ok: false, error: 'You’ve reached today’s upload limit. Please try again tomorrow.' };
   const ext = (file.name.match(/\.[^.]+$/) || ['.pdf'])[0].toLowerCase();
   let label: ReturnType<typeof resolveLabel> | null = null;
-  if (docType === 'Other') { const l = cleanLabel(s(f, 'docLabel')); if (!l) return { ok: false, error: 'Please name the kind of document, for example “Bank statement”.' }; label = resolveLabel(l); }
-  const name = `${app.name} - ${label ? label.override || label.docType : docType}${ext}`;
+  if (!asked && docType === 'Other') { const l = cleanLabel(s(f, 'docLabel')); if (!l) return { ok: false, error: 'Please name the kind of document, for example “Bank statement”.' }; label = resolveLabel(l); }
+  const askedFields = asked ? typeFields(asked) : null;
+  const name = `${app.name} - ${asked ?? (label ? label.override || label.docType : docType)}${ext}`;
   try {
     const up = await callScript<DriveFile>('uploadFile', { applicationId: appId, folderId: folder, name, mimeType: file.type || 'application/octet-stream', base64: buf.toString('base64') });
-    await db.from('portal_documents').upsert({ drive_file_id: up.id, application_id: appId, name: up.name, doc_type: label ? label.docType : docType, type_override: label?.override ?? null, mime_type: up.mimeType, size_bytes: up.size, drive_url: up.url, source: 'portal', uploaded_by: me.email });
+    await db.from('portal_documents').upsert({ drive_file_id: up.id, application_id: appId, name: up.name, doc_type: askedFields ? askedFields.doc_type : label ? label.docType : docType, type_override: askedFields ? askedFields.type_override : label?.override ?? null, mime_type: up.mimeType, size_bytes: up.size, drive_url: up.url, source: 'portal', uploaded_by: me.email });
     await log(appId, me.email, 'doc_uploaded', { name: up.name, by: 'student' });
   } catch (e) { return { ok: false, error: `Upload failed. Please try again. (${(e as Error).message.slice(0, 120)})` }; }
   revalidatePath('/student'); revalidatePath('/');
