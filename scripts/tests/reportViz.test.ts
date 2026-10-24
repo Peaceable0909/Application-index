@@ -1,5 +1,5 @@
 // Run with: npx tsx scripts/tests/reportViz.test.ts  (pure: no database)
-import { addDays, buildCalendar, buildFlow, buildInsights, buildPace, buildPortfolios, buildQuiet, buildViz, buildWeekly, daysBetween, mondayOf, phaseOf, previousRange, scopeFacts, stageTracks, weekdayOf } from '../../src/lib/vizData';
+import { addDays, docPayTiles, withTiles, buildCalendar, buildFlow, buildInsights, buildPace, buildPortfolios, buildQuiet, buildViz, buildWeekly, daysBetween, mondayOf, phaseOf, previousRange, scopeFacts, stageTracks, weekdayOf } from '../../src/lib/vizData';
 import { compact, niceTicks, sankeyLayout, smoothPath } from '../../src/lib/vizLayout';
 import type { App, Facts } from '../../src/lib/funnel';
 
@@ -117,6 +117,19 @@ eq(previousRange({ from: '2026-10-01', to: '2026-10-30' }), { from: '2026-09-01'
   // small samples stay quiet
   const small = buildInsights({ ...none, hero: { value: 3, prev: 1, delta: null, spark: [] }, calendar: { ...none.calendar, weekday: [3, 0, 0, 0, 0, 0, 0] }, quiet: { buckets: [], active: 3, quiet: 0, median: 1 } } as never, null);
   ok(small.every((i) => !/busiest day|brings the most/.test(i.text)), 'no "pattern" sentence is written from three applications');
+}
+
+// ---- documents and payments tiles ----
+{
+  const row = (id: string, o: Partial<{ status: string | null; judged: boolean; missing: number; inRegent: boolean; paid: boolean }> = {}) => ({ id, status: 'Submitted' as string | null, judged: true, missing: 0, inRegent: false, paid: false, ...o });
+  const rows = [row('a'), row('b', { missing: 2 }), row('c', { missing: 1, status: 'Withdrawn' }), row('d', { judged: false }), row('e', { inRegent: true, paid: true }), row('f', { inRegent: true }), row('g', { inRegent: true, status: 'Rejected' }), row('x', { inRegent: true })];
+  const t = docPayTiles(rows, new Set('abcdefg'.split('')));
+  eq(t.map((x) => [x.key, x.value, x.sub]), [['docs', 3, '1 still missing some'], ['pay', 1, '1 paid (Regent)']], 'documents complete counts active students with every document (a finished one and an unchecked one are not counted); payments pending counts unpaid Regent students, not rejected or withdrawn ones');
+  eq(docPayTiles(rows, new Set(['x'])).map((x) => [x.key, x.value, x.sub]), [['docs', 1, 'Nobody is missing any'], ['pay', 1, '0 paid (Regent)']], 'only students of the chosen cohort count');
+  eq(docPayTiles([row('a', { judged: false })], new Set(['a'])), [], 'nothing behind a tile means no tile (no "0 paid" for a country without Regent)');
+  const v = buildViz({ facts: facts([app('q1')]), spaces: [{ key: 'uk', name: 'UK' }], range: { from: '2026-10-01', to: '2026-10-24' }, ws: 'all', now: NOW });
+  eq(withTiles(v, t).tiles.map((x) => x.key), ['active', 'offers', 'enrolled', 'docs', 'pay', 'quiet', 'waiting'], 'the paperwork tiles sit before the "needs a nudge" ones');
+  eq(withTiles(v, []).tiles.length, v.tiles.length, 'no extra tiles leaves the page as it was');
 }
 
 // ---- stage tracks ----

@@ -275,6 +275,32 @@ export function buildInsights(v: Viz, headHref: string | null): Insight[] {
   return out.slice(0, 6);
 }
 
+// ---------- documents and payments (read from the student records, so they are added after the rest) ----------
+export type DocPayRow = { id: string; status: string | null; judged: boolean; missing: number; inRegent: boolean; paid: boolean };
+
+/**
+ * The two numbers the old Reports page led with: how many active students have every document the school asks for, and how many
+ * Regent students have not paid yet. Only students of the cohort count, and a tile is left out when there is nothing behind it
+ * (no student with a document check, no Regent student), so a country without Regent never shows "0 paid".
+ */
+export function docPayTiles(rows: DocPayRow[], cohort: Set<string>): Tile[] {
+  const mine = rows.filter((r) => cohort.has(r.id)), active = mine.filter((r) => !isFinal(r.status));
+  const judged = active.filter((r) => r.judged), complete = judged.filter((r) => r.missing === 0).length, incomplete = judged.length - complete;
+  const regent = mine.filter((r) => r.inRegent), paid = regent.filter((r) => r.paid).length;
+  const unpaid = regent.filter((r) => !r.paid && r.status !== 'Rejected' && r.status !== 'Withdrawn').length;
+  return [
+    ...(judged.length ? [{ key: 'docs', label: 'Documents complete', value: complete, sub: incomplete ? `${incomplete} still missing some` : 'Nobody is missing any', tone: (incomplete ? 'info' : 'good') as Tile['tone'], href: '/documents' }] : []),
+    ...(regent.length ? [{ key: 'pay', label: 'Payments pending', value: unpaid, sub: `${paid} paid (Regent)`, tone: (unpaid ? 'watch' : 'good') as Tile['tone'], href: '/payments' }] : []),
+  ];
+}
+
+/** Puts extra tiles in before the "quiet" and "waiting" ones, so the order reads: how far along, then paperwork, then what needs a nudge. */
+export function withTiles(v: Viz, extra: Tile[]): Viz {
+  if (!extra.length) return v;
+  const at = v.tiles.findIndex((t) => t.key === 'quiet');
+  return { ...v, tiles: at < 0 ? [...v.tiles, ...extra] : [...v.tiles.slice(0, at), ...extra, ...v.tiles.slice(at)] };
+}
+
 // ---------- stage tracks (from the school workflows) ----------
 export type Track = { id: string; school: string; workspace: string; stages: { key: string; name: string; n: number; late: number }[]; total: number; late: number; unplaced: number };
 type BoardLike = { schools: { key: string; name: string; stages: { key: string; name: string; conditional: boolean }[]; cards: { id: string; stageKey: string | null; delayed: number }[] }[] };

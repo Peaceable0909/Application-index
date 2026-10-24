@@ -2,7 +2,9 @@ import { requireTeam } from '@/lib/auth';
 import { workspacesFor } from '@/lib/workspace';
 import { loadFacts } from '@/lib/funnel';
 import { loadStageBoard } from '@/lib/stageBoard';
-import { addDays, buildViz, isoDay, scopeFacts, stageTracks, type Range } from '@/lib/vizData';
+import { loadStudents } from '@/lib/overview';
+import { isPaid } from '@/lib/requests';
+import { addDays, buildViz, docPayTiles, isoDay, scopeFacts, stageTracks, withTiles, type DocPayRow, type Range } from '@/lib/vizData';
 import ReportsView from '@/components/viz/ReportsView';
 
 export const maxDuration = 60;
@@ -35,9 +37,14 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
   const { range, preset } = resolveRange(sp, today, first);
   const headHref = me.role === 'admin' || me.team_head ? '/head' : null;
 
-  const viz = buildViz({ facts, spaces, range, ws, headHref });
+  const base = buildViz({ facts, spaces, range, ws, headHref });
+  // documents complete and payments pending come from the student records (one pass per country), for the same students as everything else
+  const inScope = ws === 'all' ? keys : [ws];
+  const records = await Promise.all(inScope.map(async (workspace) => { try { return (await loadStudents({ workspace })).rows; } catch { return []; } }));
+  const rows: DocPayRow[] = records.flat().map((r) => ({ id: r.a.application_id, status: r.a.status, judged: r.judged, missing: r.missing.length, inRegent: !!r.a.in_regent, paid: isPaid(r.a.payment) }));
+  const viz = withTiles(base, docPayTiles(rows, new Set(base.cohortIds)));
   // each university's stage route, narrowed to the same applications the rest of the page is about
-  const boards = await Promise.all((ws === 'all' ? keys : [ws]).map(async (workspace) => { try { return { workspace, board: await loadStageBoard(workspace) }; } catch { return null; } }));
+  const boards = await Promise.all(inScope.map(async (workspace) => { try { return { workspace, board: await loadStageBoard(workspace) }; } catch { return null; } }));
   const tracks = stageTracks(boards.filter((b): b is NonNullable<typeof b> => !!b), new Set(viz.cohortIds));
 
   return <ReportsView viz={viz} tracks={tracks} spaces={spaces} ws={ws} preset={preset} headHref={headHref} />;
