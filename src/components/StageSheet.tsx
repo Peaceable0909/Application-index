@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import Icon from './Icon';
 import ReqRow, { type FileLite } from './ReqRow';
+import InformStudent from './InformStudent';
 import { moveStage, type MoveResult } from '@/app/stageActions';
 import { applicableStages, checkMove, findStage, nextStage, stageReqs, type AppState, type Role, type Workflow } from '@/lib/stageEngine';
 
@@ -68,7 +69,8 @@ export default function StageSheet({ wf, st, appId, appName, role, files, initia
                 <div><b>{appName} is now in “{done.to}”</b>
                   <small>{done.from ? `From “${done.from}”. ` : ''}{done.override ? 'Moved with an override; the open items are kept in the history. ' : ''}{done.status ? `Pipeline status is now “${done.status}”. ` : ''}{done.sheet === 'updated' ? 'The master sheet was updated.' : ''}</small></div></div>
               {done.sheet === 'failed' && <div className="mv-note t-warn">Saved in the portal, but the master sheet could not be updated ({done.sheetError || 'try again later'}). The next sync will show the portal’s status until the sheet is fixed.</div>}
-              <div className="mv-note t-info">The people who should know have been notified. Open the checklist to see what this stage asks for.</div>
+              <div className="mv-note t-info">The team has been notified, and {appName}’s dashboard now shows this stage. No email has been sent to the student.</div>
+              {done.historyId && <InformStudent appId={appId} info={{ historyId: done.historyId, stage: done.to, state: null, at: null, by: null, to: null, error: null }} />}
             </div>
             <div className="mv-foot"><button type="button" className="btn primary" onClick={close}>Done</button></div>
           </>

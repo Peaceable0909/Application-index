@@ -11,10 +11,17 @@ import { loadWorkflows } from '@/lib/stages';
 import { notifyEntered, notifyReady } from '@/lib/stageNotify';
 import { uploadToStudentFolder } from '@/lib/driveUpload';
 import { schoolKey } from '@/lib/docs';
+import { nudgeLater } from '@/lib/realtime';
+import { draftInform, previewInform, sendInform } from '@/lib/stageInform';
 
 type Fail = { ok: false; error: string; check?: Core.MoveSummary };
 const mover = (s: Staff): Core.Mover => ({ email: s.email, role: s.role });
-const refresh = (id: string) => { revalidatePath(`/applications/${id}`); revalidatePath('/stages'); revalidatePath('/'); revalidatePath('/pipeline'); revalidatePath('/applications'); revalidatePath('/my'); };
+const refresh = (id: string) => { revalidatePath(`/applications/${id}`); revalidatePath('/stages'); revalidatePath('/'); revalidatePath('/pipeline'); revalidatePath('/applications'); revalidatePath('/my'); revalidatePath('/student'); revalidatePath('/student/documents'); };
+/** The student's open dashboard looks again at once. This is not an email and carries no content: it only says "something changed". */
+async function pingStudent(appId: string) {
+  const { data } = await admin().from('portal_applications').select('email').eq('application_id', appId).maybeSingle();
+  if (data?.email) nudgeLater([{ role: 'student', email: data.email.toLowerCase() }], 'stage', { app: appId });
+}
 
 /** Signed in, and allowed to work on this student (a counselor only on their own, nobody outside a workspace they may open). */
 async function gate(appId: string): Promise<{ staff: Staff } | Fail> {
@@ -23,7 +30,7 @@ async function gate(appId: string): Promise<{ staff: Staff } | Fail> {
   return { staff };
 }
 
-export type MoveResult = { ok: true; from: string | null; to: string; override: boolean; status: string | null; sheet: 'updated' | 'failed' | 'unchanged'; sheetError?: string } | Fail;
+export type MoveResult = { ok: true; from: string | null; to: string; override: boolean; status: string | null; sheet: 'updated' | 'failed' | 'unchanged'; sheetError?: string; historyId: string | null } | Fail;
 
 /** Moves one application to another stage. Requirements on the way are checked on the server, whatever the screen showed. */
 export async function moveStage(appId: string, toKey: string, opts: { note?: string; override?: string; enable?: string[] } = {}): Promise<MoveResult> {
@@ -44,15 +51,16 @@ export async function moveStage(appId: string, toKey: string, opts: { note?: str
     await notifyEntered({ app: { application_id: appId, name: c.app.name, workspace: c.app.workspace, school: c.app.school }, stage: r.stage, from: r.from, by: g.staff.email, open: readiness(c.wf, c.st).reqs, override: r.kind === 'override' });
   });
   refresh(appId);
-  return { ok: true, from: r.from, to: r.to, override: r.kind === 'override', status: r.statusChanged?.to ?? null, sheet, sheetError };
+  await pingStudent(appId);
+  return { ok: true, from: r.from, to: r.to, override: r.kind === 'override', status: r.statusChanged?.to ?? null, sheet, sheetError, historyId: r.historyId };
 }
 
 /** Puts an application into a stage without any checks or status change: for applications that were already under way before stages existed. */
-export async function placeStage(appId: string, toKey: string, note?: string): Promise<{ ok: true; to: string } | Fail> {
+export async function placeStage(appId: string, toKey: string, note?: string): Promise<{ ok: true; to: string; historyId: string | null } | Fail> {
   const g = await gate(appId);
   if ('ok' in g) return g;
   const r = await Core.placeApplication(admin(), { appId, toKey, mover: mover(g.staff), note });
-  if (r.ok) refresh(appId);
+  if (r.ok) { refresh(appId); await pingStudent(appId); }
   return r;
 }
 
@@ -128,4 +136,29 @@ export async function placeByStatus(): Promise<{ ok: true; placed: number; left:
   }
   revalidatePath('/stages');
   return { ok: true, placed, left };
+}
+
+// ---- telling the student (a separate action from moving the stage) ----
+
+/** The email as it would be sent: always to the address on the student's application. Nothing is sent here. */
+export async function draftStageEmail(appId: string, historyId: string) {
+  const g = await gate(appId);
+  if ('ok' in g) return g;
+  return draftInform(admin(), appId, historyId);
+}
+
+/** The designed email for the text as typed so far, signed by the person sending it. Nothing is sent here. */
+export async function previewStageEmail(appId: string, historyId: string, subject: string, body: string) {
+  const g = await gate(appId);
+  if ('ok' in g) return g;
+  return previewInform(admin(), appId, historyId, g.staff.email, subject, body);
+}
+
+/** Sends the email the counselor chose to send. The stage itself is never touched by this. */
+export async function informStudent(appId: string, historyId: string, input: { subject: string; body: string }) {
+  const g = await gate(appId);
+  if ('ok' in g) return g;
+  const r = await sendInform(admin(), { appId, historyId, by: g.staff.email, subject: input.subject, body: input.body });
+  refresh(appId);
+  return r;
 }

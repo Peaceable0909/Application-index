@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Icon from './Icon';
 import StageSheet from './StageSheet';
+import InformStudent, { type InformShown } from './InformStudent';
 import type { FileLite } from './ReqRow';
 import { placeStage } from '@/app/stageActions';
 import { applicableStages, readiness, suggestPlacement, type AppState, type Role, type Workflow } from '@/lib/stageEngine';
@@ -18,7 +19,7 @@ const ago = (t: string | null) => {
 export type CardApp = { id: string; name: string; school: string; programme: string | null; counselor: string | null; status: string | null };
 
 /** The stage of one application at a glance: where it is on the school's route, what is still open, and the button that moves it on. */
-export default function StageCard({ app, wf, st, role, files, stageBy, detailsHref }: { app: CardApp; wf: Workflow; st: AppState; role: Role; files: FileLite[]; stageBy: string | null; detailsHref: string }) {
+export default function StageCard({ app, wf, st, role, files, stageBy, detailsHref, inform, who }: { app: CardApp; wf: Workflow; st: AppState; role: Role; files: FileLite[]; stageBy: string | null; detailsHref: string; inform?: InformShown | null; who?: Record<string, string> }) {
   const router = useRouter();
   const [open, setOpen] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -87,6 +88,7 @@ export default function StageCard({ app, wf, st, role, files, stageBy, detailsHr
           {open_.length > 4 && <li className="more">and {open_.length - 4} more</li>}
         </ul>
       )}
+      {started && inform && <InformStudent appId={app.id} info={inform} who={who} compact />}
       <div className="sg-foot"><Link href={detailsHref} scroll={false} className="linkish">Open the full checklist and history <Icon n="right" size={13} /></Link></div>
 
       {open !== null && <StageSheet wf={wf} st={st} appId={app.id} appName={app.name} role={role} files={files} initialTarget={open || undefined} onClose={() => setOpen(null)} />}

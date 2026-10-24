@@ -247,3 +247,17 @@
 .st-photo-spin { position:absolute; inset:0; border-radius:50%; background:rgba(255,255,255,.55) ; display:grid; place-items:center; } .st-photo-spin::after { content:''; width:26px; height:26px; border-radius:50%; border:3px solid rgba(0,0,0,.18); border-top-color:var(--st-blue, #007aff); animation:spin .8s linear infinite; }
 .st-photo-acts { display:flex; gap:14px; } .st-photo-acts .st-link { padding:0; border:0; background:none; box-shadow:none; height:auto; min-width:0; color:var(--st-blue, #007aff); font:600 13.5px var(--font-ui), system-ui; cursor:pointer; } .st-photo-acts .st-link.bad { color:var(--st-red, #ef4444); } .st-photo-acts .st-link:hover { transform:none; box-shadow:none; text-decoration:underline; }
 .st-photo-err { color:var(--st-red, #ef4444); font-size:12.5px; }
+
+/* ---- stage tracker on the student dashboard ---- */
+.st-stages h2 { font-size: clamp(21px, 3.4vw, 27px); margin: 4px 0 0; }
+.st-bar { display: flex; gap: 3px; height: 8px; margin: 16px 0 2px; }
+.st-bar i { flex: 1 1 0; min-width: 3px; border-radius: 4px; background: var(--st-tint-2); }
+.st-bar i.done { background: var(--st-green); } .st-bar i.current { background: var(--st-blue); } .st-bar i.next { background: #c9d7f5; }
+.st-asks-box { margin-top: 16px; padding: 16px; border-radius: 18px; background: var(--st-tint); box-shadow: 0 0 0 1px var(--st-line); }
+.st-asks-box h3 { margin: 0 0 10px; font-size: 15px; color: var(--st-ink); }
+.st-all { margin-top: 18px; border-top: 1px solid var(--st-line); padding-top: 12px; }
+.st-all > summary { cursor: pointer; font-weight: 650; color: var(--st-ink); list-style: none; display: flex; justify-content: space-between; }
+.st-all > summary::-webkit-details-marker { display: none; } .st-all > summary::after { content: ''; width: 9px; height: 9px; border-right: 2px solid var(--st-mute); border-bottom: 2px solid var(--st-mute); transform: rotate(45deg); margin: 4px 4px 0 0; transition: transform .2s; } .st-all[open] > summary::after { transform: rotate(225deg); margin-top: 8px; }
+.st-all .st-line { margin-top: 14px; }
+.st-ms.now b { color: var(--st-blue); }
+.st-stages .st-note { margin: 14px 0 0; }

@@ -169,6 +169,7 @@ export default async function Workflows({ searchParams }: { searchParams: Promis
                     </div>
                     <Roles value={st.move_roles} label="Who may move an application into this stage" />
                     <label>Note for staff<input name="hint" defaultValue={st.hint || ''} maxLength={300} /></label>
+                    <label>What the student sees about this stage<textarea name="student_note" defaultValue={st.student_note || ''} maxLength={400} placeholder="In plain words, for the student’s dashboard and the update email" /></label>
                     <div className="checks">
                       <label><input type="checkbox" name="conditional" defaultChecked={st.conditional} /> Only some students need this stage</label>
                       <label><input type="checkbox" name="active" defaultChecked={st.active} /> In use</label>

@@ -150,7 +150,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
   const photo = await studentPhoto(app.email);
   const sv = await stageP;
   const stageRd = sv?.ok ? readiness(sv.wf, sv.st) : null;
-  const stagePeople = sv?.ok ? Object.fromEntries([...sv.history.map((h) => h.actor), ...(sv.app.stage_by ? [sv.app.stage_by] : [])].map((e) => [e.toLowerCase(), personFor(people, e).name])) : {};
+  const stagePeople = sv?.ok ? Object.fromEntries([...sv.history.flatMap((h) => [h.actor, ...(h.informed_by ? [h.informed_by] : [])]), ...(sv.app.stage_by ? [sv.app.stage_by] : []), ...(sv.inform?.by ? [sv.inform.by] : [])].map((e) => [e.toLowerCase(), personFor(people, e).name])) : {};
   return (
     <>
       <Link href={staff.role === 'counselor' ? '/my' : '/applications'} className="crumb"><Icon n="left" size={15} /> {staff.role === 'counselor' ? 'Back to My students' : 'Back to Applications'}</Link>
@@ -202,7 +202,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
         </div>
       )}
 
-      {sv?.ok && <StageCard app={{ id, name: app.name, school: sv.app.school, programme: sv.app.programme, counselor: app.counselor, status: app.status }} wf={sv.wf} st={sv.st} role={sv.role} files={sv.files} stageBy={sv.stageByName} detailsHref={tabHref('stage')} />}
+      {sv?.ok && <StageCard app={{ id, name: app.name, school: sv.app.school, programme: sv.app.programme, counselor: app.counselor, status: app.status }} wf={sv.wf} st={sv.st} role={sv.role} files={sv.files} stageBy={sv.stageByName} detailsHref={tabHref('stage')} inform={sv.inform} who={stagePeople} />}
       {sv && !sv.ok && (
         <div className="card sg-card">
           <small className="sg-eyebrow">Stage workflow</small>
@@ -389,7 +389,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
         )}
 
         {tab === 'stage' && !sv?.ok && <div className="card"><p className="muted" style={{ margin: 0 }}>There is no stage workflow for this student’s school. <Link href={tabHref('overview')}>Back to the overview</Link></p></div>}
-        {tab === 'stage' && sv?.ok && <StageDetails appId={id} appName={app.name} wf={sv.wf} st={sv.st} role={sv.role} files={sv.files} history={sv.history} people={stagePeople} />}
+        {tab === 'stage' && sv?.ok && <StageDetails appId={id} appName={app.name} wf={sv.wf} st={sv.st} role={sv.role} files={sv.files} history={sv.history} people={stagePeople} inform={sv.inform} />}
 
         {tab === 'documents' && (
           <div className="card">

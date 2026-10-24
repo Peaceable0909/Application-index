@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import Icon from './Icon';
 import ReqRow, { type FileLite } from './ReqRow';
 import StageSheet from './StageSheet';
+import InformStudent, { type InformShown } from './InformStudent';
 import { addApplicantRequirement, removeApplicantRequirement, switchFlag } from '@/app/stageActions';
 import { applicableStages, findStage, stageReqs, stageApplies, type AppState, type Role, type Workflow } from '@/lib/stageEngine';
 import type { StageHistoryRow } from '@/lib/stages';
@@ -12,7 +13,7 @@ const when = (t: string) => new Date(t).toLocaleString('en-GB', { day: 'numeric'
 const KIND: Record<string, string> = { move: 'Moved', override: 'Moved with an override', placed: 'Placed in the workflow', school_changed: 'Stage cleared because the school changed', reset: 'Stage restored' };
 
 /** The "Stage" tab: the whole route with every checklist, the circumstances of this student, extra documents for this student, and the history. */
-export default function StageDetails({ appId, appName, wf, st, role, files, history, people }: { appId: string; appName: string; wf: Workflow; st: AppState; role: Role; files: FileLite[]; history: StageHistoryRow[]; people: Record<string, string> }) {
+export default function StageDetails({ appId, appName, wf, st, role, files, history, people, inform }: { appId: string; appName: string; wf: Workflow; st: AppState; role: Role; files: FileLite[]; history: StageHistoryRow[]; people: Record<string, string>; inform?: InformShown | null }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [err, setErr] = useState('');
@@ -112,6 +113,7 @@ export default function StageDetails({ appId, appName, wf, st, role, files, hist
 
       <div className="card">
         <h2>Stage history</h2>
+        {inform && <div style={{ marginBottom: 14 }}><InformStudent appId={appId} info={inform} who={people} /></div>}
         {history.length ? (
           <ul className="feed sg-hist">
             {history.map((h) => (
@@ -121,6 +123,7 @@ export default function StageDetails({ appId, appName, wf, st, role, files, hist
                   <b>{h.from_name && h.to_name ? <>{h.from_name} → {h.to_name}</> : h.to_name ? <>{h.to_name}</> : <>Cleared from “{h.from_name}”</>}</b>
                   <small>{KIND[h.kind] || h.kind} · {who(h.actor)}</small>
                   {h.note && <small>Note: {h.note}</small>}
+                  {h.inform_state === 'sent' && <small className="sg-told">Student informed by email{h.informed_at ? ` · ${when(h.informed_at)}` : ''}{h.informed_by ? ` · ${who(h.informed_by)}` : ''}</small>}
                   {h.missing && h.missing.length > 0 && <small className="sg-miss">Open when moved: {h.missing.join(', ')}</small>}
                 </div>
                 <time>{when(h.moved_at)}</time>

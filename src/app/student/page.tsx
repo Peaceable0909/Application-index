@@ -21,6 +21,9 @@ import Milestones from '@/components/Milestones';
 import Celebrate from '@/components/Celebrate';
 import WelcomeTour from '@/components/WelcomeTour';
 import { milestoneBadges } from '@/lib/badges';
+import { studentTrackers } from '@/lib/studentStages';
+import StudentStages from '@/components/StudentStages';
+import StageLive from '@/components/StageLive';
 
 export const maxDuration = 60;
 const fmtD = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -29,7 +32,7 @@ export default async function StudentHome() {
   if (await currentStaff()) redirect('/');
   const me = await currentStudent();
   if (!me) redirect('/student/login');
-  const d = await loadStudentData(me);
+  const [d, trackers] = await Promise.all([loadStudentData(me), studentTrackers(me).catch(() => [])]);
   const nu = nextUp(d), up = d.interview.upcoming[0];
   const badges = milestoneBadges(d);
   const docsLeft = d.cards.reduce((n, c) => n + (c.canUpload ? c.missing.length : 0), 0);
@@ -55,11 +58,14 @@ export default async function StudentHome() {
                 {c.a.intake && <span className="st-chip amber">Intake {new Date(c.a.intake + '-01').toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}</span>}
                 {left !== null && left >= 0 && <span className={`st-chip ${left <= 14 ? 'amber' : ''}`}>{left === 0 ? 'Deadline today' : `${left} day${left === 1 ? '' : 's'} to deadline`}</span>}
               </div>
-              {!final && <div className="st-steps">{STEPS.map((st, n) => <div key={st} className={`st-step ${n < idx ? 'done' : n === idx ? 'now' : ''}`}><i>{n < idx ? <Icon n="check" size={14} /> : n + 1}</i>{st}</div>)}</div>}
+              {!final && !trackers.some((t) => t.appId === c.a.application_id) && <div className="st-steps">{STEPS.map((st, n) => <div key={st} className={`st-step ${n < idx ? 'done' : n === idx ? 'now' : ''}`}><i>{n < idx ? <Icon n="check" size={14} /> : n + 1}</i>{st}</div>)}</div>}
             </div>
           </section>
         );
       })}
+
+      <StageLive />
+      {trackers.map((t) => <StudentStages key={t.appId} t={t} i={i++} />)}
 
       <PushToggle banner />
 

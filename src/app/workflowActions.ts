@@ -7,7 +7,7 @@ import { currentWorkspace } from '@/lib/workspace';
 import { schoolKey } from '@/lib/docs';
 import { CAS_STATUSES, STATUSES, VISA_STATUSES } from '@/lib/constants';
 import { slug } from '@/lib/stageEngine';
-import { WORKFLOW_TEMPLATES } from '@/lib/stageTemplates';
+import { STUDENT_NOTES, WORKFLOW_TEMPLATES } from '@/lib/stageTemplates';
 
 // Admin only: change a school's stages and what each stage asks for. Every change is limited to the workflow named in the form,
 // and the stage or requirement is checked to belong to it, so one school's workflow can never change another's.
@@ -62,15 +62,15 @@ export async function createWorkflow(f: FormData) {
   if (error || !wf) back(null, `Could not create it: ${error?.message}`, true);
   const wfId = wf!.id as string;
   // starting stages: copied from a template, from another school's workflow, or just the two every school has
-  type S = { key: string; name: string; position: number; conditional: boolean; maps_status: string | null; move_roles: string[]; complete_when: string; notify: string; delay_days: number | null; offer_sync: unknown; hint: string | null };
+  type S = { key: string; name: string; position: number; conditional: boolean; maps_status: string | null; move_roles: string[]; complete_when: string; notify: string; delay_days: number | null; offer_sync: unknown; hint: string | null; student_note?: string | null };
   type R = { stage_key: string; key: string; label: string; kind: string; doc_type: string | null; need: string; condition_key: string | null; upload: boolean; satisfied_at: string; student_visible: boolean; position: number; options: string[] | null; pass_options: string[] | null; hint: string | null };
   let stages: S[] = [], reqs: R[] = [];
   if (tpl) {
-    tpl.stages.forEach((st, i) => { stages.push({ key: st.key, name: st.name, position: (i + 1) * 10, conditional: !!st.conditional, maps_status: st.maps ?? null, move_roles: st.roles ?? ROLES, complete_when: st.complete ?? 'manual', notify: st.notify ?? 'counselor', delay_days: st.delay ?? null, offer_sync: st.offer ?? null, hint: st.hint ?? null });
+    tpl.stages.forEach((st, i) => { stages.push({ key: st.key, name: st.name, position: (i + 1) * 10, conditional: !!st.conditional, maps_status: st.maps ?? null, move_roles: st.roles ?? ROLES, complete_when: st.complete ?? 'manual', notify: st.notify ?? 'counselor', delay_days: st.delay ?? null, offer_sync: st.offer ?? null, hint: st.hint ?? null, student_note: STUDENT_NOTES[st.key] ?? null });
       (st.reqs || []).forEach((r, j) => reqs.push({ stage_key: st.key, key: r.key, label: r.label, kind: r.kind ?? 'document', doc_type: r.doc_type ?? null, need: r.need ?? 'mandatory', condition_key: r.condition ?? null, upload: r.upload ?? (r.kind ?? 'document') === 'document', satisfied_at: r.satisfied_at ?? 'approved', student_visible: r.student_visible ?? (r.kind ?? 'document') === 'document', position: (j + 1) * 10, options: r.options ?? null, pass_options: r.pass ?? null, hint: r.hint ?? null })); });
   } else if (from.startsWith('wf:')) {
     const src = from.slice(3);
-    const { data: ss } = await db.from('portal_stages').select('id, key, name, position, conditional, maps_status, move_roles, complete_when, notify, delay_days, offer_sync, hint').eq('workflow_id', src).order('position');
+    const { data: ss } = await db.from('portal_stages').select('id, key, name, position, conditional, maps_status, move_roles, complete_when, notify, delay_days, offer_sync, hint, student_note').eq('workflow_id', src).order('position');
     const ids = (ss || []).map((x) => x.id as string);
     const { data: rs } = ids.length ? await db.from('portal_stage_reqs').select('stage_id, key, label, kind, doc_type, need, condition_key, upload, satisfied_at, student_visible, position, options, pass_options, hint').in('stage_id', ids) : { data: [] };
     const keyOf = new Map((ss || []).map((x) => [x.id as string, x.key as string]));
@@ -134,7 +134,7 @@ function stageFields(f: FormData) {
   const maps = s(f, 'maps_status'), delay = s(f, 'delay_days'), notify = s(f, 'notify'), complete = s(f, 'complete_when');
   return {
     name, ok: name.length >= 2 && (!maps || (STATUSES as readonly string[]).includes(maps)) && (!delay || (/^\d+$/.test(delay) && +delay >= 1 && +delay <= 365)) && NOTIFY.includes(notify) && ['manual', 'requirements'].includes(complete),
-    row: { name, maps_status: maps || null, delay_days: delay ? +delay : null, notify, complete_when: complete, conditional: f.get('conditional') === 'on', active: f.get('active') === 'on', move_roles: roles(f, ['admin']), offer_sync: offerFrom(f), hint: s(f, 'hint').slice(0, 300) || null },
+    row: { name, maps_status: maps || null, delay_days: delay ? +delay : null, notify, complete_when: complete, conditional: f.get('conditional') === 'on', active: f.get('active') === 'on', move_roles: roles(f, ['admin']), offer_sync: offerFrom(f), hint: s(f, 'hint').slice(0, 300) || null, student_note: s(f, 'student_note').slice(0, 400) || null },
   };
 }
 

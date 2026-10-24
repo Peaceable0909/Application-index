@@ -20,6 +20,7 @@ export function describeActivity(kind: string, d: Record<string, string>): { tit
     case 'interview_cancelled': return { title: 'Interview training cancelled', icon: 'video', tone: 'amber' };
     case 'interview_updated': return { title: `Interview training · ${(d.status || '').replace('_', ' ')}`, icon: 'video', tone: '' };
     case 'doc_retyped': return { title: `Document re-labelled · ${d.type || ''}`, icon: 'file', tone: '' };
+    case 'stage_informed': return { title: `Student told about the stage${d.stage ? ` · ${d.stage}` : ''}`, icon: 'mail', tone: 'green' };
     case 'email_sent': return { title: `Email sent${d.subject ? ` · ${d.subject}` : ''}`, icon: 'mail', tone: '' };
     case 'moved_to_master': return { title: 'Added to Sheet1', icon: 'check-circle', tone: 'green' };
     case 'folder_linked': return { title: 'Drive folder linked', icon: 'link', tone: '' };

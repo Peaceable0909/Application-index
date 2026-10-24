@@ -5,10 +5,13 @@ import { loadAppState, loadHistory, workflowFor, type StageHistoryRow } from './
 import { effType, schoolShort } from './docs';
 import type { AppState, Role, Workflow } from './stageEngine';
 import type { Staff } from './auth';
+import { latestInformable, type InformInfo } from './stageInform';
 
 export type StageApp = { id: string; name: string; school: string; programme: string | null; counselor: string | null; status: string | null; email: string | null; stage_by: string | null };
 export type StageView = {
   ok: true; app: StageApp; wf: Workflow; st: AppState; role: Role; history: StageHistoryRow[];
+  /** The application's current stage change, if the student can be told about it (and whether they have been). */
+  inform: InformInfo | null;
   files: { id: string; name: string; type: string; at: string }[];
   /** Pipeline status values a stage can stand for, for showing what a move will change. */
   stageByName: string | null;
@@ -34,5 +37,5 @@ export async function stageViewFor(appId: string, staff: Staff): Promise<StageVi
   const { data: docs } = await db.from('portal_documents').select('drive_file_id, name, doc_type, type_override, created_at').in('application_id', ids.length ? ids : [appId]).order('created_at', { ascending: false });
   let stageByName: string | null = null;
   if (a.stage_by) { const { data: p } = await db.from('portal_staff').select('display_name').eq('email', a.stage_by).maybeSingle(); stageByName = p?.display_name || a.stage_by.split('@')[0]; }
-  return { ok: true, app, wf: visible, st, role: staff.role, history, stageByName, files: (docs || []).map((d) => ({ id: d.drive_file_id as string, name: d.name as string, type: effType(d as { doc_type: string; type_override?: string | null }), at: d.created_at as string })) };
+  return { ok: true, app, wf: visible, st, role: staff.role, history, inform: await latestInformable(db, appId, st.stage_key), stageByName, files: (docs || []).map((d) => ({ id: d.drive_file_id as string, name: d.name as string, type: effType(d as { doc_type: string; type_override?: string | null }), at: d.created_at as string })) };
 }

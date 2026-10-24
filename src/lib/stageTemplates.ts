@@ -140,7 +140,7 @@ export function workflowFromTemplate(t: WorkflowT, workspace = 'uk'): Workflow {
     id: `wf-${t.school_key}`, workspace, school_key: t.school_key, school_name: t.school_name, active: true, override_roles: ['admin'], conditions: t.conditions,
     stages: t.stages.map((s, i) => ({
       id: `${t.school_key}:${s.key}`, key: s.key, name: s.name, position: (i + 1) * 10, active: true, conditional: !!s.conditional, maps_status: s.maps ?? null,
-      move_roles: s.roles ?? ['admin', 'staff', 'counselor'], complete_when: s.complete ?? 'manual', notify: s.notify ?? 'counselor', delay_days: s.delay ?? null, offer_sync: s.offer ?? null, hint: s.hint ?? null,
+      move_roles: s.roles ?? ['admin', 'staff', 'counselor'], complete_when: s.complete ?? 'manual', notify: s.notify ?? 'counselor', delay_days: s.delay ?? null, offer_sync: s.offer ?? null, hint: s.hint ?? null, student_note: STUDENT_NOTES[s.key] ?? null,
       reqs: (s.reqs ?? []).map((r, j) => ({
         id: `${t.school_key}:${s.key}:${r.key}`, key: r.key, label: r.label, kind: r.kind ?? 'document', doc_type: r.doc_type ?? null, need: r.need ?? 'mandatory', condition_key: r.condition ?? null,
         upload: r.upload ?? (r.kind ?? 'document') === 'document', satisfied_at: r.satisfied_at ?? 'approved', student_visible: r.student_visible ?? (r.kind ?? 'document') === 'document',
@@ -149,3 +149,39 @@ export function workflowFromTemplate(t: WorkflowT, workspace = 'uk'): Workflow {
     })),
   };
 }
+/** Plain-language description of each stage for the student (dashboard and email). Starting text only: admins edit it on the Workflows page. */
+export const STUDENT_NOTES: Record<string, string> = {
+  documents_sent: 'Your documents have been sent to the university.',
+  offer_received: 'The university has made you an offer. Your counselor will explain any conditions and what comes next.',
+  first_interview: 'The university interview is the next step. Your counselor will tell you how it works and when it takes place.',
+  interview_pending: 'Your interview has not taken place yet. Your counselor will keep you updated.',
+  interview_to_be_booked: 'Your interview still has to be booked. Your counselor will help you choose a time.',
+  bank_statement_review: 'Your bank statement is being checked. Please make sure what you send is complete and easy to read.',
+  documents_for_unconditional_offer: 'The university needs some documents before it can issue an unconditional offer. Please send what is listed below.',
+  interview_passed: 'You have passed your interview. Your counselor will explain the next step.',
+  application_form_completed: 'Your application form has been completed.',
+  tuition_fee_stage: 'A tuition fee arrangement applies to your application. Your counselor will explain it.',
+  unconditional_offer_requested: 'Your unconditional offer has been requested from the university. This can take a little time.',
+  cas_documents_ready: 'Your documents for the CAS are ready.',
+  payment_plan_sent: 'A payment plan has been sent to you. Please read it carefully and ask your counselor if anything is unclear.',
+  unconditional_offer_received: 'You have received your unconditional offer.',
+  cas_requested: 'Your CAS (Confirmation of Acceptance for Studies) has been requested from the university.',
+  precas_interview: 'A pre-CAS interview is the next step. Your counselor will tell you how to prepare.',
+  qc_form_sent: 'A QC form has been sent to you. Please complete it and return it as your counselor explains.',
+  awaiting_precas_interview: 'You are waiting for your pre-CAS interview.',
+  cas_sent: 'The university has sent your CAS.',
+  payment_plan_signed: 'Your signed payment plan has been received.',
+  precas_interview_passed: 'You have passed your pre-CAS interview.',
+  cas_received: 'You have received your CAS. Keep it safe, because you need it for your visa application.',
+  precas_interview_completed: 'Your pre-CAS interview has been completed.',
+  tuition_fee_payment_required: 'A tuition fee payment is needed at this stage. Please follow your counselor’s instructions and keep your payment receipt.',
+  student_documents_pending: 'Please send the documents listed below so your application can move forward.',
+  visa_application_started: 'Your visa application has been started.',
+  visa_application_submitted: 'Your visa application has been submitted.',
+  awaiting_visa_decision: 'You are waiting for the decision on your visa application.',
+  pending_documents: 'The school needs additional documents from you. Please send what is listed below.',
+  enrolment: 'You are enrolled. Congratulations.',
+  visa_application: 'It is time to prepare and submit your visa application. Your counselor will guide you.',
+  visa_decision_received: 'Your visa decision has been received. Your counselor will talk you through it.',
+  visa_decision: 'You are waiting for, or have received, your visa decision. Your counselor will keep you updated.',
+};

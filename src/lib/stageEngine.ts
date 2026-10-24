@@ -24,7 +24,9 @@ export type Req = {
 export type Stage = {
   id: string; key: string; name: string; position: number; active: boolean; conditional: boolean; maps_status: string | null;
   move_roles: Role[]; complete_when: 'manual' | 'requirements'; notify: Notify; delay_days: number | null;
-  offer_sync: { offer_type?: string; cas_status?: string; visa_status?: string } | null; hint: string | null; reqs: Req[];
+  offer_sync: { offer_type?: string; cas_status?: string; visa_status?: string } | null; hint: string | null;
+  /** What the stage means, in words for the student (their dashboard and the "Inform student" email). */
+  student_note: string | null; reqs: Req[];
 };
 export type Workflow = {
   id: string; workspace: string; school_key: string; school_name: string; active: boolean;

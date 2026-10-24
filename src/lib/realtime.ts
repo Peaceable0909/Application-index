@@ -7,7 +7,7 @@ import { after } from 'next/server';
 // Nothing depends on it: the regular refresh still runs, just less often.
 export type RtRole = 'staff' | 'student';
 export type RtWho = { role: RtRole; email: string };
-export type RtEvent = 'msg' | 'ring' | 'call';
+export type RtEvent = 'msg' | 'ring' | 'call' | 'stage';
 
 const secret = () => process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.PORTAL_TOKEN || 'dev';
 /** An unguessable channel name per person (nobody else can work it out from an email address). */

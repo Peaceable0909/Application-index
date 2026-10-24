@@ -54,7 +54,9 @@ async function syncOffer(db: Db, appId: string, stage: Stage, by: string) {
   await db.from('portal_offers').upsert(patch, { onConflict: 'application_id' });
 }
 
-export type MoveOk = { ok: true; from: string | null; to: string; kind: 'move' | 'override'; statusChanged: { from: string | null; to: string } | null; stage: Stage; app: AppRow; missing: string[] };
+export type MoveOk = { ok: true; from: string | null; to: string; kind: 'move' | 'override'; statusChanged: { from: string | null; to: string } | null; stage: Stage; app: AppRow; missing: string[];
+  /** The stage-history row this move wrote: the student can be told about it from there (separately, and only if someone chooses to). */
+  historyId: string | null };
 
 /**
  * Moves an application to another stage of its school's workflow.
@@ -101,15 +103,15 @@ export async function moveApplication(db: Db, o: { appId: string; toKey: string;
   }
   const { error } = await db.from('portal_applications').update(patch).eq('application_id', o.appId);
   if (error) return { ok: false, error: `Could not save the new stage: ${error.message}` };
-  await db.from('portal_stage_history').insert({ application_id: o.appId, from_key: from?.key ?? null, from_name: from?.name ?? null, to_key: target.key, to_name: target.name, kind, actor: o.mover.email, note: [note, kind === 'override' ? `Override: ${(o.override || '').trim()}` : ''].filter(Boolean).join(' · ') || null, missing: missing.length ? missing : null, moved_at: at });
+  const { data: hist } = await db.from('portal_stage_history').insert({ application_id: o.appId, from_key: from?.key ?? null, from_name: from?.name ?? null, to_key: target.key, to_name: target.name, kind, actor: o.mover.email, note: [note, kind === 'override' ? `Override: ${(o.override || '').trim()}` : ''].filter(Boolean).join(' · ') || null, missing: missing.length ? missing : null, moved_at: at }).select('id').maybeSingle();
   await logActivity(db, o.appId, o.mover.email, 'stage_change', { from: from?.name ?? '', to: target.name, override: kind === 'override' ? 'yes' : '', note });
   if (statusChanged) await logActivity(db, o.appId, o.mover.email, 'status_change', { from: statusChanged.from ?? '', to: statusChanged.to, via: 'stage' });
   try { await syncOffer(db, o.appId, target, o.mover.email); } catch { /* the Offer & visa tab can be edited by hand */ }
-  return { ok: true, from: from?.name ?? null, to: target.name, kind, statusChanged, stage: target, app: { ...app, stage_key: target.key }, missing };
+  return { ok: true, from: from?.name ?? null, to: target.name, kind, statusChanged, stage: target, app: { ...app, stage_key: target.key }, missing, historyId: (hist?.id as string | undefined) ?? null };
 }
 
 /** Puts an application that has no stage yet (or a stage that no longer exists) into a stage, without checking requirements and without changing its status. */
-export async function placeApplication(db: Db, o: { appId: string; toKey: string; mover: Mover; note?: string }): Promise<{ ok: true; to: string } | Fail> {
+export async function placeApplication(db: Db, o: { appId: string; toKey: string; mover: Mover; note?: string }): Promise<{ ok: true; to: string; historyId: string | null } | Fail> {
   const c = await loadContext(db, o.appId);
   if ('error' in c) return { ok: false, error: c.error };
   const target = findStage(c.wf, o.toKey);
@@ -120,9 +122,9 @@ export async function placeApplication(db: Db, o: { appId: string; toKey: string
   if (flag.length) await db.from('portal_app_flags').upsert(flag, { onConflict: 'application_id,flag' });
   const { error } = await db.from('portal_applications').update({ stage_key: target.key, stage_at: at, stage_by: o.mover.email }).eq('application_id', o.appId);
   if (error) return { ok: false, error: error.message };
-  await db.from('portal_stage_history').insert({ application_id: o.appId, from_key: from?.key ?? null, from_name: from?.name ?? null, to_key: target.key, to_name: target.name, kind: 'placed', actor: o.mover.email, note: (o.note || '').trim().slice(0, 300) || 'Placed in the school’s workflow', moved_at: at });
+  const { data: hist } = await db.from('portal_stage_history').insert({ application_id: o.appId, from_key: from?.key ?? null, from_name: from?.name ?? null, to_key: target.key, to_name: target.name, kind: 'placed', actor: o.mover.email, note: (o.note || '').trim().slice(0, 300) || 'Placed in the school’s workflow', moved_at: at }).select('id').maybeSingle();
   await logActivity(db, o.appId, o.mover.email, 'stage_change', { from: from?.name ?? '', to: target.name, placed: 'yes' });
-  return { ok: true, to: target.name };
+  return { ok: true, to: target.name, historyId: (hist?.id as string | undefined) ?? null };
 }
 
 /** A school change takes an application out of the old school's workflow. Keeps the history and asks for a fresh placement. */

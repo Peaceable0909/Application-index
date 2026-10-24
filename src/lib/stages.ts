@@ -16,7 +16,7 @@ export async function loadWorkflows(db: Db, workspace: string, opts: { onlyActiv
   const { data: wfs } = await (opts.onlyActive ? q.eq('active', true) : q);
   if (!wfs?.length) return [];
   const ids = wfs.map((w) => w.id as string);
-  const { data: stages } = await db.from('portal_stages').select('id, workflow_id, key, name, position, active, conditional, maps_status, move_roles, complete_when, notify, delay_days, offer_sync, hint').in('workflow_id', ids).order('position');
+  const { data: stages } = await db.from('portal_stages').select('id, workflow_id, key, name, position, active, conditional, maps_status, move_roles, complete_when, notify, delay_days, offer_sync, hint, student_note').in('workflow_id', ids).order('position');
   const sids = (stages || []).map((s) => s.id as string);
   const { data: reqs } = sids.length ? await db.from('portal_stage_reqs').select('id, stage_id, key, label, kind, doc_type, need, condition_key, upload, satisfied_at, student_visible, position, active, options, pass_options, hint').in('stage_id', sids).order('position') : { data: [] as ReqRow[] };
   const reqsBy = new Map<string, ReqRow[]>();
@@ -62,8 +62,8 @@ export async function loadAppState(db: Db, appId: string, wf: Workflow): Promise
   };
 }
 
-export type StageHistoryRow = { id: string; from_name: string | null; to_name: string | null; kind: string; actor: string; note: string | null; missing: string[] | null; moved_at: string };
+export type StageHistoryRow = { id: string; from_name: string | null; to_name: string | null; kind: string; actor: string; note: string | null; missing: string[] | null; moved_at: string; inform_state: 'sending' | 'sent' | 'failed' | null; informed_at: string | null; informed_by: string | null };
 export async function loadHistory(db: Db, appId: string, limit = 50): Promise<StageHistoryRow[]> {
-  const { data } = await db.from('portal_stage_history').select('id, from_name, to_name, kind, actor, note, missing, moved_at').eq('application_id', appId).order('moved_at', { ascending: false }).limit(limit);
+  const { data } = await db.from('portal_stage_history').select('id, from_name, to_name, kind, actor, note, missing, moved_at, inform_state, informed_at, informed_by').eq('application_id', appId).order('moved_at', { ascending: false }).limit(limit);
   return (data || []) as StageHistoryRow[];
 }
