@@ -1,18 +1,14 @@
 import { admin } from './supabase';
-import { FINAL_STATUSES, PROGRESS } from './constants';
-import { counselorKey } from './docs';
+import { FINAL_STATUSES, OFFER_STATUSES } from './constants';
 import { listWorkspaces } from './workspace';
-import type { Range } from './reports';
+import { funnelFrom, pct, type App, type Facts, type Funnel, type Lead, type Range } from './funnelCore';
+export { funnelFrom, pct };
+export type { App, Facts, Funnel, Lead, Line } from './funnelCore';
 
 const DAY = 864e5;
 
-/** Statuses that mean "has an offer, or is further along". Rejected / Withdrawn are decided from the history instead. */
-export const OFFER_STATUSES: string[] = [...Object.keys(PROGRESS).filter((s) => PROGRESS[s] >= PROGRESS['Offer Received']), 'Awaiting CAS', 'CAS Request'];
-const atOrPastOffer = (s: string | null | undefined) => !!s && OFFER_STATUSES.includes(s);
+export { OFFER_STATUSES };
 
-type App = { application_id: string; workspace: string; status: string | null; counselor: string | null; day: string; source: string | null };
-type Lead = { id: string; workspace: string; status: string; converted_app: string | null; day: string; source: string | null };
-type Facts = { apps: App[]; leads: Lead[]; firstOffer: Map<string, number>; firstEnrolled: Map<string, number> };
 
 async function pages<T>(q: (a: number, b: number) => PromiseLike<{ data: T[] | null }>): Promise<T[]> {
   const out: T[] = [];
@@ -25,66 +21,33 @@ async function pages<T>(q: (a: number, b: number) => PromiseLike<{ data: T[] | n
 }
 
 /** Everything the funnel needs for these workspaces, read once: students, chats, and the first time each student reached an offer / enrolled. */
-async function loadFacts(keys: string[]): Promise<Facts> {
+export async function loadFacts(keys: string[]): Promise<Facts> {
   const db = admin();
-  if (!keys.length) return { apps: [], leads: [], firstOffer: new Map(), firstEnrolled: new Map() };
+  if (!keys.length) return { apps: [], leads: [], firstOffer: new Map(), firstEnrolled: new Map(), timeline: new Map() };
   const [apps, leads, events] = await Promise.all([
-    pages<{ application_id: string; workspace: string; status: string | null; counselor: string | null; submitted_at: string | null; created_at: string; source: string | null }>((a, b) => db.from('portal_applications').select('application_id, workspace, status, counselor, submitted_at, created_at, source').in('workspace', keys).order('application_id').range(a, b)),
+    pages<{ application_id: string; workspace: string; status: string | null; counselor: string | null; school: string | null; submitted_at: string | null; created_at: string; source: string | null; last_activity_at: string | null }>((a, b) => db.from('portal_applications').select('application_id, workspace, status, counselor, school, submitted_at, created_at, source, last_activity_at').in('workspace', keys).order('application_id').range(a, b)),
     pages<{ id: string; workspace: string; status: string; converted_app: string | null; created_at: string; source: string | null }>((a, b) => db.from('portal_leads').select('id, workspace, status, converted_app, created_at, source').in('workspace', keys).order('id').range(a, b)),
     pages<{ application_id: string; detail: { to?: string } | null; created_at: string }>((a, b) => db.from('portal_activity').select('application_id, detail, created_at, portal_applications!inner(workspace)').eq('kind', 'status_change').in('portal_applications.workspace', keys).order('id').range(a, b)),
   ]);
-  const firstOffer = new Map<string, number>(), firstEnrolled = new Map<string, number>();
+  const firstOffer = new Map<string, number>(), firstEnrolled = new Map<string, number>(), timeline = new Map<string, { to: string; at: number }[]>();
   for (const e of events) {
     const to = e.detail?.to, t = Date.parse(e.created_at);
     if (!to || !Number.isFinite(t)) continue;
+    (timeline.get(e.application_id) || timeline.set(e.application_id, []).get(e.application_id)!).push({ to, at: t });
     if (OFFER_STATUSES.includes(to) && t < (firstOffer.get(e.application_id) ?? Infinity)) firstOffer.set(e.application_id, t);
     if (to === 'Enrolled' && t < (firstEnrolled.get(e.application_id) ?? Infinity)) firstEnrolled.set(e.application_id, t);
   }
   return {
-    apps: apps.map((a) => ({ application_id: a.application_id, workspace: a.workspace, status: a.status, counselor: a.counselor, day: (a.submitted_at || a.created_at).slice(0, 10), source: a.source })),
+    apps: apps.map((a) => ({ application_id: a.application_id, workspace: a.workspace, status: a.status, counselor: a.counselor, school: a.school, day: (a.submitted_at || a.created_at).slice(0, 10), source: a.source, lastActivity: a.last_activity_at })),
     leads: leads.map((l) => ({ id: l.id, workspace: l.workspace, status: l.status, converted_app: l.converted_app, day: l.created_at.slice(0, 10), source: l.source })),
-    firstOffer, firstEnrolled,
+    firstOffer, firstEnrolled, timeline: new Map([...timeline].map(([k, v]) => [k, v.sort((a, b) => a.at - b.at)])),
   };
 }
 
-export const pct = (n: number, d: number) => (d ? Math.round((n / d) * 100) : 0);
-
-// ---- from chat to enrolment (students who started in a period, followed to where they are now) ----
-export type Line = { chats: number; fromChats: number; students: number; offers: number; enrolled: number };
-export type Funnel = {
-  range: Range; total: Line;
-  byWorkspace: ({ key: string; name: string } & Line)[];
-  byCounselor: { label: string; students: number; offers: number; enrolled: number }[];
-  bySource: ({ source: string } & Line)[];
-};
 
 export async function buildFunnel(range: Range, keys: string[]): Promise<Funnel> {
   const [f, spaces] = await Promise.all([loadFacts(keys), listWorkspaces()]);
   return funnelFrom(f, spaces, range, keys);
-}
-
-function funnelFrom(f: Facts, spaces: { key: string; name: string }[], range: Range, keys: string[]): Funnel {
-  const inRange = (d: string) => d >= range.from && d <= range.to;
-  const apps = f.apps.filter((a) => inRange(a.day)), leads = f.leads.filter((l) => inRange(l.day));
-  const offered = (a: App) => atOrPastOffer(a.status) || f.firstOffer.has(a.application_id);
-  const enrolled = (a: App) => a.status === 'Enrolled' || f.firstEnrolled.has(a.application_id);
-  const line = (as: App[], ls: Lead[]): Line => ({ chats: ls.length, fromChats: ls.filter((l) => l.status === 'converted' || !!l.converted_app).length, students: as.length, offers: as.filter(offered).length, enrolled: as.filter(enrolled).length });
-  const names = new Map(spaces.map((w) => [w.key, w.name]));
-  const byCounselor = new Map<string, { label: string; students: number; offers: number; enrolled: number }>();
-  for (const a of apps) {
-    const k = counselorKey(a.counselor) || '(unassigned)';
-    const c = byCounselor.get(k) || byCounselor.set(k, { label: a.counselor?.trim() || '(unassigned)', students: 0, offers: 0, enrolled: 0 }).get(k)!;
-    c.students++; if (offered(a)) c.offers++; if (enrolled(a)) c.enrolled++;
-  }
-  const NONE = '(not recorded)';
-  const places = [...new Set([...apps.map((a) => a.source || NONE), ...leads.map((l) => l.source || NONE)])];
-  const bySource = places.map((p) => ({ source: p, ...line(apps.filter((a) => (a.source || NONE) === p), leads.filter((l) => (l.source || NONE) === p)) }))
-    .sort((a, b) => Number(a.source === NONE) - Number(b.source === NONE) || b.students + b.chats - (a.students + a.chats));
-  return {
-    range, total: line(apps, leads), bySource,
-    byWorkspace: keys.map((k) => ({ key: k, name: names.get(k) || k, ...line(apps.filter((a) => a.workspace === k), leads.filter((l) => l.workspace === k)) })),
-    byCounselor: [...byCounselor.values()].sort((a, b) => b.students - a.students),
-  };
 }
 
 const cell = (v: unknown) => { const t = String(v ?? ''); return /[",\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };

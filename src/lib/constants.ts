@@ -9,6 +9,9 @@ export const STATUSES = [...Object.keys(PROGRESS), 'Awaiting CAS', 'CAS Request'
 
 export const FINAL_STATUSES = ['Enrolled', 'Rejected', 'Withdrawn'];
 
+/** Statuses that mean "has an offer, or is further along". Rejected / Withdrawn are decided from the history instead. */
+export const OFFER_STATUSES: string[] = [...Object.keys(PROGRESS).filter((s) => PROGRESS[s] >= PROGRESS['Offer Received']), 'Awaiting CAS', 'CAS Request'];
+
 // Documents every application is expected to have. Edit to suit; per-school
 // rules can be added later.
 export const REQUIRED_DOCS = ['Passport', 'CV', 'Transcript', 'Degree Certificate', 'WAEC/NECO', 'SOP'] as const;

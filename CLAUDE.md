@@ -48,7 +48,7 @@
 
 ## Reports, weekly summary, voice notes
 
-- `src/lib/funnel.ts` is the one place that counts the road from chat to enrolment (chats in `portal_leads`, students in `portal_applications`, "reached an offer" = current status at or past Offer Received, or ever having had one in `portal_activity`). Reports page, its CSV and the weekly email all use it, always with the workspaces the viewer may open.
+- `src/lib/funnel.ts` (database loading) and `src/lib/funnelCore.ts` (the pure counting) are the one place that counts the road from chat to enrolment (chats in `portal_leads`, students in `portal_applications`, "reached an offer" = current status at or past Offer Received, or ever having had one in `portal_activity`). Reports page, its CSV and the weekly email all use it, always with the workspaces the viewer may open.
 - The Monday management summary (`src/lib/weeklyReport.ts`, settings key `weekly_report` in `portal_settings`) is sent by the daily `/api/sync` job on Mondays, once per week, only when an admin switched it on in Settings. No icons or emoji in it.
 - Voice notes are written down by `src/lib/voice.ts` through `src/lib/stt.ts` (any "audio/transcriptions" API: Groq by default, `STT_BASE_URL` / `STT_MODEL` to change). Opt-in with `AI_VOICE=on` and `STT_API_KEY` in Vercel; the recording leaves the portal, so it is off by default. The words are kept in `portal_student_msgs.transcript` (shown to the team only; the Brain, memory and inbox search use them after names, numbers and links are stripped). Automatic replies never answer a voice-only message.
 
@@ -83,6 +83,13 @@
 - The application page has an Assignment card (`AssignmentCard.tsx`, `loadAssignInfo`): owner, document handler, why, conflict buttons, reassign, history.
 - Tests: `scripts/tests/assignEngine.test.ts` (pure rules) and `assignCore.test.ts` (against the in-memory database).
 - Global CSS classes such as `.info` exist; do not name a modifier after one (use a prefixed name like `lv-info`).
+
+## Reports page (the story page)
+
+- `/reports` is drawn from one cohort: the applications that **started** in the chosen period (and chats started in it), followed to where they are now. Period presets (30 days to everything, default 6 months, at most 60 weeks) and a country switch sit in one row above everything and scope every chart, so the numbers agree. It is scoped to the countries the viewer may open (`workspacesFor`); `?ws=` narrows to one.
+- Data: `src/lib/vizData.ts` (pure: phases, calendar, weekly columns, journey flows, portfolios, quiet buckets, pace, the plain-words insights, stage tracks) and `src/lib/vizLayout.ts` (pure geometry: Sankey, sparkline, ticks), tested by `scripts/tests/reportViz.test.ts`. The page only loads facts (`loadFacts`, `loadStageBoard`) and passes them to `components/viz/ReportsView.tsx`. `phaseOf()` is the one place that groups pipeline statuses into phases (getting started, offer, CAS, visa, enrolled, closed).
+- Charts are hand-built SVG/CSS (no chart library) in `src/components/viz/`. Every chart sits in `VizCard` with a Chart | Table switch (the table is the accessible twin; tooltips never gate a number), a CSV link where one exists, hover and keyboard-focus tooltips, and a phone layout (wide pictures scroll sideways with a hint). Insight sentences are only written when the sample is big enough to mean something; sections that need data the portal has not recorded yet (source, time to offer) say how they fill in instead of drawing noise.
+- Colour: the validated dataviz palette lives as CSS variables on `.rv` in `src/app/reports.css` (ordinal blue ramp for how far along, four categorical slots for universities, a heat ramp), restepped for the dark theme and validated against the portal's card surfaces. A university keeps its colour whatever the period (slots follow all-time volume). Do not hardcode hex in the components; do not name a modifier class after a global one (`.info`, `.good`...): use `t-info` style prefixes.
 
 ## New-student chat engine
 

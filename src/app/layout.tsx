@@ -38,6 +38,7 @@ import './calls.css';
 import './ios.css';
 import './stage.css';
 import './assign.css';
+import './reports.css';
 import { cookies } from 'next/headers';
 import { COOKIE, parseTheme } from '@/lib/theme';
 import { site } from '@/lib/emailTemplate';
