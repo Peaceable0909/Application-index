@@ -23,6 +23,8 @@ const ITEMS = [
   { href: '/documents', label: 'Documents', icon: 'folder' },
   { href: '/extracted', label: 'Extracted text', icon: 'note' },
   { href: '/counselors', label: 'Counselors', icon: 'users' },
+  { href: '/head', label: 'Team Head', icon: 'user', badge: 'head', headOnly: true },
+  { href: '/assignments', label: 'Responsibilities', icon: 'swap', adminOnly: true },
   { href: '/messages', label: 'Messages', icon: 'mail' },
   { href: '/notes', label: 'Notes', icon: 'note' },
   { href: '/activity', label: 'Activity', icon: 'clock' },
@@ -34,12 +36,13 @@ const ITEMS = [
 
 const COUNSELOR_ITEMS: typeof ITEMS = [{ href: '/my', label: 'My students', icon: 'users' }, { href: '/outreach', label: 'Follow-ups', icon: 'bell' }, { href: '/pipeline', label: 'Pipeline', icon: 'bolt' }, { href: '/stages', label: 'Stages', icon: 'trend' }, { href: '/calendar', label: 'Deadlines', icon: 'clock' }, { href: '/interviews', label: 'Interviews', icon: 'video' }, { href: '/extracted', label: 'Extracted text', icon: 'note' }, { href: '/inbox', label: 'Student chats', icon: 'mail', badge: 'inbox' }, { href: '/credibility', label: 'Credibility training', icon: 'spark' }, { href: '/chat', label: 'Chat', icon: 'chat', badge: 'chat' }, { href: '/team', label: 'Team', icon: 'user' }];
 
-export default function Nav({ taskCount = 0, chatCount = 0, inboxCount = 0, mobile = false, role = 'staff' }: { taskCount?: number; chatCount?: number; inboxCount?: number; mobile?: boolean; role?: string }) {
+export default function Nav({ taskCount = 0, chatCount = 0, inboxCount = 0, headCount = 0, head = false, mobile = false, role = 'staff' }: { taskCount?: number; chatCount?: number; inboxCount?: number; headCount?: number; head?: boolean; mobile?: boolean; role?: string }) {
   const p = usePathname();
   const [chat, setChat] = useState(chatCount);
   useEffect(() => setChat(chatCount), [chatCount]);
   useEffect(() => { const h = (e: Event) => setChat((e as CustomEvent<number>).detail || 0); window.addEventListener('chat-unread', h); return () => window.removeEventListener('chat-unread', h); }, []);
-  const items = role === 'counselor' ? COUNSELOR_ITEMS : ITEMS.filter((i) => !('adminOnly' in i && i.adminOnly) || role === 'admin');
+  const headItem = ITEMS.find((i) => i.href === '/head')!;
+  const items = role === 'counselor' ? (head ? [...COUNSELOR_ITEMS, headItem] : COUNSELOR_ITEMS) : ITEMS.filter((i) => (!('adminOnly' in i && i.adminOnly) || role === 'admin') && (!('headOnly' in i && i.headOnly) || head || role === 'admin'));
   const on = (i: (typeof ITEMS)[number]) => (i.exact ? p === '/' : p.startsWith(i.href) || (i.href === '/my' && p.startsWith('/applications/')));
   return (
     <nav className={mobile ? 'mnav' : ''}>
@@ -50,6 +53,7 @@ export default function Nav({ taskCount = 0, chatCount = 0, inboxCount = 0, mobi
           {!mobile && i.badge === 'tasks' && taskCount > 0 && <span className="n">{taskCount > 99 ? '99+' : taskCount}</span>}
           {!mobile && i.badge === 'inbox' && inboxCount > 0 && <span className="n">{inboxCount > 99 ? '99+' : inboxCount}</span>}
           {!mobile && i.badge === 'chat' && chat > 0 && <span className="n">{chat > 99 ? '99+' : chat}</span>}
+          {!mobile && i.badge === 'head' && headCount > 0 && <span className="n">{headCount > 99 ? '99+' : headCount}</span>}
         </Link>
       ))}
     </nav>

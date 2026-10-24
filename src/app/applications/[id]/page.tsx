@@ -3,7 +3,7 @@ import Who from '@/components/Who';
 import Avatar from '@/components/Avatar';
 import { loadPeople, personFor } from '@/lib/people';
 import { notFound } from 'next/navigation';
-import { requireStaff, canAccessApp } from '@/lib/auth';
+import { requireStaff, canAccessApp, headScopes } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
 import { attentionReasons, AppRow, isFormSubmission } from '@/lib/attention';
 import { missingDocs, counselorKey, effType, schoolShort } from '@/lib/docs';
@@ -36,6 +36,9 @@ import type { Moved } from '@/lib/moves';
 import { stageViewFor } from '@/lib/stageView';
 import { readiness } from '@/lib/stageEngine';
 import StageCard from '@/components/StageCard';
+import AssignmentCard from '@/components/AssignmentCard';
+import { loadAssignInfo, mayAssign } from '@/lib/assignCore';
+import { isPlaceholderCounselor } from '@/lib/assignEngine';
 import StageDetails from '@/components/StageDetails';
 
 type SP = { msg?: string; err?: string; preview?: string; tab?: string; compose?: string; draft?: string };
@@ -83,6 +86,9 @@ export default async function ApplicationPage({ params, searchParams }: { params
   const presentRequired = REQUIRED_DOCS.filter((d) => types.includes(d)).length;
   const reasons = attentionReasons(app as AppRow, missing, (docs || []).length);
   const counselor = (counselors || []).find((c) => counselorKey(c.name) === counselorKey(app.counselor));
+  // who owns it and why, the history, and whether this person may change it (the team, and a Team Head inside what they oversee)
+  const [assignInfo, scopes] = await Promise.all([loadAssignInfo(db, id).catch(() => null), staff.role === 'counselor' && staff.team_head ? headScopes(staff.email) : Promise.resolve([])]);
+  const canAssign = mayAssign(staff, scopes, { workspace: app.workspace, school: app.school, city: app.city });
   const rawFolder = (app.raw_data as { driveFolderId?: string } | null)?.driveFolderId || null;
   const linkedFolders = [...new Set([rawFolder, ...(app.extra_folder_ids || [])].filter(Boolean) as string[])];
   const tab = (TABS as readonly string[]).includes(sp.tab || '') && !(sp.tab === 'regent' && !app.in_regent) ? sp.tab! : 'overview';
@@ -202,6 +208,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
         </div>
       )}
 
+      {assignInfo && <AssignmentCard appId={id} info={assignInfo} counselors={(counselors || []).filter((c) => c.active && !isPlaceholderCounselor(c.name)).map((c) => ({ key: counselorKey(c.name), name: c.name }))} canAssign={canAssign} returnTo={`/applications/${encodeURIComponent(id)}`} />}
       {sv?.ok && <StageCard app={{ id, name: app.name, school: sv.app.school, programme: sv.app.programme, counselor: app.counselor, status: app.status }} wf={sv.wf} st={sv.st} role={sv.role} files={sv.files} stageBy={sv.stageByName} detailsHref={tabHref('stage')} inform={sv.inform} who={stagePeople} />}
       {sv && !sv.ok && (
         <div className="card sg-card">

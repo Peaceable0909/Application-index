@@ -6,8 +6,9 @@
 //   - a person reassigning (one application, a whole selection, or choosing between conflicting counselors);
 //   - the master sheet naming a different counselor (recorded, not fought).
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { counselorKey } from './docs';
-import { inScope, isPlaceholderCounselor, normLocation, resolveAssignment, type AppFacts, type CounselorInfo, type Decision, type Rule, type Scope } from './assignEngine';
+import { counselorKey, schoolKey } from './docs';
+import { FINAL_STATUSES } from './constants';
+import { inScope, isPlaceholderCounselor, normLocation, resolveAssignment, type AppFacts, type Candidate, type CounselorInfo, type Decision, type Rule, type Scope } from './assignEngine';
 
 export type Db = SupabaseClient;
 type Fail = { ok: false; error: string };
@@ -32,7 +33,7 @@ export async function loadHeadScopes(db: Db, email: string): Promise<Scope[]> {
 }
 
 type AppRow = { application_id: string; name: string; school: string | null; programme: string | null; city: string | null; counselor: string | null; workspace: string; assign_state: string | null; assign_reason: string | null; routed_at: string | null; doc_handler: string | null };
-const COLS = 'application_id, name, school, programme, city, counselor, workspace, assign_state, assign_reason, routed_at, doc_handler';
+const COLS = 'application_id, name, school, programme, city, counselor, workspace, assign_state, assign_reason, routed_at, doc_handler, assigned_at, assigned_by';
 const now = () => new Date().toISOString();
 const facts = (a: AppRow): AppFacts => ({ workspace: a.workspace, school: a.school, city: a.city });
 
@@ -137,6 +138,16 @@ export async function waitingIds(db: Db, workspace?: string): Promise<string[]> 
   return out;
 }
 
+/** The moment automatic routing started. Applications older than this were never routed and are left as they are; newer ones that slipped through (a routing hiccup) are retried. */
+export async function routingSince(db: Db): Promise<string> {
+  const { data } = await db.from('portal_settings').select('value').eq('key', 'routing_since').maybeSingle();
+  const at = (data?.value as { at?: string } | null)?.at;
+  if (at) return at;
+  const first = now();
+  await db.from('portal_settings').upsert({ key: 'routing_since', value: { at: first } }, { onConflict: 'key', ignoreDuplicates: true });
+  return first;
+}
+
 // ---------- changing an owner by hand ----------
 export type Actor = { email: string; role: 'admin' | 'staff' | 'counselor' };
 export type Reassigned = { ok: true; changed: boolean; from: string | null; to: string | null; toKey: string | null; overrode: string | null; student: { id: string; name: string; school: string | null; programme: string | null } } | Fail;
@@ -197,6 +208,75 @@ export async function recordSheetOwner(db: Db, changes: { id: string; from: stri
     await closeConflicts(db, c.id, 'sheet', c.to, 'The master sheet named a counselor');
     await logRow(db, { application_id: c.id, kind: 'sheet', from_counselor: isPlaceholderCounselor(c.from) ? null : c.from, to_counselor: c.to, reason: `The master sheet names ${c.to} as the counselor`, actor: 'sheet' });
   }
+}
+
+// ---------- when responsibilities change ----------
+export type BulkFilter = { workspace: string; from: string | '__none'; school?: string | null; location?: string | null };
+export type BulkApp = { id: string; name: string; school: string | null; city: string | null; status: string | null };
+
+/** The applications a bulk reassignment would move: one counselor's (or nobody's) in one destination, optionally one school or location. Finished ones stay put. */
+export async function bulkCandidates(db: Db, f: BulkFilter): Promise<BulkApp[]> {
+  const out: BulkApp[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data } = await db.from('portal_applications').select('application_id, name, school, city, status, counselor').eq('workspace', f.workspace).order('application_id').range(from, from + 999);
+    for (const r of data || []) {
+      if (r.status && FINAL_STATUSES.includes(r.status as string)) continue;
+      const owned = !isPlaceholderCounselor(r.counselor as string | null);
+      if (f.from === '__none' ? owned : !owned || counselorKey(r.counselor as string) !== f.from) continue;
+      if (f.school && schoolKey(r.school as string | null) !== f.school) continue;
+      if (f.location && normLocation(r.city as string | null) !== f.location) continue;
+      out.push({ id: r.application_id as string, name: r.name as string, school: r.school as string | null, city: r.city as string | null, status: r.status as string | null });
+    }
+    if (!data || data.length < 1000) break;
+  }
+  return out;
+}
+
+/** Brings "who receives the documents" up to date with the current document responsibilities, for applications that already exist. Owners are untouched. */
+export async function applyDocHandlers(db: Db, o: { ids: string[]; actor: string }): Promise<{ changed: { id: string; name: string; counselorKey: string | null; counselorName: string | null }[]; unchanged: number }> {
+  const changed: { id: string; name: string; counselorKey: string | null; counselorName: string | null }[] = [];
+  let unchanged = 0;
+  const ids = [...new Set(o.ids)];
+  const apps: AppRow[] = [];
+  for (let i = 0; i < ids.length; i += 100) { const { data } = await db.from('portal_applications').select(COLS).in('application_id', ids.slice(i, i + 100)); apps.push(...((data || []) as AppRow[])); }
+  const [rules, counselors] = await Promise.all([loadRules(db), loadCounselors(db)]);
+  for (const a of apps) {
+    const d = resolveAssignment(rules, facts(a), counselors, { kind: 'documents' });
+    const key = d.kind === 'assigned' ? d.counselor_key : null;
+    if (key === (a.doc_handler || null)) { unchanged++; continue; }
+    await db.from('portal_applications').update({ doc_handler: key }).eq('application_id', a.application_id);
+    await logRow(db, { application_id: a.application_id, kind: 'documents', from_counselor: a.doc_handler ? counselors.get(a.doc_handler)?.name || a.doc_handler : null, to_counselor: d.kind === 'assigned' ? d.name : null, reason: d.kind === 'assigned' ? d.reason : 'No document responsibility applies to this application any more', level: d.kind === 'assigned' ? d.level : null, rule_id: d.kind === 'assigned' ? d.rule_id : null, actor: o.actor });
+    changed.push({ id: a.application_id, name: a.name, counselorKey: key, counselorName: d.kind === 'assigned' ? d.name : null });
+  }
+  return { changed, unchanged };
+}
+
+// ---------- for the application page ----------
+export type HistoryRow = { id: string; at: string; kind: string; from: string | null; to: string | null; reason: string | null; actor: string; level: string | null };
+export type AssignInfo = {
+  state: 'assigned' | 'queue' | 'conflict' | null; reason: string | null; assignedAt: string | null; assignedBy: string | null;
+  owner: string | null; docHandler: string | null; candidates: Candidate[]; expected: { name: string; level: string } | null; history: HistoryRow[];
+};
+
+/** Everything the Assignment card on an application shows: who owns it and why, who receives its documents, any open conflict, and the history. */
+export async function loadAssignInfo(db: Db, appId: string): Promise<AssignInfo | null> {
+  const { data: a } = await db.from('portal_applications').select(COLS).eq('application_id', appId).maybeSingle();
+  if (!a) return null;
+  const app = a as AppRow;
+  const [counselors, rules, { data: conf }, { data: log }] = await Promise.all([
+    loadCounselors(db), loadRules(db, app.workspace),
+    db.from('portal_assign_conflicts').select('candidates').eq('application_id', appId).eq('status', 'open').maybeSingle(),
+    db.from('portal_assign_log').select('id, at, kind, from_counselor, to_counselor, reason, actor, level').eq('application_id', appId).order('at', { ascending: false }).limit(30),
+  ]);
+  const owned = !isPlaceholderCounselor(app.counselor);
+  const d = resolveAssignment(rules, facts(app), counselors, { kind: 'application' });
+  return {
+    state: (app.assign_state as AssignInfo['state']) ?? null, reason: app.assign_reason, assignedAt: (a as { assigned_at?: string | null }).assigned_at ?? null, assignedBy: (a as { assigned_by?: string | null }).assigned_by ?? null,
+    owner: owned ? app.counselor : null, docHandler: app.doc_handler ? counselors.get(app.doc_handler)?.name || app.doc_handler : null,
+    candidates: ((conf?.candidates as Candidate[] | undefined) || []),
+    expected: d.kind === 'assigned' && (!owned || d.counselor_key !== counselorKey(app.counselor)) ? { name: d.name, level: d.level } : null,
+    history: (log || []).map((l) => ({ id: l.id as string, at: l.at as string, kind: l.kind as string, from: (l.from_counselor as string | null) ?? null, to: (l.to_counselor as string | null) ?? null, reason: (l.reason as string | null) ?? null, actor: l.actor as string, level: (l.level as string | null) ?? null })),
+  };
 }
 
 // ---------- scope and permission ----------

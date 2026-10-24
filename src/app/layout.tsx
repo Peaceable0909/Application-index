@@ -6,6 +6,7 @@ import { currentStaff } from '@/lib/auth';
 import { admin } from '@/lib/supabase';
 import { appIdsFor } from '@/lib/auth';
 import { inboxUnread } from '@/lib/inbox';
+import { waitingCount } from '@/lib/headBoard';
 import Logo from '@/components/Logo';
 import Splash from '@/components/Splash';
 import RealtimeNudge from '@/components/RealtimeNudge';
@@ -36,6 +37,7 @@ import './whatsapp.css';
 import './calls.css';
 import './ios.css';
 import './stage.css';
+import './assign.css';
 import { cookies } from 'next/headers';
 import { COOKIE, parseTheme } from '@/lib/theme';
 import { site } from '@/lib/emailTemplate';
@@ -64,7 +66,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const cookieTheme = (await cookies()).get(COOKIE)?.value;
   const db = admin();
   // these don't depend on each other, so they run side by side instead of one after another
-  const [themeRow, studentNotices, studentUnread, taskCount, chatCount, inboxCount] = await Promise.all([
+  const [themeRow, studentNotices, studentUnread, taskCount, chatCount, inboxCount, headCount] = await Promise.all([
     !cookieTheme && email ? db.from('portal_theme_prefs').select('mode, accent').eq('email', email).maybeSingle().then((r) => r.data) : Promise.resolve(null),
     student ? noticesFor(student) : Promise.resolve([]),
     student ? db.from('portal_student_msgs').select('id', { count: 'exact', head: true }).eq('student_email', student.email).eq('from_student', false).is('student_read_at', null).then((r) => r.count || 0) : Promise.resolve(0),
@@ -74,6 +76,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     })() : Promise.resolve(0),
     staff ? unreadTotal(staff.email).catch(() => 0) : Promise.resolve(0),
     staff ? inboxUnread(staff).catch(() => 0) : Promise.resolve(0),
+    staff && (staff.role === 'admin' || staff.team_head) ? currentWorkspace().then((w) => waitingCount(staff, w)).catch(() => 0) : Promise.resolve(0),
   ]);
   const theme = themeRow ? parseTheme(`${themeRow.mode}.${themeRow.accent}`) : parseTheme(cookieTheme);
   return (
@@ -92,7 +95,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <div className="shell">
             <aside className="side">
               <Link href="/" className="brand" aria-label="WhiteRock home"><Logo height={32} alt="" /><small>Team portal</small></Link>
-              <Nav taskCount={taskCount} chatCount={chatCount} inboxCount={inboxCount} role={staff.role} />
+              <Nav taskCount={taskCount} chatCount={chatCount} inboxCount={inboxCount} headCount={headCount} head={!!staff.team_head} role={staff.role} />
               <div className="tag">More opportunities.<br />Brighter futures.</div>
             </aside>
             <div className="maincol">

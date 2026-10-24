@@ -2,7 +2,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { randomUUID } from 'node:crypto';
 import { startMock, type Rows } from './mockdb';
-import { mayAssign, reassign, reassignMany, recordSheetOwner, routeApplications, waitingIds } from '../../src/lib/assignCore';
+import { applyDocHandlers, bulkCandidates, loadAssignInfo, mayAssign, reassign, reassignMany, recordSheetOwner, routeApplications, routingSince, waitingIds } from '../../src/lib/assignCore';
 
 let pass = 0, fail = 0;
 const ok = (c: unknown, m: string) => { if (c) pass++; else { fail++; console.log('FAIL:', m); } };
@@ -108,6 +108,36 @@ const logOf = (id: string) => DB.portal_assign_log.filter((l) => l.application_i
   // ---- the sheet names someone ----
   await recordSheetOwner(db, [{ id: 'n1', from: 'MR Abraham', to: 'Mr Paul' }, { id: 'n1', from: 'MR Abraham', to: 'mr abraham' }, { id: 'n3', from: 'x', to: null }]);
   ok(logOf('n1').some((l) => l.kind === 'sheet' && l.to_counselor === 'Mr Paul'), 'a sheet change is recorded'); eq(logOf('n1').filter((l) => l.kind === 'sheet' && l.to_counselor === 'mr abraham').length, 0, 'a spelling change of the same counselor is not');
+
+  // ---- when responsibilities change ----
+  DB.portal_applications.push(app('c1', { counselor: 'MR ROBERT', school: 'BPP University', city: 'Lagos' }), app('c2', { counselor: 'MR ROBERT', school: 'Regent College London (RCL)', city: 'Abuja' }), app('c3', { counselor: 'MR ROBERT', status: 'Enrolled' }), app('c4', { counselor: 'mrs Lydia' }), app('c5', { counselor: null }), app('c6', { counselor: 'MR ROBERT', workspace: 'jp' }));
+  const idsOf = (l: { id: string }[]) => l.map((x) => x.id);
+  const rob = idsOf(await bulkCandidates(db, { workspace: 'uk', from: 'robert' }));
+  ok(['c1', 'c2'].every((i) => rob.includes(i)), 'bulk preview: a counselor\'s current applications'); ok(!rob.includes('c3'), 'finished applications stay put'); ok(!rob.includes('c4') && !rob.includes('c6'), 'other counselors and other destinations are not included');
+  eq(idsOf(await bulkCandidates(db, { workspace: 'uk', from: 'robert', school: 'bpp' })).filter((i) => i.startsWith('c')), ['c1'], 'narrowed to one school');
+  eq(idsOf(await bulkCandidates(db, { workspace: 'uk', from: 'robert', location: 'abuja' })).filter((i) => i.startsWith('c')), ['c2'], 'narrowed to one location');
+  ok(idsOf(await bulkCandidates(db, { workspace: 'uk', from: '__none' })).includes('c5'), 'the unassigned can be listed too');
+
+  DB.portal_applications.push(app('d1'));
+  const docs1 = await applyDocHandlers(db, { ids: ['d1'], actor: 'admin@x.org' });
+  eq([docs1.changed.length, A('d1').doc_handler, A('d1').counselor ?? null], [1, 'paul', null], 'document handler brought up to date on an existing application, owner untouched');
+  ok(logOf('d1').some((l) => l.kind === 'documents' && l.to_counselor === 'Mr Paul' && l.actor === 'admin@x.org'), 'and recorded');
+  eq((await applyDocHandlers(db, { ids: ['d1'], actor: 'admin@x.org' })).unchanged, 1, 'running it again changes nothing');
+  DB.portal_assign_rules = DB.portal_assign_rules.filter((r) => !(r.kind === 'documents' && r.school_key === 'cccu'));
+  const docs2 = await applyDocHandlers(db, { ids: ['d1'], actor: 'admin@x.org' });
+  eq([docs2.changed.length, A('d1').doc_handler], [1, null], 'when the responsibility is removed the handler is cleared'); ok(logOf('d1').at(-1)!.to_counselor === null && /No document responsibility/.test(String(logOf('d1').at(-1)!.reason)), 'and says why');
+
+  // ---- the card on the application page ----
+  const info = await loadAssignInfo(db, 'e1');
+  eq([info?.owner, info?.expected?.name, info?.expected?.level], ['MR ROBERT', 'mrs Lydia', 'country'], 'the card shows who the rules would pick when an owner differs');
+  const none = await loadAssignInfo(db, 'c5');
+  eq([none?.owner, none?.expected?.name], [null, 'mrs Lydia'], 'an unowned application has no owner and shows the suggestion');
+  ok((await loadAssignInfo(db, 'n1'))!.history.length >= 2 && (await loadAssignInfo(db, 'nope')) === null, 'history is returned newest first; a missing application is null');
+
+  // ---- routing starts once ----
+  DB.portal_settings = [];
+  const since1 = await routingSince(db), since2 = await routingSince(db);
+  ok(!!since1 && since1 === since2, 'the routing start time is fixed the first time and then stays');
 
   // ---- who may reassign ----
   const scopes = [{ workspace: 'uk', scope: 'school' as const, school_key: 'cccu', location_key: null }];

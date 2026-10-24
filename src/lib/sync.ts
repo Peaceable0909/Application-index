@@ -8,7 +8,7 @@ import { sourceFromNotes } from './sources';
 import { pushPendingMoves } from './moveCore';
 import { writeBack } from './sheetWrite';
 import { isPlaceholderCounselor } from './assignEngine';
-import { recordSheetOwner, routeApplications } from './assignCore';
+import { recordSheetOwner, routeApplications, routingSince } from './assignCore';
 import { notifyRouting } from './assignNotify';
 import { listMasterFor } from './sheets';
 import { DEFAULT_WS, wsKey } from './workspaceCore';
@@ -219,8 +219,12 @@ async function syncWorkspace(w: Workspace, opts: { full?: boolean } = {}) {
   // is logged and never fails the sync, and an owner the application already has is never replaced.
   try {
     if (ownerChanges.length) await recordSheetOwner(db, ownerChanges);
-    if (newIds.length) {
-      const routed = await routeApplications(db, { ids: newIds, actor: 'system', mode: 'new' });
+    // new ones, plus any that arrived after routing started but were missed (a routing hiccup on an earlier run)
+    const since = await routingSince(db);
+    const { data: late } = await db.from('portal_applications').select('application_id').eq('workspace', w.key).is('routed_at', null).gte('submitted_at', since).limit(100);
+    const toRoute = [...new Set([...newIds, ...(late || []).map((r) => r.application_id as string)])];
+    if (toRoute.length) {
+      const routed = await routeApplications(db, { ids: toRoute, actor: 'system', mode: 'new' });
       // Put the new owner in the sheet too, so people working from it see the same counselor (a few at a time; the portal already has it).
       for (const a of routed.assigned.slice(0, 10)) { try { await writeBack(a.id, { counselor: a.counselorName }); } catch { /* the sheet can be filled in by hand */ } }
       await notifyRouting(routed);
