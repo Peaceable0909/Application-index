@@ -9,6 +9,7 @@ import { loadContext } from './stageCore';
 import { buildTracker } from './studentTracker';
 import { latestInformable } from './stageInform';
 import { stageFacts, type StageFacts } from './brainStage';
+import { earlierRelevant, type PastMessage } from './brainRecall';
 
 // The AI Brain: reads ONE student's file plus the team's written notes and drafts a reply for a staff member to check and send.
 // It never sends anything itself. Opt-in: AI_BRAIN=on in Vercel (the student's chat text and file facts are sent to Qwen).
@@ -47,9 +48,12 @@ export async function brainContext(appId: string, question?: string) {
   const key = schoolKey(app.school);
   const rel = (notes || []).filter((n) => !n.school || schoolKey(n.school) === key);
   const email = (await db.from('portal_applications').select('email').eq('application_id', appId).maybeSingle()).data?.email?.toLowerCase() || '';
-  const { data: msgs } = email ? await db.from('portal_student_msgs').select('from_student, body, transcript, created_at').eq('student_email', email).order('created_at', { ascending: false }).limit(16) : { data: [] as { from_student: boolean; body: string; transcript?: string | null; created_at: string }[] };
+  const { data: msgs } = email ? await db.from('portal_student_msgs').select('from_student, body, transcript, created_at').eq('student_email', email).is('deleted_at', null).order('created_at', { ascending: false }).limit(400) : { data: [] as { from_student: boolean; body: string; transcript?: string | null; created_at: string }[] };
   // a voice note counts by what was said in it (written down when voice reading is on); names, numbers and links are stripped like in typed messages
-  const chat = (msgs || []).reverse().filter((m) => (m.body || m.transcript || '').trim()).map((m) => ({ from: m.from_student ? 'student' : 'team', text: strip(m.body || `(voice note) ${m.transcript}`).slice(0, 400) }));
+  // newest first from the database: the latest 16 are the live conversation, everything older is searched for what matches the question
+  const all: PastMessage[] = (msgs || []).filter((m) => (m.body || m.transcript || '').trim()).map((m) => ({ from: m.from_student ? 'student' as const : 'team' as const, text: strip(m.body || `(voice note) ${m.transcript}`).slice(0, 400), at: m.created_at }));
+  const chat = all.slice(0, 16).reverse().map((m) => ({ from: m.from, text: m.text }));
+  const older = all.slice(16);
   const facts = {
     university: schoolDisplay(app.school) || null, programme: app.programme || null, pipelineStatus: app.status || null, country: app.country || null,
     interviewStatus: app.interview || null, paymentRecorded: !!app.payment,
@@ -60,12 +64,15 @@ export async function brainContext(appId: string, question?: string) {
   const stage = await applicationStage(appId);
   const asked = chat.filter((m) => m.from === 'student').slice(-2).map((m) => m.text).join(' ');
   const files = await relevantPassages(app.workspace, app.school, `${asked} ${question || ''}`);
-  return { memory, stage, files, first: (app.name || '').split(/[\s,]+/).filter(Boolean)[0] || 'there', country: wsRow?.name || 'the UK', brief: wsRow?.brief || null, facts, notes: rel.map((n) => ({ topic: n.title, info: n.body })), chat };
+  // what to look back for: the student's latest message (and the question being asked now), not the whole recent chat
+  const lastAsk = chat.filter((m) => m.from === 'student').slice(-1).map((m) => m.text).join(' ');
+  const earlier = earlierRelevant(older, `${lastAsk} ${question || ''}`);
+  return { memory, stage, earlier, files, first: (app.name || '').split(/[\s,]+/).filter(Boolean)[0] || 'there', country: wsRow?.name || 'the UK', brief: wsRow?.brief || null, facts, notes: rel.map((n) => ({ topic: n.title, info: n.body })), chat };
 }
 
 const system = (country: string) =>
   `You write chat replies, for a human counselor to review, to a student of WhiteRock, an education-advice company that helps students apply to universities in: ${country}. ` +
-  'Use ONLY the "facts", "applicationStage", "studentMemory", "countryBrief", "teamNotes" and "fileExcerpts" in the JSON, and the conversation. "applicationStage" is where the student is in the step-by-step process for the school they applied to, exactly as they see it on their dashboard: when they ask where their application is, what happens next or what they still need to send, answer from it (the stage name, what it means, the next stage, and the documents listed with where each one stands). Never describe a stage as faster, slower or more certain than it says, and never suggest an outcome from it. If applicationStage is null or not started, say the team will update them rather than naming a stage. "studentMemory" is what we already know about this student from earlier chats: use it to make the reply personal (their goals, what they asked before, what is still open) without reciting it back. If the answer is not there, do not guess: set needsHuman to true and write a short, kind holding reply that says the team will check and come back. ' +
+  'Use ONLY the "facts", "applicationStage", "studentMemory", "earlierConversation", "countryBrief", "teamNotes" and "fileExcerpts" in the JSON, and the conversation. "applicationStage" is where the student is in the step-by-step process for the school they applied to, exactly as they see it on their dashboard: when they ask where their application is, what happens next or what they still need to send, answer from it (the stage name, what it means, the next stage, and the documents listed with where each one stands). Never describe a stage as faster, slower or more certain than it says, and never suggest an outcome from it. If applicationStage is null or not started, say the team will update them rather than naming a stage. "earlierConversation" holds older messages from this same student that match what they are asking now (with how long ago): use them for continuity, for example to remember something they told us before, without reciting them. "studentMemory" is what we already know about this student from earlier chats, including a lasting "facts" list: use it to make the reply personal (their goals, what they asked before, what is still open) without reciting it back. If the answer is not there, do not guess: set needsHuman to true and write a short, kind holding reply that says the team will check and come back. ' +
   'Write like a warm, clear text message: plain English, at most 80 words, no signature, no headings, at most one emoji. Address the student as {{FIRST_NAME}} only when it feels natural. ' +
   'NEVER invent dates, deadlines, fees, links, phone numbers or email addresses, and NEVER promise or hint at admission, an offer, a visa or any outcome. Do not give legal or immigration advice. ' +
   'If the student sounds upset, unwell, unsafe or mentions money problems, set needsHuman to true. When asked for a document, name it exactly as in the facts. ' +
@@ -75,7 +82,7 @@ export async function suggestReply(appId: string, o: { question?: string; instru
   const ctx = await brainContext(appId, o.question);
   if (!ctx) throw new Error('Student not found.');
   const chat = o.question ? [...ctx.chat, { from: 'student', text: strip(o.question).slice(0, 400) }] : ctx.chat;
-  const userJson = JSON.stringify({ studentMemory: ctx.memory, applicationStage: ctx.stage, facts: ctx.facts, countryBrief: ctx.brief, teamNotes: ctx.notes, fileExcerpts: ctx.files, conversation: chat, counselorInstruction: o.instruction ? strip(o.instruction).slice(0, 600) : null });
+  const userJson = JSON.stringify({ studentMemory: ctx.memory, applicationStage: ctx.stage, earlierConversation: ctx.earlier, facts: ctx.facts, countryBrief: ctx.brief, teamNotes: ctx.notes, fileExcerpts: ctx.files, conversation: chat, counselorInstruction: o.instruction ? strip(o.instruction).slice(0, 600) : null });
   // Numbers the reply may contain: those already in the file, the notes or the conversation (so it can't invent a figure).
   const allowed = (userJson.match(/\d+/g) || []).map(Number);
   const r = await generateOnce<BrainReply>({

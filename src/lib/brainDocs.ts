@@ -4,7 +4,7 @@ import { schoolKey } from './docs';
 // Files the team taught the Brain are stored whole and cut into passages when a reply is written. The passages that share the most
 // words with what the student asked are handed to the model, so a 60-page handbook costs the same as a short note.
 const STOP = new Set('the a an and or of to in on for with is are was were be been it this that these those i you we they my your our their at by from as do does did can could would should will what when where how why which who whom about into than then so if not no yes please hi hello hey thanks thank'.split(' '));
-const words = (t: string) => (t.toLowerCase().match(/[a-z0-9]{3,}/g) || []).filter((w) => !STOP.has(w));
+export const words = (t: string) => (t.toLowerCase().match(/[a-z0-9]{3,}/g) || []).filter((w) => !STOP.has(w));
 
 export function chunkText(text: string, size = 900): string[] {
   const out: string[] = [];
