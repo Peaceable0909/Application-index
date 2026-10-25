@@ -1,8 +1,29 @@
 'use client';
 import { useMemo, useState } from 'react';
+import { useFormStatus } from 'react-dom';
+import Btn from './Btn';
 import Icon from './Icon';
 
 export type Invitee = { id: string; name: string; school: string; counselor: string; hasEmail: boolean };
+
+/** The button and what is going on behind it. Making a Meet link and emailing people takes a few seconds, so the button locks, says so, and a panel explains what is happening. */
+function CreateBar({ label, disabled, auto, emailing, many }: { label: string; disabled: boolean; auto: boolean; emailing: number; many: boolean }) {
+  const { pending } = useFormStatus();
+  return (
+    <>
+      <div className="filters" style={{ marginTop: 14 }}><Btn className="btn" disabled={disabled} data-busy="Creating your session…">{pending ? 'Creating…' : label}</Btn></div>
+      {pending && (
+        <div className="slot-working" role="status" aria-live="polite">
+          <span className="spin" aria-hidden />
+          <div>
+            <b>Creating {many ? 'your sessions' : 'your session'}…</b>
+            <small>{auto ? 'Making the Google Meet link' : 'Saving the session'}{emailing ? `, then emailing ${emailing} student${emailing === 1 ? '' : 's'} and their counselors` : ''}. This can take up to 30 seconds. Please do not click again: you will see a confirmation here as soon as it is done.</small>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
 
 export default function SlotForm({ action, people, defaultTrainer, defaultUrl, students }: { action: (f: FormData) => void; people: { email: string; name: string }[]; defaultTrainer: string; defaultUrl: string; students: Invitee[] }) {
   const tomorrow = new Date(Date.now() + 864e5), pad = (n: number) => String(n).padStart(2, '0');
@@ -21,7 +42,7 @@ export default function SlotForm({ action, people, defaultTrainer, defaultUrl, s
   }, [date, time, weeks]);
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   return (
-    <form action={action} className="card">
+    <form action={action} className="card slot-form">
       <h2><Icon n="video" size={17} /> New interview-training session</h2>
       <input type="hidden" name="starts" value={JSON.stringify(starts)} />
       {picked.map((id) => <input key={id} type="hidden" name="invite" value={id} />)}
@@ -55,7 +76,7 @@ export default function SlotForm({ action, people, defaultTrainer, defaultUrl, s
         <label style={{ gridColumn: '1 / -1' }}>Note for students (optional)<input name="notes" maxLength={300} placeholder="e.g. Bring your CV and passport" style={{ width: '100%', marginTop: 6 }} /></label>
       </div>
       <p className="muted" style={{ fontSize: 12.5, margin: '10px 0 0' }}>{mode === 'paste' ? <>To get a link: open <b>meet.google.com</b>, press <b>New meeting → Create a meeting for later</b>, and copy it. </> : null}{starts.length > 1 && `This will create ${starts.length} sessions.`}</p>
-      <div className="filters" style={{ marginTop: 14 }}><button className="btn" disabled={!starts.length}>Create {starts.length > 1 ? `${starts.length} sessions` : 'session'}{picked.length ? ` and invite ${picked.length}` : ''}</button></div>
+      <CreateBar label={`Create ${starts.length > 1 ? `${starts.length} sessions` : 'session'}${picked.length ? ` and invite ${picked.length}` : ''}`} disabled={!starts.length} auto={mode === 'auto'} emailing={picked.length} many={starts.length > 1} />
     </form>
   );
 }

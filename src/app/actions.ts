@@ -32,6 +32,7 @@ import { checkMeetingUrl } from '@/lib/meet';
 import { appsForEmail, currentStudent, isStudentEmail } from '@/lib/student';
 import { runBackup } from '@/lib/backup';
 import { notifyAssigned } from '@/lib/notify';
+import { splitDuplicates } from '@/lib/slotGuard';
 import { reassign, reassignMany, routeApplications } from '@/lib/assignCore';
 import { notifyOwnerByKey, notifyRouting } from '@/lib/assignNotify';
 import { after } from 'next/server';
@@ -1269,6 +1270,12 @@ export async function createInterviewSlots(f: FormData) {
   const auto = s(f, 'link_mode') !== 'paste';
   let pasted: string | null = null;
   if (!auto) { pasted = checkMeetingUrl(s(f, 'teams_url')); if (!pasted) backTo('/interviews', 'Paste a Google Meet link (like https://meet.google.com/abc-defg-hij) or a Microsoft Teams link.', true); }
+  // A second click, a second tab or Enter pressed twice must not make a second session, a second Meet link or a second round of emails.
+  const slotWs = await currentWorkspace();
+  const { data: recent } = await admin().from('portal_interview_slots').select('starts_at, trainer, created_by, created_at').eq('workspace', slotWs).eq('created_by', staff.email).is('cancelled_at', null).gte('created_at', new Date(Date.now() - 150_000).toISOString());
+  const { fresh, dupes } = splitDuplicates(starts, recent || [], { who: staff.email, trainer });
+  if (!fresh.length) backTo('/interviews', 'That session was already created a moment ago, so a second copy was not made and nobody was emailed twice.');
+  starts = fresh;
   const rows: { starts_at: string; teams_url: string; calendar_event_id: string | null }[] = [];
   for (const starts_at of starts) {
     if (!auto) { rows.push({ starts_at, teams_url: pasted!, calendar_event_id: null }); continue; }
@@ -1283,14 +1290,13 @@ export async function createInterviewSlots(f: FormData) {
     }
   }
   const capacity = Math.max(capacity0, invites.length);
-  const slotWs = await currentWorkspace();
   const { data: made, error } = await admin().from('portal_interview_slots').insert(rows.map((r) => ({ ...r, workspace: slotWs, duration_min: duration, trainer, capacity, notes, created_by: staff.email }))).select('id, starts_at').order('starts_at');
   if (error) backTo('/interviews', `Could not create the sessions: ${error.message}`, true);
   const invited: string[] = [], skipped: string[] = [];
   if (invites.length && made?.length) for (const appId of invites) { const r = await inviteToSlot(staff, made[0].id, appId); if (r.ok) invited.push(r.name!); else skipped.push(`${r.name || 'a student'} (${r.error})`); }
   await audit(staff.email, 'interview_slots_created', `${starts.length} session(s)`, { first: starts[0] });
   revalidatePath('/interviews'); revalidatePath('/student');
-  backTo('/interviews', `${starts.length} session${starts.length === 1 ? '' : 's'} created.${invited.length ? ` Invited ${invited.join(', ')}: they and their counselors have been emailed.` : ' Students can book them now.'}${skipped.length ? ` Not invited: ${skipped.join('; ')}.` : ''}`, skipped.length > 0 && !invited.length);
+  backTo('/interviews', `${starts.length} session${starts.length === 1 ? '' : 's'} created.${invited.length ? ` Invited ${invited.join(', ')}: they and their counselors have been emailed.` : ' Students can book them now.'}${skipped.length ? ` Not invited: ${skipped.join('; ')}.` : ''}${dupes.length ? ` ${dupes.length === 1 ? 'One session was' : `${dupes.length} sessions were`} already created a moment ago and was not made again.` : ''}`, skipped.length > 0 && !invited.length);
 }
 
 export async function cancelInterviewSlot(f: FormData) {
