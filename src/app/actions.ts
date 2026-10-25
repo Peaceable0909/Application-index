@@ -30,7 +30,8 @@ import { cleanLabel, resolveLabel } from '@/lib/docLabel';
 import { bookSlotCore, emailBooking, emailCounselorBooking, MIN_NOTICE_H } from '@/lib/interviews';
 import { checkMeetingUrl } from '@/lib/meet';
 import { appsForEmail, currentStudent, isStudentEmail } from '@/lib/student';
-import { runBackup } from '@/lib/backup';
+import { pruneBackups, runBackup } from '@/lib/backup';
+import { KEEP_SETTING, clampKeep } from '@/lib/backupRetention';
 import { notifyAssigned } from '@/lib/notify';
 import { isRecent, justDid, splitDuplicates } from '@/lib/doubleSubmit';
 import { reassign, reassignMany, routeApplications } from '@/lib/assignCore';
@@ -995,6 +996,18 @@ export async function backupNow() {
   if (me.role !== 'admin') redirect('/settings?err=Admins+only');
   try { const r = await runBackup(me.email); redirect('/settings?msg=' + encodeURIComponent(`Backup saved: ${r.name}${r.failed.length ? ` (some tables failed: ${r.failed.join('; ')})` : ''}.`)); }
   catch (e) { rethrow(e); redirect('/settings?err=' + encodeURIComponent(`Backup failed: ${(e as Error).message}`)); }
+}
+
+/** How many nightly backups to keep. Saving the number also deletes the older ones now, so what Settings shows is what is stored. */
+export async function saveBackupKeep(f: FormData) {
+  const me = await requireTeam();
+  if (me.role !== 'admin') redirect('/settings?err=Admins+only');
+  const keep = clampKeep(f.get('keep'));
+  await admin().from('portal_settings').upsert({ key: KEEP_SETTING, value: { keep }, updated_by: me.email, updated_at: new Date().toISOString() });
+  const removed = await pruneBackups(keep).catch(() => [] as string[]);
+  await audit(me.email, 'backup_limit_changed', null, { keep, removed: removed.length });
+  revalidatePath('/settings');
+  redirect('/settings?msg=' + encodeURIComponent(`Saved: the newest ${keep} backups are kept${removed.length ? `, and ${removed.length} older ${removed.length === 1 ? 'one was' : 'ones were'} deleted` : ''}.`));
 }
 
 // Extracted text page: read one document's full text out through Drive OCR and keep it. Called one file at a time so the page can show progress.

@@ -11,10 +11,11 @@ import { previewWeeklySummary, saveWeeklySummary } from '../reportActions';
 import Btn from '@/components/Btn';
 import { admin } from '@/lib/supabase';
 import Link from 'next/link';
-import { addStaff, backupNow, removeStaff, sendTestEmails, testConnection } from '../actions';
+import { addStaff, backupNow, removeStaff, saveBackupKeep, sendTestEmails, testConnection } from '../actions';
 import { createWorkspace, setStaffWorkspaces } from '../workspaceActions';
 import { listWorkspaces } from '@/lib/workspace';
-import { listBackups } from '@/lib/backup';
+import { backupKeep, listBackups } from '@/lib/backup';
+import { KEEP_MAX, KEEP_MIN } from '@/lib/backupRetention';
 import Icon from '@/components/Icon';
 import PrivacyCheck from '@/components/PrivacyCheck';
 
@@ -69,13 +70,28 @@ export default async function Settings({ searchParams }: { searchParams: Promise
 
       <div className="card">
         <h2><Icon n="download" size={17} /> Backups</h2>
-        <p className="muted">Every night the portal saves a private, compressed copy of its own data (students, notes, activity, messages, chat, staff). The newest 14 are kept. Your Google Sheet and Drive files are not copied; they keep their own version history.</p>
+        <p className="muted">Every night the portal saves a private, compressed copy of its own data (students, notes, activity, messages, chat, staff). Only the newest few are kept; older ones are deleted automatically (the number is set below). Your Google Sheet and Drive files are not copied; they keep their own version history.</p>
         {me.role === 'admin' ? (
           <>
-            <form action={backupNow}><Btn data-busy="Backing up…">Back up now</Btn></form>
-            <table style={{ marginTop: 12 }}><tbody>
-              {(await listBackups().catch(() => [])).map((b) => <tr key={b.name}><td>{b.name}</td><td className="muted">{b.size ? `${Math.round(b.size / 1024)} KB` : ''}</td><td><a href={`/api/backup?file=${b.name}`}>Download</a></td></tr>)}
-            </tbody></table>
+            {await (async () => {
+              const [keep, list] = await Promise.all([backupKeep(), listBackups().catch(() => [])]);
+              const total = list.reduce((n, x) => n + x.size, 0);
+              return (
+                <>
+                  <div className="filters">
+                    <form action={backupNow}><Btn data-busy="Backing up…">Back up now</Btn></form>
+                    <form action={saveBackupKeep} className="filters" data-busy="Saving and deleting older backups…">
+                      <label>Keep the newest <input name="keep" type="number" min={KEEP_MIN} max={KEEP_MAX} defaultValue={keep} style={{ width: 76 }} required /> backups</label>
+                      <Btn className="btn ghost" data-busy="Saving and deleting older backups…">Save</Btn>
+                    </form>
+                  </div>
+                  <p className="muted" style={{ fontSize: 12.5, margin: '8px 0 0' }}>One backup is made each night, so {keep} backups reach back about {keep} days. Backups are {KEEP_MIN} to {KEEP_MAX}. Saving a smaller number deletes the older backups straight away. {list.length} stored now{total ? `, ${total >= 1048576 ? `${(total / 1048576).toFixed(1)} MB` : `${Math.round(total / 1024)} KB`} in all` : ''}.</p>
+                  <table style={{ marginTop: 12 }}><tbody>
+                    {list.map((b) => <tr key={b.name}><td>{b.name}</td><td className="muted">{b.size ? `${Math.round(b.size / 1024)} KB` : ''}</td><td><a href={`/api/backup?file=${b.name}`}>Download</a></td></tr>)}
+                  </tbody></table>
+                </>
+              );
+            })()}
           </>
         ) : <p className="muted">Admins can create and download backups.</p>}
       </div>
