@@ -6,8 +6,14 @@ import { stopTwoStep } from '../twoStepActions';
 import TwoStepSetup from '@/components/TwoStepSetup';
 import Btn from '@/components/Btn';
 import ProfileEditor from '@/components/ProfileEditor';
+import BadgeList from '@/components/BadgeList';
+import HandlesCard from '@/components/HandlesCard';
+import { badgesOf } from '@/lib/badgeData';
+import { loadHandles } from '@/lib/profileData';
+import { profileLocks } from '@/lib/profileLocks';
 import PushToggle from '@/components/PushToggle';
 import ThemePicker from '@/components/ThemePicker';
+import FlashScroll from '@/components/FlashScroll';
 import { cookies } from 'next/headers';
 import { COOKIE, parseTheme } from '@/lib/theme';
 
@@ -17,15 +23,22 @@ export default async function Profile({ searchParams }: { searchParams: Promise<
   const theme = parseTheme((await cookies()).get(COOKIE)?.value);
   const [{ data: factors }, policy] = await Promise.all([(await sessionClient()).auth.mfa.listFactors(), twoStepPolicy()]);
   const twoOn = !!factors?.totp?.length, twoRequired = twoStepRequired(policy, staff.role);
+  const [badges, handles, locks] = await Promise.all([badgesOf(staff.email), loadHandles(staff.email), profileLocks()]);
   return (
     <>
       <div className="head"><h1>My profile</h1></div>
-      <p className="sub">Your photo and details appear across the portal and to your teammates.</p>
-      {sp.msg && <div className="card ok">{sp.msg}</div>}
-      {sp.err && <div className="card err">{sp.err}</div>}
+      <p className="sub">Your photo, cover and details appear across the portal and to your teammates.</p>
+      {sp.msg && <div className="card ok" data-flash>{sp.msg}</div>}
+      {sp.err && <div className="card err" data-flash>{sp.err}</div>}
+      <FlashScroll />
       <ProfileEditor
-        init={{ email: staff.email, role: staff.role, display_name: staff.display_name || '', title: staff.title || '', phone: staff.phone || '', bio: staff.bio || '', color: staff.color || 'navy', avatar_url: staff.avatar_url, notify_email: staff.notify_email === true }}
-        roleName={roleLabel(staff.role)} save={saveProfile} upload={uploadAvatar} remove={removeAvatar} />
+        init={{
+          email: staff.email, role: staff.role, display_name: staff.display_name || '', title: staff.title || '', phone: staff.phone || '', bio: staff.bio || '', color: staff.color || 'navy', avatar_url: staff.avatar_url, notify_email: staff.notify_email === true,
+          cover_url: staff.cover_url, cover_pos: staff.cover_pos ?? 50, cover_preset: staff.cover_preset, responsibilities: staff.responsibilities || '', duties: staff.duties || '', also_supports: staff.also_supports || '',
+        }}
+        roleName={roleLabel(staff.role)} save={saveProfile} upload={uploadAvatar} remove={removeAvatar}
+        locks={staff.role === 'admin' ? [] : locks} badges={badges}
+        aside={<><BadgeList badges={badges} who="You" /><HandlesCard handles={handles} admin={staff.role === 'admin'} who="You" /></>} />
       <div className="card" style={{ marginTop: 16 }}>
         <h2 style={{ marginTop: 0 }}>Look &amp; feel</h2>
         <p className="muted">Choose a theme and an accent colour. It is saved to your account.</p>

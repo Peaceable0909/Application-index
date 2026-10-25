@@ -13,6 +13,10 @@ export type Staff = {
   workspaces: string[] | null; display_name: string | null; avatar_url: string | null; title: string | null; phone: string | null; bio: string | null; color: string | null; notify_email: boolean | null;
   /** Oversees the schools / destinations / locations listed in portal_head_scopes (on top of their normal role). */
   team_head: boolean | null;
+  /** Cover photo (public address in the covers bucket), which part of it stays in view (0 top to 100 bottom), and a built-in cover used while there is no photo. */
+  cover_url: string | null; cover_pos: number | null; cover_preset: string | null;
+  /** In their own words. Which countries, schools and locations someone handles is read from the assignment records, not from these. */
+  responsibilities: string | null; duties: string | null; also_supports: string | null;
 };
 
 export type TwoStepWho = 'off' | 'admins' | 'everyone';
@@ -38,7 +42,7 @@ export const staffGate = cache(async (): Promise<Gate> => {
   const { data } = await sb.auth.getUser();
   const user = data.user, email = user?.email?.toLowerCase();
   if (!user || !email) return { state: 'none' };
-  const { data: row } = await admin().from('portal_staff').select('email, role, workspaces, last_seen_at, counselor_key, display_name, avatar_url, title, phone, bio, color, notify_email, team_head').eq('email', email).maybeSingle();
+  const { data: row } = await admin().from('portal_staff').select('email, role, workspaces, last_seen_at, counselor_key, display_name, avatar_url, title, phone, bio, color, notify_email, team_head, cover_url, cover_pos, cover_preset, responsibilities, duties, also_supports').eq('email', email).maybeSingle();
   if (!row) return { state: 'none' };
   const staff = row as Staff;
   // Time limits: silent for too long (the browser stopped saying "still here"), or signed in for longer than a working day.

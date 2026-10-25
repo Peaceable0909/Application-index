@@ -7,9 +7,11 @@ import Sticker from './Sticker';
 import { STICKERS, parseSticker, plainBody, stickerToken } from '@/lib/stickers';
 import { COLORS, gradient } from '@/lib/profile';
 import { plainPreview } from '@/lib/sysText';
+import { Seals } from './Seal';
+import type { BadgeLite } from '@/lib/staffBadges';
 import type { Card, ChatMsg, Ref, RoomRow } from '@/lib/chat';
 
-export type Person = { email: string; name: string; avatar_url: string | null; color: string | null; title: string | null };
+export type Person = { email: string; name: string; avatar_url: string | null; color: string | null; title: string | null; badges?: BadgeLite[] };
 type Member = { email: string; role: string; last_read_at: string; typing: boolean; muted: boolean };
 const EMOJI = ['👍', '❤️', '😂', '😮', '🙏', '✅'];
 const PICKER = ['😀', '😊', '😂', '🥹', '😍', '🤔', '😅', '😭', '🙌', '👏', '👍', '👎', '🙏', '💪', '🔥', '🎉', '✅', '❌', '⚠️', '📌', '📎', '📞', '⏰', '❤️'];
@@ -147,7 +149,7 @@ export default function ChatApp({ me, people, initialRooms, initialActive, about
           {list.map((r) => (
             <button key={r.id} className={`chat-item ${active === r.id ? 'on' : ''}`} onClick={() => open(r.id)}>
               {roomIcon(r, 44)}
-              <div><b>{title(r)}{r.muted && <span className="muted" title="Muted"> <Icon n="bell-off" size={13} className="ic-in" /></span>}</b><small>{r.last_preview ? `${r.last_sender === me ? 'You: ' : r.kind === 'group' && r.last_sender ? `${who(r.last_sender).name.split(' ')[0]}: ` : ''}${plainPreview(r.last_preview)}` : 'No messages yet'}</small></div>
+              <div><b>{title(r)}{r.kind !== 'group' && <Seals list={who(r.members.find((m) => m !== me) || me).badges} size={14} max={2} quiet />}{r.muted && <span className="muted" title="Muted"> <Icon n="bell-off" size={13} className="ic-in" /></span>}</b><small>{r.last_preview ? `${r.last_sender === me ? 'You: ' : r.kind === 'group' && r.last_sender ? `${who(r.last_sender).name.split(' ')[0]}: ` : ''}${plainPreview(r.last_preview)}` : 'No messages yet'}</small></div>
               <span className="when">{short(r.last_message_at)}{r.unread > 0 && <i className={`n ${r.muted ? 'quiet' : ''}`}>{r.unread}</i>}</span>
             </button>
           ))}
@@ -190,7 +192,7 @@ function NewChat({ me, people, online, onClose, onOpen }: { me: string; people: 
           {others.map((p) => { const e = p.email.toLowerCase(), on = pick.includes(e); return (
             <button key={e} className={`pick ${mode === 'group' && on ? 'on' : ''}`} onClick={() => (mode === 'dm' ? go({ with: e }) : toggle(e))} disabled={busy}>
               <span className="av-wrap"><Avatar name={p.name} url={p.avatar_url} color={p.color} size={38} />{online.includes(p.email) && <i className="live" />}</span>
-              <div><b>{p.name}</b><small>{p.title || p.email}</small></div>
+              <div><b>{p.name}<Seals list={p.badges} size={14} max={2} quiet /></b><small>{p.title || p.email}</small></div>
               {mode === 'group' && <span className="tick">{on ? <Icon n="check" size={16} /> : null}</span>}
             </button>); })}
           {!others.length && <p className="muted">No one else has portal access yet.</p>}
@@ -302,7 +304,7 @@ function Thread({ seed, onSeedUsed, room, me, who, people, online: onlineSeed, t
       <header className="chat-head">
         <button className="iconbtn chat-back" onClick={onBack} aria-label="Back to chats"><Icon n="left" size={18} /></button>
         {icon}
-        <button className="chat-title" onClick={() => setInfo(true)}><b>{title}</b><small>{sub}</small></button>
+        <button className="chat-title" onClick={() => setInfo(true)}><b>{title}{!group && <Seals list={who(otherEmail).badges} size={15} max={3} quiet />}</b><small>{sub}</small></button>
         <button className="iconbtn" onClick={() => setInfo(true)} aria-label="Chat info" title="Chat info"><Icon n="more" size={18} /></button>
       </header>
       <div className="chat-body" ref={body} onScroll={onScroll} onClick={() => { setSel(null); setEmoji(false); }}>
@@ -321,7 +323,7 @@ function Thread({ seed, onSeedUsed, room, me, who, people, online: onlineSeed, t
               <div className={`mrow ${mine ? 'mine' : 'theirs'} ${first ? 'first' : ''}`}>
                 {!mine && group && <span className="mav">{first ? <Avatar name={s.name} url={s.avatar_url} color={s.color} size={30} /> : null}</span>}
                 <div className="bubwrap">
-                  {!mine && group && first && <span className="sname">{s.name}</span>}
+                  {!mine && group && first && <span className="sname">{s.name}<Seals list={s.badges} size={13} max={2} quiet /></span>}
                   <div className={`bub ${gone ? 'gone' : ''} ${sel === m.id ? 'sel' : ''} ${!gone && parseSticker(m.body) ? 'sticker' : ''}`} onClick={(e) => { e.stopPropagation(); if (!gone && !(e.target as HTMLElement).closest('a')) setSel(sel === m.id ? null : m.id); }}>
                     {m.reply && <div className="quote"><b>{who(m.reply.sender).name.split(' ')[0]}</b><span>{plainBody(m.reply.text)}</span></div>}
                     {gone ? <p><em><Icon n="ban" size={14} className="ic-in" />This message was deleted</em></p> : <>
@@ -395,7 +397,7 @@ function InfoPanel({ room, me, who, people, online, members, title, onClose, onC
     <div className="info">
       <div className="info-h"><b>{group ? 'Group info' : 'Chat info'}</b><button className="iconbtn" onClick={onClose} aria-label="Close"><Icon n="x" size={16} /></button></div>
       <div className="info-b">
-        {other && <div className="tcard" style={{ marginBottom: 16 }}><Avatar name={other.name} url={other.avatar_url} color={other.color} size={64} /><div><b style={{ fontSize: 17 }}>{other.name}</b><div className="muted">{other.title || 'Teammate'}</div><div className="muted" style={{ fontSize: 13 }}>{other.email}</div></div></div>}
+        {other && <div className="tcard" style={{ marginBottom: 16 }}><Avatar name={other.name} url={other.avatar_url} color={other.color} size={64} /><div><b style={{ fontSize: 17 }}>{other.name}<Seals list={other.badges} size={17} max={4} /></b><div className="muted">{other.title || 'Teammate'}</div><div className="muted" style={{ fontSize: 13 }}>{other.email}</div></div></div>}
         {group && (
           <>
             <label className="muted">Group name</label>

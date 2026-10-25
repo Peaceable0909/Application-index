@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import Who from '@/components/Who';
+import { Seals } from '@/components/Seal';
 import Avatar from '@/components/Avatar';
 import { loadPeople, personFor } from '@/lib/people';
 import { notFound } from 'next/navigation';
@@ -147,7 +148,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
   const notesBlock = (limit?: number) => (
     <>
       {(notes || []).slice(0, limit).map((n) => (
-        <div key={n.id} className="note"><Avatar name={personFor(people, n.author).name} url={personFor(people, n.author).avatar_url} color={personFor(people, n.author).color} size={34} /><div><b>{personFor(people, n.author).name} {n.pinned && <Icon n="pin" size={13} className="ic-in" />}</b><small>{dateTime(n.created_at)}</small><p style={{ whiteSpace: 'pre-wrap' }}>{n.body}</p></div></div>
+        <div key={n.id} className="note"><Avatar name={personFor(people, n.author).name} url={personFor(people, n.author).avatar_url} color={personFor(people, n.author).color} size={34} /><div><b>{personFor(people, n.author).name}<Seals list={personFor(people, n.author).badges} size={14} max={2} quiet /> {n.pinned && <Icon n="pin" size={13} className="ic-in" />}</b><small>{dateTime(n.created_at)}</small><p style={{ whiteSpace: 'pre-wrap' }}>{n.body}</p></div></div>
       ))}
       {!(notes || []).length && <p className="muted" style={{ margin: 0 }}>No notes yet.</p>}
     </>
@@ -297,7 +298,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
                   <div style={{ borderTop: '1px solid var(--line)', marginTop: 16, paddingTop: 14 }}>
                     <div className="stat-l" style={{ marginBottom: 10 }}><Icon n="users" size={14} /> Counselor</div>
                     <div className="filters" style={{ justifyContent: 'space-between' }}>
-                      <div className="who-c"><Avatar name={app.counselor || '—'} url={people.get((counselor?.email || '').toLowerCase())?.avatar_url} color={people.get((counselor?.email || '').toLowerCase())?.color} size={44} /><div><b>{app.counselor || 'Unassigned'}</b><div className="muted" style={{ fontSize: 12.5 }}>{counselor?.email || (app.counselor ? 'no email saved' : 'Assigned Counselor')}</div></div></div>
+                      <div className="who-c"><Avatar name={app.counselor || '—'} url={people.get((counselor?.email || '').toLowerCase())?.avatar_url} color={people.get((counselor?.email || '').toLowerCase())?.color} size={44} /><div><b>{app.counselor || 'Unassigned'}<Seals list={people.get((counselor?.email || '').toLowerCase())?.badges} size={16} max={4} /></b><div className="muted" style={{ fontSize: 12.5 }}>{counselor?.email || (app.counselor ? 'no email saved' : 'Assigned Counselor')}</div></div></div>
                       <details className="dd"><summary className="btn ghost sm" style={{ listStyle: 'none' }}>Change</summary>
                         <div className="menu" style={{ minWidth: 260, padding: 12 }}>
                           <form action={updateCounselor} className="grid" style={{ gap: 8 }}><input type="hidden" name="id" value={id} />

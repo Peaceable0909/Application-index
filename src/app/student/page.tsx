@@ -21,6 +21,8 @@ import Milestones from '@/components/Milestones';
 import Celebrate from '@/components/Celebrate';
 import WelcomeTour from '@/components/WelcomeTour';
 import { milestoneBadges } from '@/lib/badges';
+import { loadStudentBadgeMap } from '@/lib/badgeData';
+import { Seals } from '@/components/Seal';
 import { studentTrackers } from '@/lib/studentStages';
 import StudentStages from '@/components/StudentStages';
 import StageLive from '@/components/StageLive';
@@ -35,6 +37,8 @@ export default async function StudentHome() {
   const [d, trackers] = await Promise.all([loadStudentData(me), studentTrackers(me).catch(() => [])]);
   const nu = nextUp(d), up = d.interview.upcoming[0];
   const badges = milestoneBadges(d);
+  // badges an admin allowed students to see, beside the counselor's name
+  const counselorSeals = d.counselor?.email ? (await loadStudentBadgeMap().catch(() => new Map())).get(d.counselor.email.toLowerCase()) : undefined;
   const docsLeft = d.cards.reduce((n, c) => n + (c.canUpload ? c.missing.length : 0), 0);
   const soonI = up && new Date(up.starts_at).getTime() - Date.now() < 3 * 864e5 ? up : null;
   const dl = d.cards.map((c) => ({ c, t: c.a.deadline ? new Date(c.a.deadline + 'T23:59:59').getTime() : 0 })).filter((x) => x.t > Date.now() && x.t - Date.now() < 90 * 864e5).sort((a, b) => a.t - b.t)[0];
@@ -121,7 +125,7 @@ export default async function StudentHome() {
           <>
             <div className="st-person" style={{ marginTop: 12 }}>
               <Avatar name={d.counselor.display} url={d.counselor.avatar_url} color={d.counselor.color} size={56} />
-              <div style={{ flex: 1, minWidth: 0 }}><b>{d.counselor.display}</b><small>{d.counselor.title}</small></div>
+              <div style={{ flex: 1, minWidth: 0 }}><b>{d.counselor.display}<Seals list={counselorSeals} size={16} max={3} /></b><small>{d.counselor.title}</small></div>
             </div>
             <CounselorActions appId={d.cards[0].folderApp.application_id} name={d.counselor.display} avatar={{ name: d.counselor.display, url: d.counselor.avatar_url, color: d.counselor.color }} />
           </>

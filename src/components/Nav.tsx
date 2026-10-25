@@ -30,6 +30,7 @@ const ITEMS = [
   { href: '/activity', label: 'Activity', icon: 'clock' },
   { href: '/drive', label: 'Drive matches', icon: 'link' },
   { href: '/team', label: 'Team', icon: 'user' },
+  { href: '/badges', label: 'Badges', icon: 'seal', adminOnly: true },
   { href: '/workflows', label: 'Workflows', icon: 'swap', adminOnly: true },
   { href: '/settings', label: 'Settings', icon: 'settings' },
 ];

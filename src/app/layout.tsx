@@ -16,6 +16,8 @@ import Bell from '@/components/Bell';
 import WorkspaceSwitcher from '@/components/WorkspaceSwitcher';
 import { workspacesFor } from '@/lib/workspace';
 import UserMenu from '@/components/UserMenu';
+import BadgeTips from '@/components/BadgeTips';
+import { badgesOf } from '@/lib/badgeData';
 import NavProgress from '@/components/NavProgress';
 import MobileMenu from '@/components/MobileMenu';
 import StaffTabs from '@/components/StaffTabs';
@@ -39,6 +41,7 @@ import './ios.css';
 import './stage.css';
 import './assign.css';
 import './reports.css';
+import './profile.css';
 import { cookies } from 'next/headers';
 import { COOKIE, parseTheme } from '@/lib/theme';
 import { site } from '@/lib/emailTemplate';
@@ -100,7 +103,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <div className="tag">More opportunities.<br />Brighter futures.</div>
             </aside>
             <div className="maincol">
-              <header className="topbar"><MobileMenu /><TopSearch /><div className="topright"><WorkspaceSwitcher list={(await workspacesFor(staff)).map((w) => ({ key: w.key, name: w.name }))} current={await currentWorkspace()} /><Bell staff={staff} /><UserMenu staff={staff} /></div></header>
+              <header className="topbar"><MobileMenu /><TopSearch /><div className="topright"><WorkspaceSwitcher list={(await workspacesFor(staff)).map((w) => ({ key: w.key, name: w.name }))} current={await currentWorkspace()} /><Bell staff={staff} /><UserMenu staff={staff} badges={await badgesOf(staff.email)} /></div></header>
               <main>{children}</main>
             </div>
             <StaffTabs role={staff.role} taskCount={taskCount} chatCount={chatCount} inboxCount={inboxCount} />
@@ -109,6 +112,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         {(staff || student) && <RealtimeNudge />}
         {(staff || student) && <CallOverlay />}
         {(staff || student) && <Haptics />}
+        {(staff || student) && <BadgeTips />}
         {(staff || student) && <ThemeColor />}
         {student ? <AppBadge count={studentUnread + studentNotices.filter((n) => !n.read && !n.done).length} /> : staff ? <AppBadge count={chatCount + inboxCount} /> : null}
         </CallProvider>

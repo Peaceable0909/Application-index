@@ -9,6 +9,8 @@ import { IN_PROGRESS, ago, describeActivity, initials, shortDate } from '@/lib/f
 import { statusTone } from '@/lib/ui';
 import { bulkRequestDocs, completeReminder, completeTask, grantCounselorAccess, revokeCounselorAccess, sendDigest, snoozeTask } from '@/app/actions';
 import Icon from './Icon';
+import { Seals } from './Seal';
+import { loadBadgeMap } from '@/lib/badgeData';
 import Btn from './Btn';
 import { firstWord, shownName } from '@/lib/profile';
 import Avatar from './Avatar';
@@ -27,6 +29,7 @@ export default async function CounselorBoard({ staff, ckey, mode, basePath, sp }
   const mine = rows.filter((r) => counselorKey(r.a.counselor) === ckey);
   const name = c?.name || mine[0]?.a.counselor || ckey;
   const ids = mine.map((r) => r.a.application_id);
+  const badges = (await loadBadgeMap()).get((mode === 'self' ? staff.email : c?.email || '').toLowerCase());
   const today = new Date().toISOString().slice(0, 10);
   const isFinal = (s: string | null) => !!s && FINAL_STATUSES.includes(s);
 
@@ -62,7 +65,7 @@ export default async function CounselorBoard({ staff, ckey, mode, basePath, sp }
           <Avatar name={mode === 'self' ? shownName(staff) : (access?.display_name || name)} url={mode === 'self' ? staff.avatar_url : access?.avatar_url} color={mode === 'self' ? staff.color : access?.color} size={76} />
           <div>
             {mode === 'self' && <div className="eyebrow">Welcome back, {firstWord(staff)}</div>}
-            <h1>{mode === 'self' ? 'Your students' : name}</h1>
+            <h1>{mode === 'self' ? 'Your students' : name}{mode === 'admin' && <Seals list={badges} size={22} max={5} />}</h1>
             <div className="meta">{mode === 'admin' ? `Counselor view${c?.email ? ` · ${c.email}` : ' · no email saved'}` : `${live.length} active student${live.length === 1 ? '' : 's'} assigned to you`}</div>
           </div>
         </div>

@@ -871,11 +871,16 @@ export async function saveProfile(f: FormData) {
   const color = s(f, 'color');
   const phone = clip(s(f, 'phone'), 30);
   if (phone && !/^[+\d][\d\s().-]{5,}$/.test(phone)) redirect('/profile?err=' + encodeURIComponent('That phone number doesn’t look right.'));
+  // role, bio, responsibilities and duties can be locked by an admin; a locked field is not on the form and keeps its stored value
+  const { profileTextPatch } = await import('@/lib/profileRules');
+  const { profileLocks } = await import('@/lib/profileLocks');
+  const { data: cur } = await admin().from('portal_staff').select('title, bio, responsibilities, duties, also_supports').eq('email', staff.email).maybeSingle();
+  const sent = (k: string) => (f.has(k) ? String(f.get(k) ?? '') : undefined);
+  const { patch } = profileTextPatch((cur || {}) as never, { title: sent('title'), bio: sent('bio'), responsibilities: sent('responsibilities'), duties: sent('duties'), also_supports: sent('also_supports') }, { role: staff.role, locks: await profileLocks() });
   const { error } = await admin().from('portal_staff').update({
     display_name: clip(s(f, 'display_name'), 60) || null,
-    title: clip(s(f, 'title'), 80) || null,
+    ...patch,
     phone: phone || null,
-    bio: s(f, 'bio').trim().slice(0, 400) || null,
     color: COLORS[color] ? color : 'navy',
     notify_email: f.get('notify_email') === 'on',
     updated_at: new Date().toISOString(),

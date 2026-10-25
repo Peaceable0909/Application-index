@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { Seals } from '@/components/Seal';
 import Avatar from '@/components/Avatar';
 import { loadPeople } from '@/lib/people';
 import { requireTeam } from '@/lib/auth';
@@ -38,7 +39,7 @@ export default async function Counselors({ searchParams }: { searchParams: Promi
           const last = (msgs || []).find((m) => m.counselor_name === c.name);
           return (
             <div key={c.id} className="card rise" style={{ '--i': i } as React.CSSProperties}>
-              <div className="who-c" style={{ marginBottom: 14 }}><Avatar name={c.name} url={people.get((c.email || '').toLowerCase())?.avatar_url} color={people.get((c.email || '').toLowerCase())?.color} size={44} /><div><b style={{ fontSize: 16 }}>{c.name}</b><div className="muted" style={{ fontSize: 12.5 }}>{c.active ? 'Active' : 'Inactive'}{last ? ` · last emailed ${ago(last.created_at)}` : ''}</div></div></div>
+              <div className="who-c" style={{ marginBottom: 14 }}><Avatar name={c.name} url={people.get((c.email || '').toLowerCase())?.avatar_url} color={people.get((c.email || '').toLowerCase())?.color} size={44} /><div><b style={{ fontSize: 16 }}>{c.name}<Seals list={people.get((c.email || '').toLowerCase())?.badges} size={16} max={4} /></b><div className="muted" style={{ fontSize: 12.5 }}>{c.active ? 'Active' : 'Inactive'}{last ? ` · last emailed ${ago(last.created_at)}` : ''}</div></div></div>
               <div className="grid g3" style={{ gap: 8, marginBottom: 14 }}>
                 <div><div className="stat-l">Students</div><div className="stat" style={{ fontSize: 24 }}>{mine.length}</div></div>
                 <div><div className="stat-l">Attention</div><div className={`stat ${attention ? 'warn' : ''}`} style={{ fontSize: 24 }}>{attention}</div></div>
