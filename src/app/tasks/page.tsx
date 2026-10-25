@@ -104,7 +104,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           <div className="card">
             <div className="filters" style={{ justifyContent: 'space-between', marginBottom: 10 }}>
               <h2 style={{ margin: 0 }}>AI overview</h2>
-              <form action={refreshOverview}><Btn className="ghost sm">Refresh</Btn></form>
+              <form action={refreshOverview}><Btn data-busy="Refreshing the overview…" className="ghost sm">Refresh</Btn></form>
             </div>
             {ai.data ? (
               <>

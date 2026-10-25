@@ -181,7 +181,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
               <MoveButton mode="one" id={id} current={{ name: app.name, school: app.school, programme: app.programme, status: app.status }} catalog={catalog} variant="menu" />
               {app.drive_folder_url && <a href={app.drive_folder_url} target="_blank"><Icon n="folder" /> Open Drive folder</a>}
               <Link href={tabHref('documents')}><Icon n="link" /> Manage Drive folders</Link>
-              {app.drive_folder_id && <form action={refreshDocuments}><input type="hidden" name="id" value={id} /><input type="hidden" name="returnTo" value={tabHref('documents')} /><button className="item"><Icon n="upload" /> Refresh from Drive</button></form>}
+              {app.drive_folder_id && <form action={refreshDocuments}><input type="hidden" name="id" value={id} /><input type="hidden" name="returnTo" value={tabHref('documents')} /><Btn className="item" data-busy="Reading the Drive folder…"><Icon n="upload" /> Refresh from Drive</Btn></form>}
             </div>
           </details>
         </div>
@@ -203,7 +203,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
             <input type="hidden" name="id" value={id} />
             <select name="status" defaultValue="New Lead">{STATUSES.map((s) => <option key={s}>{s}</option>)}</select>
             <select name="counselor" defaultValue={app.counselor || ''}><option value="">Counselor…</option>{(counselors || []).filter((c) => c.active).map((c) => <option key={c.name}>{c.name}</option>)}</select>
-            <Btn className="gold">Move to master sheet</Btn><span className="muted">Adds a row at the bottom of Sheet1.</span>
+            <Btn data-busy="Adding the student to Sheet1…" className="gold">Move to master sheet</Btn><span className="muted">Adds a row at the bottom of Sheet1.</span>
           </form>
         </div>
       )}
@@ -449,7 +449,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
             {(app.drive_folder_id || app.workspace !== 'uk') && (
               <div className="filters" style={{ marginTop: 16 }}>
                 <form action={uploadDocument} className="filters"><input type="hidden" name="id" value={id} /><input type="hidden" name="returnTo" value={ret('documents')} />
-                  <DocTypeSelect types={DOC_TYPES} defaultValue={missing[0] || 'Other'} compact /><input type="file" name="file" required /><Btn>Upload to Drive</Btn></form>
+                  <DocTypeSelect types={DOC_TYPES} defaultValue={missing[0] || 'Other'} compact /><input type="file" name="file" required /><Btn data-busy="Uploading the document to Drive…">Upload to Drive</Btn></form>
                 <form action={refreshDocuments}><input type="hidden" name="id" value={id} /><input type="hidden" name="returnTo" value={ret('documents')} /><Btn className="ghost">Refresh from Drive</Btn></form>
               </div>
             )}
@@ -532,7 +532,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
                   <select name="tone" defaultValue={draft?.tone || 'friendly'}>{Object.entries(TONES).map(([k]) => <option key={k} value={k}>{k[0].toUpperCase() + k.slice(1)}</option>)}</select>
                 </div>
                 <input name="instruction" placeholder="Optional: anything specific to include (don’t paste personal details)" className="wide" maxLength={400} />
-                <div className="filters"><Btn className="primary">{draft ? 'Redraft' : 'Draft email'}</Btn><span className="muted" style={{ fontSize: 12.5 }}>Drafts only — you review and send. The AI never sees the student’s name, email or phone.</span></div>
+                <div className="filters"><Btn data-busy="Writing the email draft…" className="primary">{draft ? 'Redraft' : 'Draft email'}</Btn><span className="muted" style={{ fontSize: 12.5 }}>Drafts only — you review and send. The AI never sees the student’s name, email or phone.</span></div>
               </form>
             </div>
             <div className="card" style={{ marginTop: 16 }}>
@@ -549,7 +549,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
                 {!counselor?.email && app.counselor && <p className="err" style={{ margin: 0 }}>No email saved for {app.counselor}. Add it under <Link href="/counselors">Counselors</Link>.</p>}
                 <input name="subject" defaultValue={defaultSubject} className="wide" required />
                 <textarea name="body" defaultValue={defaultBody} style={{ minHeight: 200 }} required />
-                <div className="filters"><Btn>Send email</Btn><span className="muted">Sent from your admissions Gmail; replies go to {staff.email}.</span></div>
+                <div className="filters"><Btn data-busy="Sending the email…">Send email</Btn><span className="muted">Sent from your admissions Gmail; replies go to {staff.email}.</span></div>
               </form>
             </div>
             </div>
@@ -594,7 +594,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
                 <label className="grid" style={{ gap: 6 }}><span className="muted">OPP ID</span><input name="oppId" defaultValue={app.opp_id || ''} placeholder="OPP ID-60000-00000" /></label>
                 <label className="grid" style={{ gap: 6 }}><span className="muted">Payment</span><input name="payment" list="pay" defaultValue={app.payment || ''} placeholder="e.g. Paid" /><datalist id="pay"><option value="Paid" /><option value="Pending" /></datalist></label>
                 <label className="grid" style={{ gap: 6 }}><span className="muted">Book for interview</span><input name="interview" list="intv" defaultValue={app.interview || ''} placeholder="e.g. To Be Booked for interview" /><datalist id="intv"><option value="To Be Booked for interview" /><option value="Booked" /><option value="Interview taken" /></datalist></label>
-                <div><Btn>Save to Regent Only</Btn></div>
+                <div><Btn data-busy="Updating the Regent sheet…">Save to Regent Only</Btn></div>
               </form>
             </div>
             <div className="card">

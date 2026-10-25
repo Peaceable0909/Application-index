@@ -52,7 +52,7 @@ export default async function Counselors({ searchParams }: { searchParams: Promi
               <div className="filters" style={{ marginTop: 12 }}>
                 <Link href={`/counselors/${encodeURIComponent(c.name_key)}`} className="btn sm"><Icon n="eye" size={14} /> Open board</Link>
                 <Link href={`/applications?counselor=${encodeURIComponent(c.name)}`} className="btn ghost sm"><Icon n="users" size={14} /> Students</Link>
-                <form action={sendDigest}><input type="hidden" name="id" value={c.id} /><Btn className="sm" disabled={!c.email || !attention}><Icon n="send" size={14} /> Send digest</Btn></form>
+                <form action={sendDigest}><input type="hidden" name="id" value={c.id} /><Btn data-busy="Emailing the counselor…" className="sm" disabled={!c.email || !attention}><Icon n="send" size={14} /> Send digest</Btn></form>
               </div>
             </div>
           );

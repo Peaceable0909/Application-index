@@ -66,7 +66,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         </div>
         <div className="filters">
           <span className="muted">{new Date().toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</span>
-          <form action={syncNow} className="filters"><input type="hidden" name="returnTo" value="/" /><Btn className="ghost sm">Sync now</Btn></form>
+          <form action={syncNow} className="filters"><input type="hidden" name="returnTo" value="/" /><Btn data-busy="Syncing with the sheet and Drive…" className="ghost sm">Sync now</Btn></form>
         </div>
       </div>
       {sp.msg && <div className="card ok">{sp.msg}</div>}

@@ -44,7 +44,7 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
           <Btn className="ghost wide-btn">Sign in with password</Btn>
           <details className="forgot"><summary>Forgot your password?</summary>
             <p className="muted" style={{ margin: '8px 0' }}>Type your email above, then press the button. We’ll email you a link that signs you in so you can set a new one.</p>
-            <button type="submit" formAction={sendPasswordReset} formNoValidate className="btn ghost sm">Email me a link</button>
+            <Btn type="submit" formAction={sendPasswordReset} formNoValidate className="btn ghost sm" data-busy="Sending the link…">Email me a link</Btn>
           </details>
           {notice && <div className="ok" style={{ padding: 10, borderRadius: 10 }}>{notice}</div>}
           {error && <div className="err">{error}<div style={{ marginTop: 6, fontSize: 12.5 }}>This page is for the admissions team. Students sign in at the <a href="/student/login">student portal</a>.</div></div>}

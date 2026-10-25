@@ -52,7 +52,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
       <div className="card">
         <h2>Apps Script connection</h2>
         <p className="muted" style={{ marginTop: 0 }}>Checks that the portal can reach your Google Apps Script web app (the link behind the sheets, Drive and AI features).</p>
-        <form action={testConnection}><Btn className="ghost">Test connection</Btn></form>
+        <form action={testConnection}><Btn data-busy="Testing the connection…" className="ghost">Test connection</Btn></form>
       </div>
 
       <div className="card">

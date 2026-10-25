@@ -65,7 +65,7 @@ export default function DocViewer({ appId, docs, missing, initial, canUpload, sc
             <input type="hidden" name="id" value={appId} /><input type="hidden" name="returnTo" value={returnTo} />
             <DocTypeSelect types={ALL_DOC_TYPES} defaultValue={missing[0] || 'Other'} />
             <input type="file" name="file" required />
-            <Btn>Upload to Drive</Btn>
+            <Btn data-busy="Uploading the document to Drive…">Upload to Drive</Btn>
           </form>
         )}
       </div>

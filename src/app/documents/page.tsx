@@ -91,7 +91,7 @@ export default async function Documents({ searchParams }: { searchParams: Promis
           <input type="hidden" name="returnTo" value="/documents" />
           <select name="id" required style={{ minWidth: 240 }}><option value="">Choose a student…</option>{uploadable.map((r) => <option key={r.a.application_id} value={r.a.application_id}>{r.a.name} — {r.a.school || ''}</option>)}</select>
           <DocTypeSelect types={DOC_TYPES} defaultValue="CV" compact />
-          <input type="file" name="file" required /><Btn>Upload to Drive</Btn>
+          <input type="file" name="file" required /><Btn data-busy="Uploading the document to Drive…">Upload to Drive</Btn>
         </form>
         <p className="muted" style={{ marginBottom: 0 }}>Only students with a linked Drive folder are listed. Link folders under <Link href="/drive">Drive matches</Link>.</p>
       </div>

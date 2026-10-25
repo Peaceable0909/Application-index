@@ -7,6 +7,7 @@ import { currentWorkspace } from '@/lib/workspace';
 import { schoolKey } from '@/lib/docs';
 import { CAS_STATUSES, STATUSES, VISA_STATUSES } from '@/lib/constants';
 import { slug } from '@/lib/stageEngine';
+import { isStaleMove } from '@/lib/doubleSubmit';
 import { STUDENT_NOTES, WORKFLOW_TEMPLATES } from '@/lib/stageTemplates';
 
 // Admin only: change a school's stages and what each stage asks for. Every change is limited to the workflow named in the form,
@@ -170,6 +171,7 @@ export async function shiftStage(f: FormData) {
   const wf = await ownWorkflow(s(f, 'wf')), dir = s(f, 'dir') === 'up' ? -1 : 1;
   const { data: all } = await admin().from('portal_stages').select('id').eq('workflow_id', wf.id).order('position');
   const order = (all || []).map((x) => x.id as string), i = order.indexOf(s(f, 'stage')), j = i + dir;
+  if (isStaleMove(s(f, 'pos'), i)) back(wf.school_key, 'That stage had already moved, so it was not moved again. The list below is up to date.');   // a repeated click
   if (i < 0 || j < 0 || j >= order.length) back(wf.school_key, 'It is already at the end.');
   [order[i], order[j]] = [order[j], order[i]];
   await renumber(wf.id, order);

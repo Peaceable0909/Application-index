@@ -1,6 +1,8 @@
 'use client';
 import { useState } from 'react';
 import Icon from './Icon';
+import Btn from './Btn';
+import PendingNote from './PendingNote';
 import type { Condition } from '@/lib/offer';
 
 type Props = { action: (f: FormData) => void; id: string; offer: Record<string, string | boolean | null>; conditions: Condition[]; docs: { id: string; name: string; type: string }[]; casStatuses: readonly string[]; visaStatuses: readonly string[] };
@@ -8,6 +10,7 @@ type Props = { action: (f: FormData) => void; id: string; offer: Record<string, 
 export default function OfferForm({ action, id, offer, conditions: initial, docs, casStatuses, visaStatuses }: Props) {
   const [conds, setConds] = useState<Condition[]>(initial);
   const [draft, setDraft] = useState('');
+  const [notify, setNotify] = useState(false);
   const v = (k: string) => (offer[k] as string) || '';
   const add = () => { const t = draft.trim(); if (!t) return; setConds((c) => [...c, { text: t, met: false }]); setDraft(''); };
   return (
@@ -57,8 +60,9 @@ export default function OfferForm({ action, id, offer, conditions: initial, docs
           <h2><Icon n="user" size={17} /> What the student sees</h2>
           <label className="switch-row" style={{ marginTop: 0, borderTop: 'none', paddingTop: 0 }}><span>Show this to the student in their portal<small className="muted">Offer type, conditions, CAS and visa progress, dates and the offer letter.</small></span><input type="checkbox" name="visible" defaultChecked={offer.visible_to_student !== false} /></label>
           <label style={{ display: 'block', marginTop: 14 }}>Note for the student (optional)<textarea name="student_note" defaultValue={v('student_note')} rows={3} maxLength={600} placeholder="e.g. Please upload your final transcript by 20 November." style={{ width: '100%', height: 'auto', padding: '10px 12px', marginTop: 6 }} /></label>
-          <label className="switch-row"><span>Email the student about this update<small className="muted">One branded email with a link to their portal.</small></span><input type="checkbox" name="notify" /></label>
-          <div className="filters" style={{ marginTop: 16 }}><button className="btn">Save offer &amp; visa</button></div>
+          <label className="switch-row"><span>Email the student about this update<small className="muted">One branded email with a link to their portal.</small></span><input type="checkbox" name="notify" checked={notify} onChange={(e) => setNotify(e.target.checked)} /></label>
+          <div className="filters" style={{ marginTop: 16 }}><Btn className="btn" data-busy={notify ? 'Saving and emailing the student…' : 'Saving the offer and visa…'}>Save offer &amp; visa</Btn></div>
+          <PendingNote title={notify ? 'Saving, then emailing the student…' : 'Saving the offer and visa details…'}>{notify ? 'The student gets one email with a link to their portal, and a notice there.' : 'This only takes a moment.'}</PendingNote>
         </div>
       </div>
     </form>

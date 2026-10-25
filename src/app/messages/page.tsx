@@ -39,7 +39,7 @@ export default async function Messages({ searchParams }: { searchParams: Promise
             </div>
             <input name="subject" placeholder="Subject" className="wide" required />
             <textarea name="body" placeholder="Message" style={{ minHeight: 180 }} required />
-            <div className="filters"><Btn>Send</Btn><Link href="/messages" className="muted">Cancel</Link></div>
+            <div className="filters"><Btn data-busy="Sending the email…">Send</Btn><Link href="/messages" className="muted">Cancel</Link></div>
           </form>
         </div>
       )}

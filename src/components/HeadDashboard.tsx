@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import Btn from './Btn';
 import Icon from './Icon';
-import { assignApp, assignSelected, routeWaiting } from '@/app/assignActions';
+import { assignSelected, routeWaiting } from '@/app/assignActions';
+import PickButton from './PickButton';
 import type { HeadApp, HeadBoard } from '@/lib/headBoard';
 import { actorName, LOG_LABEL, REVIEW_LABEL } from '@/lib/assignText';
 import { ago, shortDate } from '@/lib/format';
@@ -86,7 +87,7 @@ export default function HeadDashboard({ board, counselors, scopeText, isAdmin, f
                         <td data-l="Candidates">
                           {a.candidates.length ? (
                             <div className="as-cand">{a.candidates.map((k) => (
-                              <button key={k.counselor_key} className="btn sm" type="submit" form={`pick-${a.id}-${k.counselor_key}`}>{`Give to ${k.name}${k.role === 'backup' ? ' (backup)' : ''}`}</button>
+                              <PickButton key={k.counselor_key} id={a.id} counselor={k.counselor_key} label={`Give to ${k.name}${k.role === 'backup' ? ' (backup)' : ''}`} />
                             ))}</div>
                           ) : <span className="muted">—</span>}
                         </td>
@@ -101,13 +102,6 @@ export default function HeadDashboard({ board, counselors, scopeText, isAdmin, f
                 <Btn className="primary sm" data-busy="Assigning…"><Icon n="check" size={14} /> Assign ticked</Btn>
               </div>
             </form>
-            {/* one small form per possible counselor, kept outside the big form (forms cannot be nested) and wired to the buttons by id */}
-              {waiting.flatMap((a) => a.candidates.map((k) => (
-                <form key={`${a.id}-${k.counselor_key}`} id={`pick-${a.id}-${k.counselor_key}`} action={assignApp} hidden>
-                  <input type="hidden" name="id" value={a.id} /><input type="hidden" name="counselor" value={k.counselor_key} />
-                  <input type="hidden" name="reason" value="Chosen between equal counselors" /><input type="hidden" name="returnTo" value="/head" />
-                </form>
-              )))}
             </>
           ) : <div className="as-empty"><Icon n="check-circle" size={22} /><p style={{ margin: '6px 0 0' }}>Nothing is waiting. Every active application has a counselor.</p></div>}
         </div>

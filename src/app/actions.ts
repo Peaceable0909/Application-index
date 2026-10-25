@@ -32,7 +32,7 @@ import { checkMeetingUrl } from '@/lib/meet';
 import { appsForEmail, currentStudent, isStudentEmail } from '@/lib/student';
 import { runBackup } from '@/lib/backup';
 import { notifyAssigned } from '@/lib/notify';
-import { splitDuplicates } from '@/lib/slotGuard';
+import { isRecent, justDid, splitDuplicates } from '@/lib/doubleSubmit';
 import { reassign, reassignMany, routeApplications } from '@/lib/assignCore';
 import { notifyOwnerByKey, notifyRouting } from '@/lib/assignNotify';
 import { after } from 'next/server';
@@ -99,9 +99,11 @@ export async function sendPasswordReset(f: FormData) {
   const generic = '/login?notice=' + encodeURIComponent('If that email has portal access, a link to set a new password is on its way. It can take a minute.');
   if (!EMAIL_RE.test(email)) redirect('/login?error=' + encodeURIComponent('Enter your email first.'));
   const { data: row } = await admin().from('portal_staff').select('email').eq('email', email).maybeSingle();
-  if (row) {
+  const jar = await cookies(), tag = createHash('sha1').update(email).digest('hex').slice(0, 16);
+  if (row && !justDid(jar.get('pw_reset_last')?.value, tag)) {   // a second tap within a minute does not send a second email (the message shown is the same either way)
     const h = await headers(), host = h.get('x-forwarded-host') || h.get('host'), proto = h.get('x-forwarded-proto') || 'https';
-    (await cookies()).set('pw_reset', '1', { path: '/', maxAge: 3600, httpOnly: true, secure: true, sameSite: 'lax' });
+    jar.set('pw_reset', '1', { path: '/', maxAge: 3600, httpOnly: true, secure: true, sameSite: 'lax' });
+    jar.set('pw_reset_last', `${tag}:${Date.now()}`, { path: '/', maxAge: 120, httpOnly: true, secure: true, sameSite: 'lax' });
     await (await sessionClient()).auth.resetPasswordForEmail(email, { redirectTo: `${proto}://${host}/auth/callback` });
   }
   redirect(generic);
@@ -1224,7 +1226,10 @@ export async function saveOffer(f: FormData) {
   let extra = '';
   if (f.get('notify') === 'on') {
     const { data: a } = await db.from('portal_applications').select('name, email, preferred_name, counselor').eq('application_id', id).single();
-    if (a?.email && EMAIL_RE.test(a.email) && row.visible_to_student) {
+    // the same update emailed a moment ago (a repeated click, a second tab) is not sent again
+    const { data: lastMail } = a?.email ? await db.from('portal_messages').select('created_at').eq('application_id', id).eq('to_kind', 'student').eq('subject', 'An update on your application').order('created_at', { ascending: false }).limit(1).maybeSingle() : { data: null };
+    if (isRecent(lastMail?.created_at)) extra = ' The student was already emailed a moment ago, so a second email was not sent.';
+    else if (a?.email && EMAIL_RE.test(a.email) && row.visible_to_student) {
       try {
         const first = (a.preferred_name || a.name).split(/[\s,]+/)[0];
         const bits = [row.offer_type ? `${row.offer_type} offer` : '', row.cas_status && row.cas_status !== 'Not started' ? `CAS: ${row.cas_status}` : '', row.visa_status && row.visa_status !== 'Not started' ? `Visa: ${row.visa_status}` : ''].filter(Boolean);

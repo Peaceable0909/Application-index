@@ -1,6 +1,7 @@
 'use client';
 import { useRef, useState } from 'react';
 import Icon from './Icon';
+import Btn from './Btn';
 import Avatar from './Avatar';
 import { COLORS, gradient, shownName } from '@/lib/profile';
 
@@ -55,7 +56,7 @@ export default function ProfileEditor({ init, save, upload, remove, roleName }: 
           </div>
           <div className="filters" style={{ marginTop: 14 }}>
             <button type="button" className="btn sm" onClick={() => input.current?.click()} disabled={busy}><Icon n="upload" size={14} /> {init.avatar_url ? 'Change photo' : 'Upload photo'}</button>
-            {init.avatar_url && <form action={remove}><button className="btn ghost sm"><Icon n="trash" size={14} /> Remove</button></form>}
+            {init.avatar_url && <form action={remove}><Btn className="btn ghost sm" data-busy="Removing the photo…"><Icon n="trash" size={14} /> Remove</Btn></form>}
             <span className="muted" style={{ fontSize: 12.5 }}>Square photos look best. It’s resized for you.</span>
           </div>
         </div>
@@ -83,7 +84,7 @@ export default function ProfileEditor({ init, save, upload, remove, roleName }: 
             </div>
           </div>
           <label className="switch-row" style={{ marginTop: 18 }}><span>Email me about new chat messages and assigned students<small className="muted">Off by default. If you turn it on: only when you’re away from the portal, at most once per chat every 3 hours, and never more than 3 a day.</small></span><input type="checkbox" name="notify_email" defaultChecked={init.notify_email} /></label>
-          <div className="filters" style={{ marginTop: 18 }}><button className="btn">Save profile</button></div>
+          <div className="filters" style={{ marginTop: 18 }}><Btn className="btn" data-busy="Saving your profile…">Save profile</Btn></div>
         </form>
       </div>
 

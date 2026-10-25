@@ -29,7 +29,7 @@ export default async function CommandCentre({ staff, rows, all }: { staff: Staff
           <div className="filters" style={{ justifyContent: 'space-between', marginBottom: 10 }}>
             <h2 style={{ margin: 0 }}><span className="spark" aria-hidden><Icon n="spark" size={17} /></span> AI overview <span className="badge blue plain" style={{ marginLeft: 6 }}>beta</span></h2>
             <div className="filters" style={{ gap: 6 }}>
-              <form action={refreshOverview}><input type="hidden" name="returnTo" value="/" /><Btn className="ghost sm">Refresh</Btn></form>
+              <form action={refreshOverview}><input type="hidden" name="returnTo" value="/" /><Btn data-busy="Refreshing the overview…" className="ghost sm">Refresh</Btn></form>
               <form action={markSeen}><input type="hidden" name="returnTo" value="/" /><Btn className="ghost sm">Mark as seen</Btn></form>
             </div>
           </div>

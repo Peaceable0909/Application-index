@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Icon from './Icon';
+import Btn from './Btn';
 import { addBrainNote } from '@/app/brainActions';
 
 type S = { id: string; name: string; school: string | null; programme: string | null };
@@ -44,7 +45,7 @@ export default function BrainTest({ on }: { on: boolean }) {
           <small className="muted" style={{ marginTop: -4 }}>Wrong or missing something? Write the right answer here and save it as a note. The Brain will use it from now on.</small>
           <input name="title" required minLength={2} maxLength={80} defaultValue={question.slice(0, 80)} aria-label="Note title" />
           <textarea name="body" rows={3} maxLength={1500} required defaultValue={res.reply} aria-label="Note" />
-          <div><button className="btn ghost">Save as a note</button></div>
+          <div><Btn className="btn ghost" data-busy="Saving the note…">Save as a note</Btn></div>
         </form>
       )}
     </div>

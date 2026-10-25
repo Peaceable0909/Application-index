@@ -58,7 +58,7 @@ function ReqForm({ wf, stage, r, conds, conditionalStages }: { wf: Workflow; sta
       </div>
       <div className="filters">
         <Btn className={isNew ? 'primary sm' : 'sm'}>{isNew ? 'Add requirement' : 'Save'}</Btn>
-        {!isNew && <button formAction={removeRequirement} className="btn ghost sm" formNoValidate>Remove</button>}
+        {!isNew && <Btn formAction={removeRequirement} className="btn ghost sm" formNoValidate>Remove</Btn>}
       </div>
     </form>
   );
@@ -150,8 +150,8 @@ export default async function Workflows({ searchParams }: { searchParams: Promis
                 </summary>
                 <div className="sg-form">
                   <div className="filters">
-                    <form action={shiftStage}><input type="hidden" name="wf" value={wf.id} /><input type="hidden" name="stage" value={st.id} /><input type="hidden" name="dir" value="up" /><button className="btn ghost sm" disabled={i === 0} aria-label={`Move ${st.name} up`}><Icon n="up" size={13} /> Up</button></form>
-                    <form action={shiftStage}><input type="hidden" name="wf" value={wf.id} /><input type="hidden" name="stage" value={st.id} /><input type="hidden" name="dir" value="down" /><button className="btn ghost sm" disabled={i === wf.stages.length - 1} aria-label={`Move ${st.name} down`}><Icon n="down" size={13} /> Down</button></form>
+                    <form action={shiftStage}><input type="hidden" name="wf" value={wf.id} /><input type="hidden" name="stage" value={st.id} /><input type="hidden" name="dir" value="up" /><input type="hidden" name="pos" value={i} /><Btn className="btn ghost sm" disabled={i === 0} aria-label={`Move ${st.name} up`}><Icon n="up" size={13} /> Up</Btn></form>
+                    <form action={shiftStage}><input type="hidden" name="wf" value={wf.id} /><input type="hidden" name="stage" value={st.id} /><input type="hidden" name="dir" value="down" /><input type="hidden" name="pos" value={i} /><Btn className="btn ghost sm" disabled={i === wf.stages.length - 1} aria-label={`Move ${st.name} down`}><Icon n="down" size={13} /> Down</Btn></form>
                   </div>
                   <form action={saveStage} className="sg-form" style={{ padding: 0 }}>
                     <input type="hidden" name="wf" value={wf.id} /><input type="hidden" name="stage" value={st.id} />

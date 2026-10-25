@@ -2,6 +2,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Icon from './Icon';
+import Btn from './Btn';
 import { addQuestion, deleteQuestion, moveQuestion, toggleQuestion, updateQuestion } from '@/app/credibility-actions';
 import { CATEGORIES, CATEGORY_LABEL, type Question } from '@/lib/credShared';
 
@@ -31,7 +32,7 @@ export default function CredQuestionAdmin({ questions }: { questions: Question[]
         <span className="muted">{questions.filter((q) => q.active).length} active of {questions.length}. Students see active questions in this order.</span>
         <button className="btn" onClick={() => setAdding(!adding)}><Icon n="user-plus" size={15} /> {adding ? 'Close' : 'Add question'}</button>
       </div>
-      {adding && <form action={addQuestion} className="card"><h2 style={{ marginTop: 0 }}>New question</h2><Fields /><div className="filters" style={{ marginTop: 12 }}><button className="btn">Add question</button><button type="button" className="btn ghost" onClick={() => setAdding(false)}>Cancel</button></div></form>}
+      {adding && <form action={addQuestion} className="card"><h2 style={{ marginTop: 0 }}>New question</h2><Fields /><div className="filters" style={{ marginTop: 12 }}><Btn className="btn">Add question</Btn><button type="button" className="btn ghost" onClick={() => setAdding(false)}>Cancel</button></div></form>}
       {questions.length === 0 && <div className="card muted">No questions yet. Add the first one.</div>}
       {questions.map((q, i) => (
         <div key={q.id} className="card" style={{ opacity: q.active ? 1 : 0.62, padding: 16 }}>
@@ -58,7 +59,7 @@ export default function CredQuestionAdmin({ questions }: { questions: Question[]
               <button className="btn ghost sm" style={{ color: 'var(--red)' }} disabled={pending} onClick={() => { if (confirm('Delete this question? Students’ past answers to it are kept in their history.')) run(() => deleteQuestion(q.id)); }}><Icon n="trash" size={14} /> Delete</button>
             </div>
           </div>
-          {edit === q.id && <form action={updateQuestion} style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--line)' }}><input type="hidden" name="id" value={q.id} /><Fields q={q} /><div className="filters" style={{ marginTop: 12 }}><button className="btn">Save changes</button></div></form>}
+          {edit === q.id && <form action={updateQuestion} style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--line)' }}><input type="hidden" name="id" value={q.id} /><Fields q={q} /><div className="filters" style={{ marginTop: 12 }}><Btn className="btn">Save changes</Btn></div></form>}
         </div>
       ))}
     </div>

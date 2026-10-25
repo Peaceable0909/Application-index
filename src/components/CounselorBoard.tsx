@@ -71,7 +71,7 @@ export default async function CounselorBoard({ staff, ckey, mode, basePath, sp }
             {access?.role === 'counselor'
               ? <><span className="badge plain green">Has portal access</span><form action={revokeCounselorAccess}><input type="hidden" name="id" value={c.id} /><Btn className="ghost sm">Remove access</Btn></form></>
               : <form action={grantCounselorAccess}><input type="hidden" name="id" value={c.id} /><Btn className="ghost sm" disabled={!c.email}><Icon n="user-plus" size={14} /> Give portal access</Btn></form>}
-            <form action={sendDigest}><input type="hidden" name="id" value={c.id} /><Btn className="sm" disabled={!c.email || !attention.length}><Icon n="send" size={14} /> Send digest</Btn></form>
+            <form action={sendDigest}><input type="hidden" name="id" value={c.id} /><Btn data-busy="Emailing the counselor…" className="sm" disabled={!c.email || !attention.length}><Icon n="send" size={14} /> Send digest</Btn></form>
           </div>
         )}
       </div>

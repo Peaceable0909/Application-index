@@ -47,7 +47,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         <h1>Applications</h1>
         <div className="filters">
           <Link href="/applications/new" className="btn primary"><Icon n="user-plus" size={15} /> Add student</Link>
-          <form action={syncNow} className="filters"><input type="hidden" name="returnTo" value="/applications" /><label className="muted"><input type="checkbox" name="full" value="1" /> full</label><Btn className="ghost">Sync now</Btn></form>
+          <form action={syncNow} className="filters"><input type="hidden" name="returnTo" value="/applications" /><label className="muted"><input type="checkbox" name="full" value="1" /> full</label><Btn data-busy="Syncing with the sheet and Drive…" className="ghost">Sync now</Btn></form>
         </div>
       </div>
       <p className="sub">{filtered.length === base.length ? `${base.length} students` : `${filtered.length} of ${base.length} students`} across both sheets.</p>
