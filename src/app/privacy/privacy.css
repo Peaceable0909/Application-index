@@ -1,0 +1,88 @@
+/* The public privacy policy (/privacy). It follows the portal's own look (light, soft or dark) through the shared colour variables, so it reads the same for a visitor, a student and a team member. */
+main:has(> .pp-open) { padding: 0 !important; max-width: none !important; }
+/* the portal's own blue and grey are a little too pale for a page of small reading text, so this page uses firmer ones */
+.pp { --pp-link: #0b57d0; --pp-muted: #566074; --pp-ok: var(--green-ink); color: var(--text); }
+:root[data-theme="dark"] .pp { --pp-link: #9dbcff; --pp-muted: #b0bad0; }
+.pp *, .pp *::before, .pp *::after { box-sizing: border-box; }
+.pp a { color: var(--pp-link); text-decoration: underline; text-underline-offset: 3px; }
+.pp a:focus-visible { outline: 3px solid var(--pp-link); outline-offset: 3px; border-radius: 4px; }
+
+.pp-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 68px; padding: 0 clamp(16px, 4vw, 40px); background: var(--card); border-bottom: 1px solid var(--line); }
+.pp-top a, .pp-toc a { text-decoration: none; }
+.pp-signin { display: inline-flex; white-space: nowrap; align-items: center; height: 40px; padding: 0 18px; border-radius: 999px; border: 1px solid var(--line-2); font-weight: 600; font-size: 14px; color: var(--ink) !important; transition: background .2s, border-color .2s; }
+.pp-signin:hover { background: var(--tint); border-color: var(--pp-link); }
+
+.pp-wrap { max-width: 800px; margin: 0 auto; padding: clamp(24px, 5vw, 56px) clamp(16px, 4vw, 24px) 64px; animation: pp-rise .6s var(--ease) backwards; }
+.pp-open .pp-wrap { padding-top: clamp(28px, 6vw, 64px); }
+
+.pp-head { margin-bottom: 26px; }
+.pp-back { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 20px; font-weight: 600; font-size: 14px; }
+.pp-back:hover { text-decoration-thickness: 2px; }
+.pp-head h1 { margin: 0; font: 400 clamp(38px, 7vw, 56px)/1.04 var(--font-display), Georgia, serif; letter-spacing: -.01em; color: var(--ink); }
+.pp-head p { margin: 12px 0 0; max-width: 56ch; font-size: 16.5px; line-height: 1.55; color: var(--pp-muted); }
+.pp-updated { display: inline-block; margin-top: 16px; padding: 5px 12px; border-radius: 999px; background: var(--blue-soft); color: var(--ink); font-size: 12.5px; font-weight: 600; }
+
+.pp-card { background: var(--card); border: 1px solid var(--line); border-radius: 24px; box-shadow: var(--shadow); padding: clamp(20px, 4vw, 40px); }
+
+.pp-short { padding: clamp(16px, 3vw, 24px); border-radius: 18px; background: var(--tint); border: 1px solid var(--line); }
+.pp-short h2 { margin: 0 0 12px; font-size: 17px; }
+.pp-short ul { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.pp-short li { display: flex; gap: 10px; align-items: flex-start; font-size: 15px; line-height: 1.5; }
+.pp-short li svg { flex: none; margin-top: 3px; color: var(--pp-ok); }
+
+.pp-toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0 6px; padding: 0; list-style: none; counter-reset: pvt; }
+.pp-toc li { counter-increment: pvt; }
+.pp-toc a { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 14px 0 10px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--card); font-size: 13.5px; font-weight: 550; color: var(--ink); transition: background .2s, border-color .2s, transform .25s var(--ease); }
+.pp-toc a::before { content: counter(pvt); display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--blue-soft); color: var(--ink); font-size: 11.5px; font-weight: 700; }
+.pp-toc a:hover { background: var(--tint); border-color: var(--pp-link); transform: translateY(-1px); }
+
+.pp section { margin-top: 34px; scroll-margin-top: 84px; }
+.pp section h2 { display: flex; align-items: center; gap: 12px; margin: 0 0 12px; font: 650 21px/1.25 var(--font-ui); letter-spacing: -.015em; color: var(--ink); }
+.pp section h2 span { flex: none; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 10px; background: var(--ink); color: var(--card); font-size: 14px; font-weight: 700; }
+.pp section p, .pp-list { margin: 0 0 12px; font-size: 15.5px; line-height: 1.65; }
+.pp section p strong, .pp-list strong { color: var(--ink); }
+.pp-list { padding-left: 0; list-style: none; display: grid; gap: 9px; }
+.pp-list li { position: relative; padding-left: 22px; }
+.pp-list li::before { content: ''; position: absolute; left: 4px; top: .68em; width: 7px; height: 7px; border-radius: 50%; background: var(--pp-link); }
+
+.pp-table { margin: 14px 0 4px; overflow-x: auto; border: 1px solid var(--line); border-radius: 16px; -webkit-overflow-scrolling: touch; }
+.pp-table:focus-visible { outline: 3px solid var(--pp-link); outline-offset: 2px; }
+.pp-table table { width: 100%; min-width: 600px; border-collapse: collapse; font-size: 14px; line-height: 1.5; }
+.pp-table th, .pp-table td { padding: 12px 14px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+.pp-table thead th { background: var(--tint); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--pp-muted); }
+.pp-table tbody th { width: 24%; font-weight: 650; text-transform: none; letter-spacing: 0; font-size: 14px; color: var(--ink); background: transparent; }
+.pp-table tbody tr:last-child th, .pp-table tbody tr:last-child td { border-bottom: none; }
+
+.pp-contact { display: grid; gap: 4px; margin-top: 20px; padding: 18px 20px; border-radius: 18px; background: var(--navy); color: #d6def2; font-size: 15px; line-height: 1.5; }
+.pp-contact strong { color: #fff; font-size: 16px; }
+.pp-contact a { color: #fff; font-weight: 600; }
+
+.pp-foot { margin-top: 26px; text-align: center; font-size: 13px; color: var(--pp-muted); }
+
+@keyframes pp-rise { from { opacity: 0; transform: translateY(14px); } }
+@media (max-width: 640px) {
+  /* a table is hard to read sideways on a phone, so each row becomes its own small card */
+  .pp-table { overflow: visible; border: none; border-radius: 0; }
+  .pp-table table { display: block; min-width: 0; }
+  .pp-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .pp-table tbody { display: grid; gap: 10px; }
+  .pp-table tbody tr { display: block; padding: 12px 14px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--tint); }
+  .pp-table tbody th, .pp-table tbody td { display: block; width: auto; padding: 0; border: 0; }
+  .pp-table tbody th { font-size: 15px; }
+  .pp-table tbody td { margin-top: 8px; }
+  .pp-table tbody td::before { content: attr(data-label); display: block; margin-bottom: 1px; font-size: 11.5px; font-weight: 650; text-transform: uppercase; letter-spacing: .06em; color: var(--pp-muted); }
+}
+@media (max-width: 560px) {
+  .pp section h2 { font-size: 19px; }
+  .pp-toc a { font-size: 13px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pp-wrap { animation: none; }
+  .pp-toc a { transition: none; }
+  .pp-toc a:hover { transform: none; }
+}
+@media print {
+  .pp-top, .pp-back, .pp-toc, .pp-foot { display: none; }
+  .pp-card { border: none; box-shadow: none; padding: 0; }
+  .pp-wrap { animation: none; max-width: none; }
+}

@@ -41,7 +41,7 @@ export default async function StudentLogin({ searchParams }: { searchParams: Pro
           </>
         )}
       </div>
-      <p className="auth-foot">© {new Date().getFullYear()} WhiteRock Educational Services · Student portal</p>
+      <p className="auth-foot">© {new Date().getFullYear()} WhiteRock Educational Services · Student portal · <a href="/privacy">Privacy policy</a></p>
     </div>
   );
 }

@@ -49,7 +49,7 @@ export default function LeadChat({ ws, country, src, embed }: { ws: string; coun
         <div ref={end} />
       </div>
       {!started && (
-        <label className="hello-consent"><input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} /> I agree that WhiteRock keeps this chat and may contact me about studying abroad.</label>
+        <label className="hello-consent"><input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} /><span>I agree that WhiteRock keeps this chat and may contact me about studying abroad. <a href="/privacy" target="_blank" rel="noopener">Privacy policy</a></span></label>
       )}
       {err && <p className="hello-err">{err}</p>}
       <form className="hello-send" onSubmit={send}>

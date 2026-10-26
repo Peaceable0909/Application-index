@@ -52,7 +52,7 @@ export default async function Welcome({ searchParams }: { searchParams: Promise<
       <footer className="wl-foot">
         <Logo height={24} alt="WhiteRock" />
         <span>WhiteRock Educational Services</span>
-        <nav aria-label="Sign in"><a href="/student/login">Student sign in</a><a href="/login">Team sign in</a></nav>
+        <nav aria-label="Sign in and policies"><a href="/student/login">Student sign in</a><a href="/login">Team sign in</a><a href="/privacy">Privacy policy</a></nav>
       </footer>
 
       {ws && <Script src="/chat-bubble.js" strategy="afterInteractive" data-ws={ws} data-src="website" data-label="Chat with an adviser" />}

@@ -50,7 +50,7 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
           {error && <div className="err">{error}<div style={{ marginTop: 6, fontSize: 12.5 }}>This page is for the admissions team. Students sign in at the <a href="/student/login">student portal</a>.</div></div>}
         </form>
       </div>
-      <p className="auth-foot">© {new Date().getFullYear()} WhiteRock Educational Services · Team portal</p>
+      <p className="auth-foot">© {new Date().getFullYear()} WhiteRock Educational Services · Team portal · <a href="/privacy">Privacy policy</a></p>
     </div>
   );
 }

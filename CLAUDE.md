@@ -127,3 +127,10 @@
 
 - `runBackup` (`src/lib/backup.ts`) writes one private file a night (`portal-YYYY-MM-DD.json.gz`, the portal's own data, not the sheet or Drive) and deletes the older ones. **How many are kept is an admin setting** (`portal_settings` key `backup_keep`, Settings → Backups, 3 to 90, 14 until changed), read by `backupKeep()`; `pruneBackups()` is the one place that deletes, and it only ever touches names that match `portal-YYYY-MM-DD.json.gz` (`expiredBackups` in `backupRetention.ts`, pure and tested). Saving a smaller number prunes at once. Never hardcode a keep number or delete from the `backups` bucket anywhere else.
 - Tests: `npx tsx scripts/tests/backupRetention.test.ts`.
+
+## Privacy policy (/privacy)
+
+- `/privacy` is public (`pathname === '/privacy'` in the `pwa` list in `middleware.ts`, so the separate student address serves it too) and is written from what the portal really does: what is collected, who sees it, every AI use, every outside service, cookies and stored settings, how long things are kept. It is linked from both sign-in pages, the `/welcome` footer, the new-student chat's consent line (`LeadChat.tsx`, opens in a new tab) and the student "Me" page.
+- **When you add a feature that collects new data, calls a new outside service, sets a cookie or stores something in the browser, add it to `src/app/privacy/page.tsx` (sections 2, 5, 6 and 10) and change `UPDATED` in the same change.** The policy must never claim something the code does not do (no recorded calls, no analytics, automatic AI replies always labelled); check the code before editing a sentence.
+- The number of nightly backups kept is read live from `backupKeep()`, so it follows the admin setting. The contact address is one constant (`CONTACT`) in the page; the standalone form's `privacy.html` (separate repo) uses the same address and should be kept consistent with it.
+- The page's CSS classes use the `pp-` prefix on purpose: `.pv`, `.pv-bar`, `.pv-page` already belong to the document previewer in `globals.css`. Below 640 px the two tables turn into stacked cards (`data-label` on each cell).
