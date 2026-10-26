@@ -154,7 +154,7 @@ export default async function Privacy() {
           <section id="keep">
             <h2><span>{num()}</span>How long we keep it</h2>
             <p>We keep your information while we are working on your application. After that we keep it as long as we need it to answer your questions, to help with later applications and to meet our record-keeping and legal duties. When we no longer need it, we delete it or remove anything that identifies you. Chats from people who never became students are removed when we no longer need them.</p>
-            <p>Each night the portal makes a private copy of its data for safety, and keeps the last {keep}. Older copies are deleted. If you delete a message or a file, it is removed from the portal straight away, and may stay in those copies until they expire.</p>
+            <p>Each night the portal makes a private copy of its data for safety, and keeps the newest {keep} copies. Older copies are deleted. If you delete a message or a file, it is removed from the portal straight away, and may stay in those copies until they expire.</p>
           </section>
 
           <section id="safe">
