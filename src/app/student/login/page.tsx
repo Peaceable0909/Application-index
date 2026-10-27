@@ -41,6 +41,7 @@ export default async function StudentLogin({ searchParams }: { searchParams: Pro
           </>
         )}
       </div>
+      <p className="muted" style={{ margin: '16px 0 0', textAlign: 'center', fontSize: 13.5 }}>WhiteRock team member? <a href="/login">Team sign-in</a></p>
       <p className="auth-foot">© {new Date().getFullYear()} WhiteRock Educational Services · Student portal · <a href="/privacy">Privacy policy</a></p>
     </div>
   );

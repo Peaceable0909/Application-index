@@ -13,7 +13,7 @@ export const metadata = {
 
 /** Where questions and requests go. One place, so the policy and the page footer cannot disagree. */
 const CONTACT = 'applications.whiterock@gmail.com';
-const UPDATED = '26 October 2026';
+const UPDATED = '27 October 2026';
 
 const SECTIONS = [
   ['who', 'Who we are'], ['collect', 'What we collect'], ['use', 'How we use it'], ['share', 'Who sees it'], ['ai', 'Software and AI'],
@@ -69,7 +69,7 @@ export default async function Privacy() {
           <section id="who">
             <h2><span>{num()}</span>Who we are</h2>
             <p>
-              WhiteRock Educational Services (“WhiteRock”, “we”, “us”) helps students apply to universities. We decide how your information is used. This policy covers the student portal, the chat on our website for new students, the emails and notifications the portal sends you, and the calls and messages between you and our team. Questions about it go to <Mail />.
+              WhiteRock Educational Services (“WhiteRock”, “we”, “us”) helps students apply to universities. We decide how your information is used. This policy covers the student portal, the WhiteRock Android app (which opens the same portal and keeps no data of its own), the chat on our website for new students, the emails and notifications the portal sends you, and the calls and messages between you and our team. Questions about it go to <Mail />.
             </p>
           </section>
 
@@ -178,6 +178,7 @@ export default async function Privacy() {
                   <tr><th scope="row">Sign-in cookies (sb-…)</th><td data-label="What it is for">Keep you signed in</td><td data-label="How long">While you stay signed in</td></tr>
                   <tr><th scope="row">wr_theme</th><td data-label="What it is for">Your colours and light or dark look</td><td data-label="How long">1 year</td></tr>
                   <tr><th scope="row">hl_… (chat)</th><td data-label="What it is for">Lets a visitor come back to their chat on our website</td><td data-label="How long">90 days</td></tr>
+                  <tr><th scope="row">The Android app</th><td data-label="What it is for">Opens the portal inside Google Chrome. The sign-in cookies and settings above are kept by Chrome, not by the app</td><td data-label="How long">As above</td></tr>
                   <tr><th scope="row">Saved on your device</th><td data-label="What it is for">Your sticker favourites, whether you saw the welcome tour and the notification reminder, which celebrations you have already seen, a recent-visit marker for the opening animation, the key that lets the website chat bubble find your chat, and unsent practice-interview drafts</td><td data-label="How long">Until you clear your browser data</td></tr>
                 </tbody>
               </table>

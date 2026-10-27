@@ -11,10 +11,12 @@ import { previewWeeklySummary, saveWeeklySummary } from '../reportActions';
 import Btn from '@/components/Btn';
 import { admin } from '@/lib/supabase';
 import Link from 'next/link';
-import { addStaff, backupNow, removeStaff, saveBackupKeep, sendTestEmails, testConnection } from '../actions';
+import { addStaff, backupNow, removeStaff, saveAndroidApp, saveBackupKeep, sendTestEmails, testConnection } from '../actions';
 import { createWorkspace, setStaffWorkspaces } from '../workspaceActions';
 import { listWorkspaces } from '@/lib/workspace';
 import { backupKeep, listBackups } from '@/lib/backup';
+import { loadAndroid } from '@/lib/androidData';
+import { ANDROID_PACKAGE } from '@/lib/androidApp';
 import { KEEP_MAX, KEEP_MIN } from '@/lib/backupRetention';
 import Icon from '@/components/Icon';
 import PrivacyCheck from '@/components/PrivacyCheck';
@@ -95,6 +97,25 @@ export default async function Settings({ searchParams }: { searchParams: Promise
           </>
         ) : <p className="muted">Admins can create and download backups.</p>}
       </div>
+      {me.role === 'admin' && await (async () => {
+        const android = await loadAndroid();
+        return (
+          <div className="card">
+            <h2><Icon n="phone" size={17} /> Android app</h2>
+            <p className="muted" style={{ marginTop: 0 }}>The WhiteRock app on Google Play opens this portal full screen. Android only hides the browser bar when it can check that the app belongs to this website, and it does that with the app&rsquo;s signing fingerprint. After the first upload to Google Play, open Play Console, go to <b>Test and release</b>, then <b>App integrity</b>, then <b>App signing</b>, copy the <b>SHA-256 certificate fingerprint</b> and paste it below.</p>
+            <form action={saveAndroidApp} className="grid" style={{ gap: 12 }} data-busy="Saving…">
+              <label>SHA-256 fingerprints, one per line
+                <textarea name="fingerprints" rows={3} defaultValue={android.fingerprints.join('\n')} placeholder="14:6D:E9:83:C5:73:06:50:D8:EE:B9:95:2F:34:FC:64:16:A0:83:42:E6:1D:BE:A8:8A:04:96:B2:3F:CF:44:E5" style={{ width: '100%', marginTop: 6, fontFamily: 'ui-monospace, monospace', fontSize: 12.5 }} />
+              </label>
+              <label>Google Play link (add it once the app is live, students on Android then see a Get the app button)
+                <input name="play_url" type="url" defaultValue={android.playUrl || ''} placeholder={`https://play.google.com/store/apps/details?id=${ANDROID_PACKAGE}`} style={{ width: '100%', marginTop: 6 }} />
+              </label>
+              <div><Btn data-busy="Saving…">Save</Btn></div>
+            </form>
+            <p className="muted" style={{ fontSize: 12.5, margin: '12px 0 0' }}>App package name: <code>{ANDROID_PACKAGE}</code>. What Android reads from this website: <a href="/.well-known/assetlinks.json" target="_blank" rel="noreferrer">/.well-known/assetlinks.json</a> ({android.fingerprints.length ? `${android.fingerprints.length} fingerprint${android.fingerprints.length === 1 ? '' : 's'} listed` : 'nothing listed yet, so the app shows a browser bar'}).</p>
+          </div>
+        );
+      })()}
       <div className="card">
         <h2><Icon n="mail" size={17} /> Email design</h2>
         <p className="muted">Every email the portal sends (document requests, digests, messages to students and counselors) uses the same branded layout, signed with your name, title and photo from <Link href="/profile">My profile</Link>.</p>

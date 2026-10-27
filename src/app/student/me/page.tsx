@@ -10,6 +10,7 @@ import ThemePicker from '@/components/ThemePicker';
 import { cookies } from 'next/headers';
 import { COOKIE, parseTheme } from '@/lib/theme';
 import StudentPhotoEditor from '@/components/StudentPhotoEditor';
+import { loadAndroid } from '@/lib/androidData';
 
 const FAQ: [string, string][] = [
   ['How do I know my documents were received?', 'The Documents page shows a green tick next to each one, and your counselor is told straight away.'],
@@ -24,7 +25,7 @@ export default async function StudentMe() {
   const me = await currentStudent();
   if (!me) redirect('/student/login');
   const theme = parseTheme((await cookies()).get(COOKIE)?.value);
-  const d = await loadStudentData(me), a0 = d.a0;
+  const [d, android] = await Promise.all([loadStudentData(me), loadAndroid()]), a0 = d.a0;
   const refId = a0.opp_id || a0.student_ref || `PP-${a0.application_id.replace(/[^a-z0-9]/gi, '').slice(0, 8).toUpperCase()}`;
   const locked: [string, string][] = [['Name', a0.name], ['Email', me.email], ['Country', a0.country || ''], ['Reference', refId], ['Applied', a0.submitted_at ? new Date(a0.submitted_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '']];
   return (
@@ -38,7 +39,7 @@ export default async function StudentMe() {
       <div style={{ ['--i' as string]: 1 }}><StudentDetails locked={locked} phone={a0.phone || ''} city={a0.city || ''} preferred={a0.preferred_name || ''} /></div>
       <div style={{ ['--i' as string]: 2 }}><h2 className="st-gh">Look &amp; feel</h2><section className="st-card"><p className="st-sub">Pick a theme and an accent colour. It is saved to your account.</p><ThemePicker initial={theme} /></section></div>
       <div style={{ ['--i' as string]: 3 }}><h2 className="st-gh">Notifications</h2><section className="st-card"><p className="st-sub">Get an alert on this device when your counselor replies, calls, or something needs your attention.</p><PushToggle /></section></div>
-      <div style={{ ['--i' as string]: 4 }}><h2 className="st-gh">Keep it on your phone</h2><section className="st-card"><p className="st-sub">Add the portal to your home screen so it opens like an app.</p><InstallApp /></section></div>
+      <div style={{ ['--i' as string]: 4 }}><h2 className="st-gh">Keep it on your phone</h2><section className="st-card"><p className="st-sub">{android.playUrl ? 'Get the WhiteRock app on Android, or add the portal to your home screen so it opens like an app.' : 'Add the portal to your home screen so it opens like an app.'}</p><InstallApp playUrl={android.playUrl} /></section></div>
       <div style={{ ['--i' as string]: 5 }}><h2 className="st-gh">Help</h2><section className="st-card st-faqs">
         {FAQ.map(([q, a]) => <details key={q} className="st-faq"><summary>{q}</summary><p>{a}</p></details>)}
       </section></div>

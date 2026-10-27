@@ -21,7 +21,7 @@ export async function middleware(req: NextRequest) {
   });
   const { data } = await sb.auth.getUser();
   const { pathname } = req.nextUrl;
-  const pwa = pathname === '/sw.js' || pathname === '/manifest.webmanifest' || pathname.startsWith('/pwa/') || pathname.startsWith('/brand/') || pathname === '/chat-bubble.js' || pathname === '/welcome' || pathname.startsWith('/welcome/') || pathname === '/privacy';
+  const pwa = pathname === '/sw.js' || pathname === '/manifest.webmanifest' || pathname.startsWith('/pwa/') || pathname.startsWith('/brand/') || pathname === '/chat-bubble.js' || pathname === '/welcome' || pathname.startsWith('/welcome/') || pathname === '/privacy' || pathname.startsWith('/.well-known/');
   const isStudentArea = pathname === '/student' || pathname.startsWith('/student/');
   const host = (req.headers.get('host') || '').toLowerCase();
   const studentHost = (process.env.STUDENT_HOST || '').toLowerCase();

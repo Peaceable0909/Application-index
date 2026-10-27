@@ -32,6 +32,7 @@ import { checkMeetingUrl } from '@/lib/meet';
 import { appsForEmail, currentStudent, isStudentEmail } from '@/lib/student';
 import { pruneBackups, runBackup } from '@/lib/backup';
 import { KEEP_SETTING, clampKeep } from '@/lib/backupRetention';
+import { ANDROID_PACKAGE, ANDROID_SETTING, cleanPlayUrl, parseFingerprints } from '@/lib/androidApp';
 import { notifyAssigned } from '@/lib/notify';
 import { isRecent, justDid, splitDuplicates } from '@/lib/doubleSubmit';
 import { reassign, reassignMany, routeApplications } from '@/lib/assignCore';
@@ -1008,6 +1009,21 @@ export async function saveBackupKeep(f: FormData) {
   await audit(me.email, 'backup_limit_changed', null, { keep, removed: removed.length });
   revalidatePath('/settings');
   redirect('/settings?msg=' + encodeURIComponent(`Saved: the newest ${keep} backups are kept${removed.length ? `, and ${removed.length} older ${removed.length === 1 ? 'one was' : 'ones were'} deleted` : ''}.`));
+}
+
+/** The Android app's signing fingerprints and Play link (Settings, Android app). Saving sets the whole state, so a repeat changes nothing. */
+export async function saveAndroidApp(f: FormData) {
+  const me = await requireTeam();
+  if (me.role !== 'admin') redirect('/settings?err=Admins+only');
+  const { ok, bad } = parseFingerprints(String(f.get('fingerprints') || ''));
+  if (bad.length) redirect('/settings?err=' + encodeURIComponent(`This is not a SHA-256 fingerprint: ${bad[0]}. It should look like 14:6D:E9:83:C5:73:06:50:D8:EE:B9:95:2F:34:FC:64:16:A0:83:42:E6:1D:BE:A8:8A:04:96:B2:3F:CF:44:E5.`));
+  const raw = String(f.get('play_url') || '').trim();
+  const playUrl = cleanPlayUrl(raw);
+  if (raw && !playUrl) redirect('/settings?err=' + encodeURIComponent(`The Google Play link should look like https://play.google.com/store/apps/details?id=${ANDROID_PACKAGE}`));
+  await admin().from('portal_settings').upsert({ key: ANDROID_SETTING, value: { fingerprints: ok, play_url: playUrl }, updated_by: me.email, updated_at: new Date().toISOString() });
+  await audit(me.email, 'android_app_saved', null, { fingerprints: ok.length, play_url: !!playUrl });
+  revalidatePath('/settings'); revalidatePath('/student/me');
+  redirect('/settings?msg=' + encodeURIComponent(`Saved: ${ok.length} fingerprint${ok.length === 1 ? '' : 's'}${playUrl ? ' and the Google Play link' : ''}.`));
 }
 
 // Extracted text page: read one document's full text out through Drive OCR and keep it. Called one file at a time so the page can show progress.
