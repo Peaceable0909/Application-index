@@ -1023,7 +1023,7 @@ export async function saveAndroidApp(f: FormData) {
   await admin().from('portal_settings').upsert({ key: ANDROID_SETTING, value: { fingerprints: ok, play_url: playUrl }, updated_by: me.email, updated_at: new Date().toISOString() });
   await audit(me.email, 'android_app_saved', null, { fingerprints: ok.length, play_url: !!playUrl });
   revalidatePath('/settings'); revalidatePath('/student/me');
-  redirect('/settings?msg=' + encodeURIComponent(`Saved: ${ok.length} fingerprint${ok.length === 1 ? '' : 's'}${playUrl ? ' and the Google Play link' : ''}.`));
+  redirect('/settings?msg=' + encodeURIComponent(`Saved: ${ok.length} fingerprint${ok.length === 1 ? '' : 's'}${playUrl ? ' and the Google Play link' : ''}. The website shows the new list to Android within about a minute.`));
 }
 
 // Extracted text page: read one document's full text out through Drive OCR and keep it. Called one file at a time so the page can show progress.
