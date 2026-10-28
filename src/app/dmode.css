@@ -1,0 +1,7 @@
+/* The "desktop site" notice (components/DesktopModeNotice.tsx). --dm-k enlarges it when the browser has shrunk the whole page, so it stays readable. */
+.dm-notice { --dm-k: 1; position: fixed; top: 0; left: 0; right: 0; z-index: 2147483000; display: flex; align-items: flex-start; gap: calc(10px * var(--dm-k)); padding: calc(10px * var(--dm-k)) calc(12px * var(--dm-k)); background: #fff3cf; color: #3b2a00; border-bottom: calc(2px * var(--dm-k)) solid #e0a100; font: 500 calc(14px * var(--dm-k))/1.4 var(--font-ui), system-ui, sans-serif; box-shadow: 0 6px 20px rgba(0, 0, 0, .18); }
+.dm-notice p { margin: 0; flex: 1; }
+.dm-notice svg { flex: none; width: calc(20px * var(--dm-k)); height: calc(20px * var(--dm-k)); margin-top: calc(1px * var(--dm-k)); }
+.dm-x { flex: none; display: grid; place-items: center; width: calc(34px * var(--dm-k)); height: calc(34px * var(--dm-k)); border: 0; border-radius: 999px; background: rgba(59, 42, 0, .12); color: inherit; cursor: pointer; }
+.dm-x svg { width: calc(18px * var(--dm-k)); height: calc(18px * var(--dm-k)); margin: 0; }
+.dm-x:focus-visible { outline: calc(3px * var(--dm-k)) solid #3b2a00; outline-offset: 2px; }

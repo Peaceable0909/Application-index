@@ -19,6 +19,7 @@ import UserMenu from '@/components/UserMenu';
 import BadgeTips from '@/components/BadgeTips';
 import { badgesOf } from '@/lib/badgeData';
 import NavProgress from '@/components/NavProgress';
+import DesktopModeNotice from '@/components/DesktopModeNotice';
 import MobileMenu from '@/components/MobileMenu';
 import StaffTabs from '@/components/StaffTabs';
 import Haptics from '@/components/Haptics';
@@ -42,6 +43,7 @@ import './stage.css';
 import './assign.css';
 import './reports.css';
 import './profile.css';
+import './dmode.css';
 import { cookies } from 'next/headers';
 import { COOKIE, parseTheme } from '@/lib/theme';
 import { site } from '@/lib/emailTemplate';
@@ -92,6 +94,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body>
         <Splash />
         <NavProgress />
+        <DesktopModeNotice />
         <CallProvider enabled={!!(staff || student)}>
         {staff && <Presence />}
         {staff && <IdleLock idleMinutes={IDLE_MIN} />}
