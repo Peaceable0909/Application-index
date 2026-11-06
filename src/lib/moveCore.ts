@@ -103,7 +103,7 @@ export async function pushOne(a: Row, by: string): Promise<{ ok: boolean; error?
 /** Moves that reached the portal but not Sheet1 (the script was old, or time ran out). Tries a few at a time. */
 export async function pushPendingMoves(opts: { max?: number; budgetMs?: number } = {}): Promise<{ tried: number; done: number }> {
   const t0 = Date.now(), max = opts.max ?? 6, budget = opts.budgetMs ?? 8_000;   // small: it runs inside the nightly sync, which has a 60 second limit
-  const { data } = await admin().from('portal_applications').select(COLS).not('moved', 'is', null);
+  const { data } = await admin().from('portal_applications').select(COLS).is('archived_at', null).not('moved', 'is', null);
   const pending = ((data || []) as Row[]).filter((a) => a.in_master && a.moved?.sheet === false);
   const seen = new Set<string>();
   let tried = 0, done = 0;

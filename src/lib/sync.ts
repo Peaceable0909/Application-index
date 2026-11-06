@@ -91,9 +91,22 @@ async function syncWorkspace(w: Workspace, opts: { full?: boolean } = {}) {
   const M = makeFinder(master), G = makeFinder(regent);
   const sKey = (email: string | null, school: string | null, name: string) => wsKey(w.key, studentKey(email, school, name));
 
-  const { data: existing } = await db.from('portal_applications')
-    .select('application_id, status, counselor, docs_synced_at, student_key, payment, interview, extra_folder_ids, moved, source, source_by').eq('workspace', w.key);
-  const known = new Map((existing || []).map((r) => [r.application_id, r]));
+  type KnownApp = {
+    application_id: string; status: string | null; counselor: string | null; docs_synced_at: string | null;
+    student_key: string | null; payment: string | null; interview: string | null; extra_folder_ids: string[] | null;
+    moved: Moved | null; source: string | null; source_by: string | null; archived_at: string | null; archived_by: string | null;
+    has_raw: boolean; in_master: boolean; in_regent: boolean;
+  };
+  const existing: KnownApp[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await db.from('portal_applications')
+      .select('application_id, status, counselor, docs_synced_at, student_key, payment, interview, extra_folder_ids, moved, source, source_by, archived_at, archived_by, has_raw, in_master, in_regent')
+      .eq('workspace', w.key).order('application_id').range(from, from + 999);
+    if (error) throw new Error(error.message);
+    existing.push(...((data || []) as KnownApp[]));
+    if (!data || data.length < 1000) break;
+  }
+  const known = new Map(existing.map((r) => [r.application_id, r]));
 
   const stubIdByKey = new Map<string, string>();
   for (const [kid, prev] of known) if (kid.startsWith('stub:') && prev.student_key) stubIdByKey.set(prev.student_key, kid);
@@ -127,6 +140,7 @@ async function syncWorkspace(w: Workspace, opts: { full?: boolean } = {}) {
     const rawInterview = pick(g?.interview); // "To Be Booked for interview" / "...Interview" are the same thing
     const interview = rawInterview && /to be booked/i.test(rawInterview) ? 'To be booked for interview' : rawInterview;
     const skey = sKey(pick(r?.email, m?.email, g?.email), school, name);
+    const archived = prev?.archived_at ? prev : [...known.values()].find((x) => x.student_key === skey && x.archived_at);
     // The owner: a real name on the sheet wins; otherwise the one we already have. The form's "I don't have a counselor yet" never replaces an owner
     // the rules (or a person) gave, and a student who had a hand-made stub keeps the stub's counselor when the form arrives.
     const sheetOwner = [m?.counselor, g?.counselor, r?.counselor].map((c) => (c || '').trim()).find((c) => c && !isPlaceholderCounselor(c)) || null;
@@ -134,7 +148,7 @@ async function syncWorkspace(w: Workspace, opts: { full?: boolean } = {}) {
     const heldOwner = [prev?.counselor, inherited].find((c) => c && !isPlaceholderCounselor(c)) || null;
     const counselor = sheetOwner || heldOwner || pick(m?.counselor, g?.counselor, r?.counselor, prev?.counselor);
     if (!prev) {
-      created++; newIds.push(id);
+      created++; if (!archived?.archived_at) newIds.push(id);
       activity.push({ application_id: id, actor: 'system', kind: r ? 'new_application' : 'imported_from_sheet', detail: { school, programme: pick(m?.programme, g?.programme, r?.programme) } });
     } else {
       if (sheetOwner && sheetOwner !== prev.counselor) ownerChanges.push({ id, from: prev.counselor ?? null, to: sheetOwner });
@@ -158,6 +172,7 @@ async function syncWorkspace(w: Workspace, opts: { full?: boolean } = {}) {
       drive_folder_id: r?.driveFolderId || prev?.extra_folder_ids?.[0] || null,
       drive_folder_url: (r?.driveFolderId || prev?.extra_folder_ids?.[0]) ? `https://drive.google.com/drive/folders/${r?.driveFolderId || prev?.extra_folder_ids?.[0]}` : null,
       extra_folder_ids: prev?.extra_folder_ids || [],
+      archived_at: archived?.archived_at || null, archived_by: archived?.archived_by || null,
       student_key: skey,
       in_master: !!m, in_regent: !!g, has_raw: !!r, master_data: m, regent_data: g, raw_data: r, synced_at: new Date().toISOString(),
     };
@@ -207,6 +222,54 @@ async function syncWorkspace(w: Workspace, opts: { full?: boolean } = {}) {
     await db.from('portal_applications').delete().eq('application_id', id);
   }
 
+  // Only reconcile after every source read and the upsert completed successfully. A previously source-backed student
+  // is archived only when neither the same application ID nor the same workspace student key remains in any source.
+  // Portal-created records that never reached a source sheet are deliberately left alone. If a system-archived student
+  // returns to a source, automatically restore the records for that student; staff-archived records remain archived.
+  const presentIds = new Set(all.map((r) => r.application_id));
+  const presentKeys = new Set(all.map((r) => r.student_key));
+  const returningIds = new Set<string>();
+  for (const prev of known.values()) {
+    if (prev.archived_by === 'system:sync' && prev.archived_at && (presentIds.has(prev.application_id) || (!!prev.student_key && presentKeys.has(prev.student_key)))) returningIds.add(prev.application_id);
+  }
+  for (const r of all) if (r.archived_by === 'system:sync' && r.archived_at) returningIds.add(r.application_id);
+  const autoRestored: { application_id: string; student_key: string | null }[] = [];
+  const returning = [...returningIds];
+  for (let i = 0; i < returning.length; i += 100) {
+    const ids = returning.slice(i, i + 100);
+    const { data, error } = await db.from('portal_applications').update({ archived_at: null, archived_by: null }).eq('workspace', w.key)
+      .eq('archived_by', 'system:sync').not('archived_at', 'is', null).in('application_id', ids).select('application_id, student_key');
+    if (error) throw new Error(`Could not restore records that returned to connected sources: ${error.message}`);
+    autoRestored.push(...(data || []));
+  }
+  const restored = new Set(autoRestored.map((r) => r.student_key || r.application_id)).size;
+  const missingIds = [...known.values()]
+    .filter((prev) => (prev.has_raw || prev.in_master || prev.in_regent) && !prev.archived_at
+      && !presentIds.has(prev.application_id) && (!prev.student_key || !presentKeys.has(prev.student_key)))
+    .map((prev) => prev.application_id);
+  const autoArchived: { application_id: string; student_key: string | null }[] = [];
+  const archivedAt = new Date().toISOString();
+  for (let i = 0; i < missingIds.length; i += 100) {
+    const { data, error } = await db.from('portal_applications')
+      .update({ archived_at: archivedAt, archived_by: 'system:sync' }).eq('workspace', w.key)
+      .in('application_id', missingIds.slice(i, i + 100)).is('archived_at', null)
+      .select('application_id, student_key');
+    if (error) throw new Error(`Could not archive records missing from connected sources: ${error.message}`);
+    autoArchived.push(...(data || []));
+  }
+  if (autoArchived.length) {
+    const ids = autoArchived.map((r) => r.application_id);
+    for (let i = 0; i < ids.length; i += 200) {
+      const chunk = ids.slice(i, i + 200);
+      await db.from('portal_tasks').update({ status: 'resolved', suppress_until: null, resolved_at: archivedAt, resolved_by: 'system:sync', updated_at: archivedAt }).in('application_id', chunk).in('status', ['open', 'snoozed']);
+      await db.from('portal_assign_conflicts').update({ status: 'resolved', resolved_by: 'system:sync', resolved_at: archivedAt, note: 'Student missing from all connected sources' }).in('application_id', chunk).eq('status', 'open');
+    }
+    const students = new Set(autoArchived.map((r) => r.student_key || r.application_id)).size;
+    await db.from('portal_audit').insert({ actor: 'system:sync', action: 'students_auto_archived', target: w.key, detail: { students, applications: autoArchived.length } });
+  }
+  const archived = new Set(autoArchived.map((r) => r.student_key || r.application_id)).size;
+  if (autoRestored.length) await db.from('portal_audit').insert({ actor: 'system:sync', action: 'students_auto_restored', target: w.key, detail: { students: restored, applications: autoRestored.length } });
+
   // Counselors: make sure each name exists so an email can be attached in Settings.
   const names = new Map<string, string>();
   all.forEach((r) => { const k = counselorKey(r.counselor); if (k && !names.has(k) && !isPlaceholderCounselor(r.counselor)) names.set(k, (r.counselor || '').trim()); });
@@ -244,7 +307,7 @@ async function syncWorkspace(w: Workspace, opts: { full?: boolean } = {}) {
     total: all.length, created, formSubmissions: rows.length,
     inMaster: all.filter((r) => r.in_master).length, inRegent: all.filter((r) => r.in_regent).length,
     formOnly: rows.filter((r) => !r.in_master).length, noForm: stubs.size,
-    statusChangedInSheet: changedBySheet, foldersRefreshed: needFiles.length,
+    statusChangedInSheet: changedBySheet, foldersRefreshed: needFiles.length, archived, restored,
   };
 }
 
@@ -261,6 +324,6 @@ export async function syncAll(opts: { full?: boolean } = {}) {
   }
   try { await pushPendingMoves(); } catch { /* moves the sheet missed are tried again next time */ }
   try { for (const w of all) await refreshTasks(undefined, w.key); } catch { /* tasks refresh again when the overview is opened */ }
-  const sum = (k: 'total' | 'created' | 'formSubmissions' | 'inMaster' | 'inRegent' | 'formOnly' | 'noForm' | 'statusChangedInSheet' | 'foldersRefreshed') => results.reduce((n, r) => n + r[k], 0);
-  return { total: sum('total'), created: sum('created'), formSubmissions: sum('formSubmissions'), inMaster: sum('inMaster'), inRegent: sum('inRegent'), formOnly: sum('formOnly'), noForm: sum('noForm'), statusChangedInSheet: sum('statusChangedInSheet'), foldersRefreshed: sum('foldersRefreshed'), byWorkspace, warnings };
+  const sum = (k: 'total' | 'created' | 'formSubmissions' | 'inMaster' | 'inRegent' | 'formOnly' | 'noForm' | 'statusChangedInSheet' | 'foldersRefreshed' | 'archived' | 'restored') => results.reduce((n, r) => n + r[k], 0);
+  return { total: sum('total'), created: sum('created'), formSubmissions: sum('formSubmissions'), inMaster: sum('inMaster'), inRegent: sum('inRegent'), formOnly: sum('formOnly'), noForm: sum('noForm'), statusChangedInSheet: sum('statusChangedInSheet'), foldersRefreshed: sum('foldersRefreshed'), archived: sum('archived'), restored: sum('restored'), byWorkspace, warnings };
 }

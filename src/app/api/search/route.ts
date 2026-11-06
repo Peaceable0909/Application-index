@@ -12,6 +12,7 @@ export async function GET(req: Request) {
   const { data } = await admin().from('portal_applications')
     .select('application_id,name,email,school,programme,status,student_key,counselor')
     .eq('workspace', await currentWorkspace())
+    .is('archived_at', null)
     .or(`name.ilike.%${q}%,email.ilike.%${q}%,programme.ilike.%${q}%,school.ilike.%${q}%,opp_id.ilike.%${q}%,student_ref.ilike.%${q}%,phone.ilike.%${q}%`)
     .order('submitted_at', { ascending: false, nullsFirst: false }).limit(40);
   const seen = new Set<string>();

@@ -6,8 +6,9 @@ import { loadStudents } from '@/lib/overview';
 import { filterRows, viewPredicates } from '@/lib/filters';
 import { STATUSES } from '@/lib/constants';
 import { currentWorkspace, requiredDocs } from '@/lib/workspace';
-import { bulkAddToMaster, bulkAssign, bulkEmailCounselors, bulkSetStatus, syncNow } from '../actions';
+import { bulkAddToMaster, bulkArchiveStudents, bulkAssign, bulkEmailCounselors, bulkSetStatus, syncNow } from '../actions';
 import Btn from '@/components/Btn';
+import ConfirmActionButton from '@/components/ConfirmActionButton';
 import Icon from '@/components/Icon';
 import Fold from '@/components/Fold';
 import { bulkRequestDocs, bulkInviteStudents } from '@/app/actions';
@@ -46,6 +47,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
       <div className="head" style={{ justifyContent: 'space-between' }}>
         <h1>Applications</h1>
         <div className="filters">
+          <Link href="/applications/archived" className="btn ghost sm">Archived students</Link>
           <Link href="/applications/new" className="btn primary"><Icon n="user-plus" size={15} /> Add student</Link>
           <form action={syncNow} className="filters"><input type="hidden" name="returnTo" value="/applications" /><label className="muted"><input type="checkbox" name="full" value="1" /> full</label><Btn data-busy="Syncing with the sheet and Drive…" className="ghost">Sync now</Btn></form>
         </div>
@@ -103,6 +105,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           <Btn className="ghost sm" formAction={bulkEmailCounselors}><Icon n="mail" size={14} /> Email their counselors</Btn>
           <Btn className="ghost sm" formAction={bulkRequestDocs} data-busy="Emailing students…"><Icon n="file" size={14} /> Ask students for missing docs</Btn>
           <Btn className="ghost sm" formAction={bulkInviteStudents} data-busy="Inviting…"><Icon n="user-plus" size={14} /> Invite to student portal</Btn>
+          <ConfirmActionButton className="ghost sm" style={{ color: 'var(--red-ink)' }} formAction={bulkArchiveStudents} confirmMessage="Archive {{count}} selected student(s) from active portal lists? They can be restored later. Source Sheets, Drive files, portal access, and history will be preserved.">Archive selected</ConfirmActionButton>
           {filtered.some(({ a }) => !a.in_master) && <><select name="addStatus" defaultValue="New Lead">{STATUSES.map((o) => <option key={o}>{o}</option>)}</select><Btn className="gold sm" formAction={bulkAddToMaster}>Add to Sheet1</Btn></>}
           <span style={{ marginLeft: 'auto' }} className="filters">
             <Btn className="ghost sm" formAction="/api/export" data-busy="Preparing file…"><Icon n="download" size={14} /> Export selected</Btn>

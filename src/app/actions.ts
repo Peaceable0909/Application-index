@@ -125,9 +125,9 @@ export async function syncNow(f: FormData) {
   try {
     const r = await syncAll({ full: f.get('full') === '1' });
     const pending = await pushPendingMoves({ max: 25, budgetMs: 15_000 }).catch(() => ({ tried: 0, done: 0 }));   // moves the sheet missed
-    msg = `${pending.done ? `${pending.done} moved student${pending.done === 1 ? '' : 's'} written to Sheet1. ` : ''}Synced ${r.total} students · ${r.formSubmissions} with a form submission · ${r.inMaster} in Sheet1 · ${r.inRegent} in Regent Only · ${r.formOnly} not yet in Sheet1 · ${r.created} new.${r.warnings.length ? ` Warning: ${r.warnings.join('; ')}` : ''}`;
+    msg = `${pending.done ? `${pending.done} moved student${pending.done === 1 ? '' : 's'} written to Sheet1. ` : ''}Synced ${r.total} students · ${r.formSubmissions} with a form submission · ${r.inMaster} in Sheet1 · ${r.inRegent} in Regent Only · ${r.formOnly} not yet in Sheet1 · ${r.created} new${r.restored ? ` · ${r.restored} restored from connected sources` : ''}${r.archived ? ` · ${r.archived} archived (missing from all connected sources)` : ''}.${r.warnings.length ? ` Warning: ${r.warnings.join('; ')}` : ''}`;
   } catch (e) { rethrow(e); msg = `Sync failed: ${(e as Error).message}`; }
-  revalidatePath('/');
+  revalidatePath('/'); revalidatePath('/applications'); revalidatePath('/applications/archived'); revalidatePath('/head'); revalidatePath('/tasks'); revalidatePath('/messages'); revalidatePath('/inbox');
   redirect(`${ret}?msg=${encodeURIComponent(msg)}`);
 }
 
@@ -224,6 +224,54 @@ export async function bulkAssign(f: FormData) {
   if (counselor && r.changed.length) { const key = counselorKey(counselor); const students = r.changed.map((c) => c.student); after(() => notifyOwnerByKey(key, students, staff.email)); }
   const ok = r.changed.length;
   bulkBack(f, `${counselor ? `Assigned to ${counselor}` : 'Unassigned'}: ${ok} student${ok === 1 ? '' : 's'}${r.unchanged ? `, ${r.unchanged} already ${counselor ? 'theirs' : 'without a counselor'}` : ''}${r.failed ? `, ${r.failed} could not be changed` : ''}${sheetFail ? ` (${sheetFail} could not be written to the sheet)` : ''}.${leftNote(left)}`, sheetFail > 0 || r.failed > 0);
+}
+
+/** Reversibly hides selected students from active portal lists; source Sheets, Drive and history are preserved. */
+export async function bulkArchiveStudents(f: FormData) {
+  const staff = await requireTeam();
+  const all = [...new Set(f.getAll('ids').map(String).filter(Boolean))];
+  if (!all.length) bulkBack(f, 'Tick at least one student first.', true);
+  const ids = all.slice(0, 1000), left = Math.max(0, all.length - ids.length), ws = await currentWorkspace(), db = admin();
+  const selected: { application_id: string; student_key: string }[] = [];
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data, error } = await db.from('portal_applications').select('application_id, student_key').eq('workspace', ws).in('application_id', ids.slice(i, i + 200));
+    if (error) bulkBack(f, `Could not load the selected students: ${error.message}`, true);
+    selected.push(...(data || []));
+  }
+  const keys = [...new Set(selected.map((r) => r.student_key).filter(Boolean))];
+  if (!keys.length) bulkBack(f, 'None of the selected students are in this workspace.', true);
+  const archivedAt = new Date().toISOString();
+  let applications = 0;
+  const archivedKeys = new Set<string>(), archivedIds: string[] = [];
+  for (let i = 0; i < keys.length; i += 100) {
+    const { data, error } = await db.from('portal_applications').update({ archived_at: archivedAt, archived_by: staff.email }).eq('workspace', ws).in('student_key', keys.slice(i, i + 100)).is('archived_at', null).select('application_id, student_key');
+    if (error) bulkBack(f, `Could not archive the selected students: ${error.message}`, true);
+    applications += data?.length || 0;
+    (data || []).forEach((r) => { archivedIds.push(r.application_id); archivedKeys.add(r.student_key); });
+  }
+  for (let i = 0; i < archivedIds.length; i += 200) {
+    const chunk = archivedIds.slice(i, i + 200);
+    await db.from('portal_tasks').update({ status: 'resolved', suppress_until: null, resolved_at: archivedAt, resolved_by: staff.email, updated_at: archivedAt }).in('application_id', chunk).in('status', ['open', 'snoozed']);
+    await db.from('portal_assign_conflicts').update({ status: 'resolved', resolved_by: staff.email, resolved_at: archivedAt, note: 'Student archived from active lists' }).in('application_id', chunk).eq('status', 'open');
+  }
+  await audit(staff.email, 'students_archived', ws, { students: archivedKeys.size, applications });
+  revalidatePath('/applications'); revalidatePath('/applications/archived'); revalidatePath('/head'); revalidatePath('/tasks'); revalidatePath('/messages'); revalidatePath('/inbox'); revalidatePath('/');
+  bulkBack(f, `${archivedKeys.size ? `Archived ${archivedKeys.size} student${archivedKeys.size === 1 ? '' : 's'} from active lists` : 'None of the selected students needed archiving'}. Source Sheets, Drive files, portal access and history were preserved.${leftNote(left)}`);
+}
+
+/** Restores every application submission belonging to one archived student. */
+export async function restoreArchivedStudent(f: FormData) {
+  const staff = await requireTeam();
+  if (staff.role !== 'admin') redirect('/applications/archived?err=' + encodeURIComponent('Only an admin can restore archived students.'));
+  const id = s(f, 'id'), ws = await currentWorkspace(), db = admin();
+  if (!id) redirect('/applications/archived?err=' + encodeURIComponent('Choose a student to restore.'));
+  const { data: row, error: lookupError } = await db.from('portal_applications').select('student_key').eq('application_id', id).eq('workspace', ws).not('archived_at', 'is', null).maybeSingle();
+  if (lookupError || !row) redirect('/applications/archived?err=' + encodeURIComponent('That archived student could not be found in this workspace.'));
+  const { data: restored, error } = await db.from('portal_applications').update({ archived_at: null, archived_by: null }).eq('workspace', ws).eq('student_key', row.student_key).not('archived_at', 'is', null).select('application_id');
+  if (error) redirect('/applications/archived?err=' + encodeURIComponent(`Could not restore the student: ${error.message}`));
+  await audit(staff.email, 'student_restored', id, { applications: restored?.length || 0 });
+  revalidatePath('/applications'); revalidatePath('/applications/archived'); revalidatePath('/');
+  redirect('/applications/archived?msg=' + encodeURIComponent('Student restored to active portal lists. If they are still missing from all connected sources, the next successful sync will archive them again.'));
 }
 
 // One email per counselor listing the selected students that belong to them.

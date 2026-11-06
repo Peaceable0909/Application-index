@@ -77,7 +77,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     student ? noticesFor(student) : Promise.resolve([]),
     student ? db.from('portal_student_msgs').select('id', { count: 'exact', head: true }).eq('student_email', student.email).eq('from_student', false).is('student_read_at', null).then((r) => r.count || 0) : Promise.resolve(0),
     staff ? (async () => {
-      const q = db.from('portal_tasks').select('id, portal_applications!inner(workspace)', { count: 'exact', head: true }).eq('portal_applications.workspace', await currentWorkspace()).eq('status', 'open');
+      const q = db.from('portal_tasks').select('id, portal_applications!inner(workspace)', { count: 'exact', head: true }).eq('portal_applications.workspace', await currentWorkspace()).is('portal_applications.archived_at', null).eq('status', 'open');
       return (staff.role === 'counselor' ? await q.in('application_id', await appIdsFor(staff.counselor_key)) : await q).count || 0;
     })() : Promise.resolve(0),
     staff ? unreadTotal(staff.email).catch(() => 0) : Promise.resolve(0),
