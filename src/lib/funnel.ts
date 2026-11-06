@@ -25,10 +25,13 @@ export async function loadFacts(keys: string[]): Promise<Facts> {
   const db = admin();
   if (!keys.length) return { apps: [], leads: [], firstOffer: new Map(), firstEnrolled: new Map(), timeline: new Map() };
   const [apps, leads, events] = await Promise.all([
-    pages<{ application_id: string; workspace: string; status: string | null; counselor: string | null; school: string | null; submitted_at: string | null; created_at: string; source: string | null; last_activity_at: string | null }>((a, b) => db.from('portal_applications').select('application_id, workspace, status, counselor, school, submitted_at, created_at, source, last_activity_at').in('workspace', keys).order('application_id').range(a, b)),
+    pages<{ application_id: string; workspace: string; status: string | null; counselor: string | null; school: string | null; submitted_at: string | null; created_at: string; source: string | null; last_activity_at: string | null }>((a, b) => db.from('portal_applications').select('application_id, workspace, status, counselor, school, submitted_at, created_at, source, last_activity_at').in('workspace', keys).is('archived_at', null).order('application_id').range(a, b)),
     pages<{ id: string; workspace: string; status: string; converted_app: string | null; created_at: string; source: string | null }>((a, b) => db.from('portal_leads').select('id, workspace, status, converted_app, created_at, source').in('workspace', keys).order('id').range(a, b)),
-    pages<{ application_id: string; detail: { to?: string } | null; created_at: string }>((a, b) => db.from('portal_activity').select('application_id, detail, created_at, portal_applications!inner(workspace)').eq('kind', 'status_change').in('portal_applications.workspace', keys).order('id').range(a, b)),
+    pages<{ application_id: string; detail: { to?: string } | null; created_at: string }>((a, b) => db.from('portal_activity').select('application_id, detail, created_at, portal_applications!inner(workspace)').is('portal_applications.archived_at', null).eq('kind', 'status_change').in('portal_applications.workspace', keys).order('id').range(a, b)),
   ]);
+  // Keep chat volumes historical, but an archived student's lead conversion must not continue to inflate student-conversion metrics.
+  const activeIds = new Set((apps || []).map((a) => a.application_id));
+  const reportLeads = (leads || []).map((l) => l.converted_app && !activeIds.has(l.converted_app) ? { ...l, status: 'archived', converted_app: null } : l);
   const firstOffer = new Map<string, number>(), firstEnrolled = new Map<string, number>(), timeline = new Map<string, { to: string; at: number }[]>();
   for (const e of events) {
     const to = e.detail?.to, t = Date.parse(e.created_at);
@@ -39,7 +42,7 @@ export async function loadFacts(keys: string[]): Promise<Facts> {
   }
   return {
     apps: apps.map((a) => ({ application_id: a.application_id, workspace: a.workspace, status: a.status, counselor: a.counselor, school: a.school, day: (a.submitted_at || a.created_at).slice(0, 10), source: a.source, lastActivity: a.last_activity_at })),
-    leads: leads.map((l) => ({ id: l.id, workspace: l.workspace, status: l.status, converted_app: l.converted_app, day: l.created_at.slice(0, 10), source: l.source })),
+    leads: reportLeads.map((l) => ({ id: l.id, workspace: l.workspace, status: l.status, converted_app: l.converted_app, day: l.created_at.slice(0, 10), source: l.source })),
     firstOffer, firstEnrolled, timeline: new Map([...timeline].map(([k, v]) => [k, v.sort((a, b) => a.at - b.at)])),
   };
 }
