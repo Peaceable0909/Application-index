@@ -39,7 +39,7 @@ export async function loadStageBoard(workspace: string, sees?: (counselor: strin
   const db = admin();
   const [wfs, apps] = await Promise.all([
     loadWorkflows(db, workspace, { onlyActive: true }),
-    pages<AppRow>((a, b) => db.from('portal_applications').select('application_id, name, school, programme, counselor, status, stage_key, stage_at, student_key').eq('workspace', workspace).or('email.is.null,email.neq.test@example.com').order('submitted_at', { ascending: false, nullsFirst: false }).order('application_id').range(a, b)),
+    pages<AppRow>((a, b) => db.from('portal_applications').select('application_id, name, school, programme, counselor, status, stage_key, stage_at, student_key').eq('workspace', workspace).is('archived_at', null).or('email.is.null,email.neq.test@example.com').order('submitted_at', { ascending: false, nullsFirst: false }).order('application_id').range(a, b)),
   ]);
   const visible = apps.filter((a) => !sees || sees(a.counselor));
   const wfBy = new Map(wfs.map((w) => [w.school_key, w]));

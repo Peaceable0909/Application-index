@@ -67,7 +67,7 @@ export async function routeApplications(db: Db, o: { ids: string[]; actor: strin
   const ids = [...new Set(o.ids)];
   if (!ids.length) return out;
   const apps: AppRow[] = [];
-  for (let i = 0; i < ids.length; i += 100) { const { data } = await db.from('portal_applications').select(COLS).in('application_id', ids.slice(i, i + 100)); apps.push(...((data || []) as AppRow[])); }
+  for (let i = 0; i < ids.length; i += 100) { const { data } = await db.from('portal_applications').select(COLS).in('application_id', ids.slice(i, i + 100)).is('archived_at', null); apps.push(...((data || []) as AppRow[])); }
   const [rules, counselors, { data: wss }] = await Promise.all([loadRules(db), loadCounselors(db), db.from('portal_workspaces').select('key, auto_route')]);
   const auto = new Map((wss || []).map((w) => [w.key as string, w.auto_route !== false]));
 
@@ -130,7 +130,7 @@ export async function routeApplications(db: Db, o: { ids: string[]; actor: strin
 export async function waitingIds(db: Db, workspace?: string): Promise<string[]> {
   const out: string[] = [];
   for (let from = 0; ; from += 1000) {
-    const q = db.from('portal_applications').select('application_id, counselor').order('application_id').range(from, from + 999);
+    const q = db.from('portal_applications').select('application_id, counselor').is('archived_at', null).order('application_id').range(from, from + 999);
     const { data } = await (workspace ? q.eq('workspace', workspace) : q);
     (data || []).forEach((r) => { if (isPlaceholderCounselor(r.counselor as string | null)) out.push(r.application_id as string); });
     if (!data || data.length < 1000) break;
@@ -218,7 +218,7 @@ export type BulkApp = { id: string; name: string; school: string | null; city: s
 export async function bulkCandidates(db: Db, f: BulkFilter): Promise<BulkApp[]> {
   const out: BulkApp[] = [];
   for (let from = 0; ; from += 1000) {
-    const { data } = await db.from('portal_applications').select('application_id, name, school, city, status, counselor').eq('workspace', f.workspace).order('application_id').range(from, from + 999);
+    const { data } = await db.from('portal_applications').select('application_id, name, school, city, status, counselor').eq('workspace', f.workspace).is('archived_at', null).order('application_id').range(from, from + 999);
     for (const r of data || []) {
       if (r.status && FINAL_STATUSES.includes(r.status as string)) continue;
       const owned = !isPlaceholderCounselor(r.counselor as string | null);
@@ -238,7 +238,7 @@ export async function applyDocHandlers(db: Db, o: { ids: string[]; actor: string
   let unchanged = 0;
   const ids = [...new Set(o.ids)];
   const apps: AppRow[] = [];
-  for (let i = 0; i < ids.length; i += 100) { const { data } = await db.from('portal_applications').select(COLS).in('application_id', ids.slice(i, i + 100)); apps.push(...((data || []) as AppRow[])); }
+  for (let i = 0; i < ids.length; i += 100) { const { data } = await db.from('portal_applications').select(COLS).in('application_id', ids.slice(i, i + 100)).is('archived_at', null); apps.push(...((data || []) as AppRow[])); }
   const [rules, counselors] = await Promise.all([loadRules(db), loadCounselors(db)]);
   for (const a of apps) {
     const d = resolveAssignment(rules, facts(a), counselors, { kind: 'documents' });

@@ -55,14 +55,14 @@ export async function loadHeadBoard(view: HeadView, now = Date.now()): Promise<H
 
   const rows: Row[] = [];
   for (const ws of view.workspaces) {
-    const got = await pages<Row>((a, b) => db.from('portal_applications').select(COLS).eq('workspace', ws).or('email.is.null,email.neq.test@example.com').order('application_id').range(a, b));
+    const got = await pages<Row>((a, b) => db.from('portal_applications').select(COLS).eq('workspace', ws).is('archived_at', null).or('email.is.null,email.neq.test@example.com').order('application_id').range(a, b));
     rows.push(...got.filter((r) => !view.scopes || inScope(view.scopes, { workspace: r.workspace, school: r.school, city: r.city })));
   }
   const ids = new Set(rows.map((r) => r.application_id));
 
   const [stageCards, tasks, openConflicts, log] = await Promise.all([
     Promise.all(view.workspaces.map((ws) => loadStageBoard(ws).catch(() => null))),
-    pages<{ application_id: string }>((a, b) => db.from('portal_tasks').select('application_id, portal_applications!inner(workspace)').in('portal_applications.workspace', view.workspaces).eq('status', 'open').order('id').range(a, b)),
+    pages<{ application_id: string }>((a, b) => db.from('portal_tasks').select('application_id, portal_applications!inner(workspace)').in('portal_applications.workspace', view.workspaces).is('portal_applications.archived_at', null).eq('status', 'open').order('id').range(a, b)),
     db.from('portal_assign_conflicts').select('application_id, candidates').eq('status', 'open').then((r) => r.data || []),
     db.from('portal_assign_log').select('id, at, application_id, kind, from_counselor, to_counselor, reason, actor, portal_applications!inner(name, workspace, school, city)').in('portal_applications.workspace', view.workspaces).order('at', { ascending: false }).limit(200).then((r) => r.data || []),
   ]);

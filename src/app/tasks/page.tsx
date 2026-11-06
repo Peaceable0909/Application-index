@@ -53,9 +53,9 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const facts = await computeFacts(rows, all, lastSeen);
   const ai = await aiOverview(facts);
 
-  const { data: reminders } = await db.from('portal_reminders').select('id,application_id,due_on,note,portal_applications!inner(name)').eq('portal_applications.workspace', ws).eq('status', 'pending').order('due_on').limit(100);
+  const { data: reminders } = await db.from('portal_reminders').select('id,application_id,due_on,note,portal_applications!inner(name)').eq('portal_applications.workspace', ws).is('portal_applications.archived_at', null).eq('status', 'pending').order('due_on').limit(100);
   const [{ data: tasks }, { data: activity }] = await Promise.all([
-    db.from('portal_tasks').select('*, portal_applications!inner(workspace)').eq('portal_applications.workspace', ws).eq('status', 'open').order('priority').order('created_at', { ascending: false }).limit(500),
+    db.from('portal_tasks').select('*, portal_applications!inner(workspace)').eq('portal_applications.workspace', ws).is('portal_applications.archived_at', null).eq('status', 'open').order('priority').order('created_at', { ascending: false }).limit(500),
     db.from('portal_activity').select('id,kind,actor,detail,created_at,application_id,portal_applications!inner(name)').eq('portal_applications.workspace', ws).order('created_at', { ascending: false }).limit(14),
   ]);
   const groups = KIND_ORDER.map((k) => ({ k, items: (tasks || []).filter((t) => t.kind === k) })).filter((g) => g.items.length);

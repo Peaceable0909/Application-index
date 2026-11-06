@@ -16,7 +16,7 @@ const DAY = 864e5;
 export async function loadStudents(opts: { dups?: boolean; workspace?: string } = {}): Promise<{ rows: SRow[]; all: AppFull[] }> {
   const db = admin(), ws = opts.workspace ?? (await currentWorkspace()), required = await requiredDocs(ws);
   const [{ data: apps }, { data: docs }] = await Promise.all([
-    db.from('portal_applications').select(COLS).eq('workspace', ws).or('email.is.null,email.neq.test@example.com').order('submitted_at', { ascending: false, nullsFirst: false }).limit(5000),
+    db.from('portal_applications').select(COLS).eq('workspace', ws).is('archived_at', null).or('email.is.null,email.neq.test@example.com').order('submitted_at', { ascending: false, nullsFirst: false }).limit(5000),
     db.from('portal_documents').select('application_id,doc_type,type_override').limit(50000),
   ]);
   const all = (apps || []) as AppFull[];
